@@ -1,0 +1,231 @@
+diff --git a/lib/app/layouts/conversation_list/dialogs/conversation_peek_view.dart b/lib/app/layouts/conversation_list/dialogs/conversation_peek_view.dart
+index 3fe62dc42..e1b8e7d10 100644
+--- a/lib/app/layouts/conversation_list/dialogs/conversation_peek_view.dart
++++ b/lib/app/layouts/conversation_list/dialogs/conversation_peek_view.dart
+@@ -399,7 +399,7 @@ class _ConversationPeekViewState extends State<ConversationPeekView>
+               barrierDismissible: false,
+               context: context,
+               title: "Are you sure?",
+-              body: "This chat will be deleted from this device only",
++              body: "This conversation will be deleted from this device and the server Mac. It may remain on your other Apple devices.",
+               actions: [
+                 BBDialogAction(
+                   text: "No",
+@@ -408,10 +408,9 @@ class _ConversationPeekViewState extends State<ConversationPeekView>
+                 BBDialogAction(
+                   text: "Yes",
+                   isDefault: true,
+-                  onPressed: () {
+-                    ChatsSvc.removeChat(widget.chat);
+-                    ChatsSvc.softDeleteChat(widget.chat);
+-                    Navigator.of(context, rootNavigator: true).pop();
++                  onPressed: () async {
++                    await ChatsSvc.deleteChatOnApple(widget.chat);
++                    if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+                   },
+                 ),
+               ],
+diff --git a/lib/app/layouts/conversation_list/widgets/footer/samsung_footer.dart b/lib/app/layouts/conversation_list/widgets/footer/samsung_footer.dart
+index a157dc55d..5fe72ce42 100644
+--- a/lib/app/layouts/conversation_list/widgets/footer/samsung_footer.dart
++++ b/lib/app/layouts/conversation_list/widgets/footer/samsung_footer.dart
+@@ -97,10 +97,9 @@ class _SamsungFooterState extends CustomState<SamsungFooter, void, ConversationL
+                   ),
+                 ),
+                 IconButton(
+-                  onPressed: () {
+-                    for (Chat element in controller.selectedChats) {
+-                      ChatsSvc.removeChat(element);
+-                      ChatsSvc.softDeleteChat(element);
++                  onPressed: () async {
++                    for (final element in controller.selectedChats.toList()) {
++                      await ChatsSvc.deleteChatOnApple(element);
+                     }
+                     controller.clearSelectedChats();
+                   },
+diff --git a/lib/app/layouts/conversation_list/widgets/header/material_header.dart b/lib/app/layouts/conversation_list/widgets/header/material_header.dart
+index 42b2e2e3d..ef12f5b47 100644
+--- a/lib/app/layouts/conversation_list/widgets/header/material_header.dart
++++ b/lib/app/layouts/conversation_list/widgets/header/material_header.dart
+@@ -230,10 +230,9 @@ class _MaterialHeaderState extends CustomState<MaterialHeader, void, Conversatio
+                               ),
+                             ),
+                             IconButton(
+-                              onPressed: () {
+-                                for (Chat element in controller.selectedChats) {
+-                                  ChatsSvc.removeChat(element);
+-                                  ChatsSvc.softDeleteChat(element);
++                              onPressed: () async {
++                                for (final element in controller.selectedChats.toList()) {
++                                  await ChatsSvc.deleteChatOnApple(element);
+                                 }
+                                 controller.clearSelectedChats();
+                               },
+diff --git a/lib/app/layouts/conversation_list/widgets/tile/list_item.dart b/lib/app/layouts/conversation_list/widgets/tile/list_item.dart
+index 0af011458..e33a3e86e 100644
+--- a/lib/app/layouts/conversation_list/widgets/tile/list_item.dart
++++ b/lib/app/layouts/conversation_list/widgets/tile/list_item.dart
+@@ -102,6 +102,13 @@ class ListItem extends StatelessWidget {
+         background: (kIsDesktop || kIsWeb) ? null : Obx(() => slideBackground(chat, false)),
+         secondaryBackground: (kIsDesktop || kIsWeb) ? null : Obx(() => slideBackground(chat, true)),
+         key: UniqueKey(),
++        confirmDismiss: (direction) async {
++          final action = direction == DismissDirection.endToStart ? leftAction : rightAction;
++          if (action == MaterialSwipeAction.delete) {
++            return ChatsSvc.deleteChatOnApple(chat);
++          }
++          return true;
++        },
+         onDismissed: (direction) {
+           MaterialSwipeAction action;
+           if (direction == DismissDirection.endToStart) {
+@@ -121,8 +128,8 @@ class ListItem extends StatelessWidget {
+               chat.toggleMuteAsync(chat.muteType != "mute");
+             }
+           } else if (action == MaterialSwipeAction.delete) {
+-            ChatsSvc.removeChat(chat);
+-            ChatsSvc.softDeleteChat(chat);
++            // Deletion completed in confirmDismiss so a server failure can
++            // cancel the dismiss animation and leave the tile intact.
+           } else if (action == MaterialSwipeAction.mark_read) {
+             final chatState = ChatsSvc.getChatState(chat.guid);
+             if (chatState != null) {
+diff --git a/lib/app/layouts/conversation_view/widgets/header/material_header.dart b/lib/app/layouts/conversation_view/widgets/header/material_header.dart
+index 0d2e26dc4..ceb42642b 100644
+--- a/lib/app/layouts/conversation_view/widgets/header/material_header.dart
++++ b/lib/app/layouts/conversation_view/widgets/header/material_header.dart
+@@ -143,7 +143,7 @@ class MaterialHeader extends StatelessWidget implements PreferredSizeWidget {
+                         barrierDismissible: false,
+                         context: context,
+                         title: "Are you sure?",
+-                        body: "This chat will be deleted from this device only",
++                        body: "This conversation will be deleted from this device and the server Mac. It may remain on your other Apple devices.",
+                         actions: <BBDialogAction>[
+                           BBDialogAction(
+                             text: "No",
+@@ -158,12 +158,8 @@ class MaterialHeader extends StatelessWidget implements PreferredSizeWidget {
+                             text: "Yes",
+                             isDestructive: true,
+                             onPressed: () async {
+-                              ChatsSvc.removeChat(controller.chat);
+-                              ChatsSvc.softDeleteChat(controller.chat);
+-                              if (Get.isSnackbarOpen) {
+-                                Get.closeAllSnackbars();
+-                              }
+                               Navigator.of(context, rootNavigator: true).pop();
++                              await ChatsSvc.deleteChatOnApple(controller.chat);
+                             },
+                           ),
+                         ],
+diff --git a/lib/helpers/ui/ui_helpers.dart b/lib/helpers/ui/ui_helpers.dart
+index 861f7511b..cfed5ccf2 100644
+--- a/lib/helpers/ui/ui_helpers.dart
++++ b/lib/helpers/ui/ui_helpers.dart
+@@ -383,7 +383,7 @@ Future<void> showConversationTileMenu(
+                       "Are you sure?",
+                       style: context.theme.textTheme.titleLarge,
+                     ),
+-                    content: Text("This chat will be deleted from this device only",
++                    content: Text("This conversation will be deleted from this device and the server Mac. It may remain on your other Apple devices.",
+                         style: context.theme.textTheme.bodyLarge),
+                     backgroundColor: context.theme.colorScheme.surfaceContainerHighest,
+                     actions: <Widget>[
+@@ -400,9 +400,8 @@ Future<void> showConversationTileMenu(
+                             style:
+                                 context.theme.textTheme.bodyLarge!.copyWith(color: context.theme.colorScheme.primary)),
+                         onPressed: () async {
+-                          ChatsSvc.removeChat(chat);
+-                          ChatsSvc.softDeleteChat(chat);
+-                          Navigator.pop(context); //Remove AlertDialog
++                          Navigator.pop(context); // Remove AlertDialog
++                          await ChatsSvc.deleteChatOnApple(chat);
+                         },
+                       ),
+                     ],
+diff --git a/lib/services/ui/chat/chats_service.dart b/lib/services/ui/chat/chats_service.dart
+index 3a25dc4c4..21f1f8ef6 100644
+--- a/lib/services/ui/chat/chats_service.dart
++++ b/lib/services/ui/chat/chats_service.dart
+@@ -1076,7 +1076,34 @@ class ChatsService {
+     return Database.chats.count();
+   }
+ 
+-  /// Delete a chat with full UI cleanup and service state management.
++  /// Deletes the Apple conversation first, then removes the local chat only
++  /// after the server confirms success. A failed request leaves local state
++  /// untouched and surfaces an error instead of pretending deletion succeeded.
++  Future<bool> deleteChatOnApple(Chat chat) async {
++    if (kIsWeb) return false;
++
++    try {
++      await HttpSvc.chat.delete(chat.guid);
++
++      // The server also emits chat-deleted live. If that event won the race and
++      // already removed the tile, do not perform a duplicate local mutation.
++      if (_sortedChats.any((item) => item.guid == chat.guid)) {
++        await softDeleteChat(chat);
++      }
++      return true;
++    } catch (error, trace) {
++      Logger.error('Failed to delete chat on Apple', error: error, trace: trace, tag: 'ChatsService');
++      showSnackbar(
++        'Conversation not deleted',
++        'Apple did not confirm the deletion. The conversation is still on this device.',
++        type: SnackbarType.error,
++        durationMs: 4000,
++      );
++      return false;
++    }
++  }
++
++  /// Permanently delete a chat from the local ObjectBox database.
+   /// Set [deleteHandles] to true to also remove the chat's participant handles.
+   Future<void> deleteChat(Chat chat, {bool deleteHandles = false}) async {
+     if (kIsWeb) return;
+@@ -1331,6 +1358,26 @@ class ChatsService {
+     state?.updateHasUnreadInternal(value);
+   }
+ 
++  /// Apply unread state received from the server without echoing it back to Apple.
++  ///
++  /// This deliberately bypasses [_toggleChatHasUnread], whose active-chat logic
++  /// forces `privateMark` back to true. Reconciliation must remain local-only
++  /// even when the conversation is open.
++  Future<void> setChatHasUnreadFromServer(Chat chat, bool value) async {
++    final state = getChatState(chat.guid);
++    if (state != null && state.hasUnreadMessage.value == value) return;
++
++    final chatToUpdate = state?.chat ?? chat;
++    await chatToUpdate.toggleHasUnreadAsync(
++      value,
++      force: true,
++      clearLocalNotifications: !value,
++      privateMark: false,
++    );
++    updateChat(chatToUpdate);
++    state?.updateHasUnreadInternal(value);
++  }
++
+   /// Set chat muted status
+   Future<void> setChatMuted(Chat chat, bool isMuted) async {
+     final state = getChatState(chat.guid);
+@@ -1359,6 +1406,19 @@ class ChatsService {
+     state?.updateArchivedInternal(value);
+   }
+ 
++  /// Apply archive state received from the server without changing the local pin.
++  Future<void> setChatArchivedFromServer(Chat chat, bool value) async {
++    final state = getChatState(chat.guid);
++    if (state != null && state.isArchived.value == value) return;
++
++    final chatToUpdate = state?.chat ?? chat;
++    chatToUpdate.isArchived = value;
++    await chatToUpdate.saveAsync(updateIsArchived: true);
++    updateChat(chatToUpdate);
++    state?.updateArchivedInternal(value);
++    _scheduleListVersionUpdate(immediate: true);
++  }
++
+   /// Set chat auto send read receipts
+   Future<void> setChatAutoSendReadReceipts(Chat chat, bool? value) async {
+     final state = getChatState(chat.guid);
