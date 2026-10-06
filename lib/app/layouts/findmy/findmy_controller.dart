@@ -14,6 +14,7 @@ import 'package:sliding_up_panel2/sliding_up_panel2.dart';
 import 'package:universal_io/io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:bluebubbles/app/components/avatars/contact_avatar_widget.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_clipper.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_pin_clipper.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
@@ -40,6 +41,7 @@ class FindMyController extends GetxController {
   final RxList<FindMyFriend> friendsWithLocation = <FindMyFriend>[].obs;
   final RxList<FindMyFriend> friendsWithoutLocation = <FindMyFriend>[].obs;
   final RxMap<String, Marker> markers = <String, Marker>{}.obs;
+  final Set<String> _friendMarkerKeys = <String>{};
   final Rxn<Position> location = Rxn<Position>();
   final Rxn<bool> fetching = Rxn<bool>(true);
   final RxBool refreshing = false.obs;
@@ -47,6 +49,7 @@ class FindMyController extends GetxController {
   final RxBool refreshing2 = false.obs;
   final RxBool canRefresh = false.obs;
   final RxBool hasMovedToCurrentLocation = false.obs;
+  final RxBool resolvingCurrentLocation = true.obs;
 
   StreamSubscription? locationSub;
   Timer? _refreshTimer;
@@ -92,7 +95,8 @@ class FindMyController extends GetxController {
     for (final friend in friendsWithLocation) {
       buildFriendMarker(friend);
     }
-    for (final device in devices.where((e) => e.location?.latitude != null && e.location?.longitude != null)) {
+    for (final device in devices.where((e) =>
+        isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))) {
       buildDeviceMarker(device);
     }
     markers.refresh();
@@ -115,7 +119,8 @@ class FindMyController extends GetxController {
     try {
       final friend = FindMyFriend.fromJson(data);
       Logger.info("Received new location for ${friend.handle?.address}");
-      if ((friend.latitude ?? 0) == 0 && (friend.longitude ?? 0) == 0) return;
+      // Keep the last known good location when Apple pushes a no-fix or malformed update.
+      if (!hasUsableFindMyLocation(friend)) return;
 
       final existingFriendIndex = friends.indexWhere((e) => e.stableId != null && e.stableId == friend.stableId);
       final existingFriend = existingFriendIndex == -1 ? null : friends[existingFriendIndex];
@@ -134,10 +139,7 @@ class FindMyController extends GetxController {
           friends[existingFriendIndex] = friend;
         }
 
-        friendsWithLocation.value =
-            friends.where((item) => (item.latitude ?? 0) != 0 && (item.longitude ?? 0) != 0).toList();
-        friendsWithoutLocation.value =
-            friends.where((item) => (item.latitude ?? 0) == 0 && (item.longitude ?? 0) == 0).toList();
+        _updateFriendLists();
 
         buildFriendMarker(friend);
       }
@@ -164,23 +166,35 @@ class FindMyController extends GetxController {
       }
 
       if (granted == LocationPermission.whileInUse || granted == LocationPermission.always) {
-        Geolocator.getCurrentPosition().then((loc) {
+        Geolocator.getCurrentPosition(locationSettings: const LocationSettings(timeLimit: Duration(seconds: 10)))
+            .then((loc) {
           if (!_isAlive) return;
           location.value = loc;
+          _updateFriendLists();
           buildLocationMarker(location.value!);
-          if (!kIsDesktop) {
-            locationSub = Geolocator.getPositionStream().listen((event) {
+          if (!kIsDesktop && locationSub == null) {
+            locationSub = Geolocator.getPositionStream().listen((event) async {
               if (!_isAlive) return;
+              location.value = event;
+              _updateFriendLists();
               buildLocationMarker(event);
 
               if (!hasMovedToCurrentLocation.value) {
+                if (!completer.isCompleted) await completer.future;
+                if (!_isAlive) return;
                 mapController.move(LatLng(event.latitude, event.longitude), 10);
                 hasMovedToCurrentLocation.value = true;
               }
             });
           }
-        });
+        }).catchError((e) {
+          Logger.warn("Failed to get current location", error: e, tag: 'FindMyController');
+        }).whenComplete(() => resolvingCurrentLocation.value = false);
+      } else {
+        resolvingCurrentLocation.value = false;
       }
+    } else {
+      resolvingCurrentLocation.value = false;
     }
 
     // Fetch friends data
@@ -203,11 +217,9 @@ class FindMyController extends GetxController {
         friends.value =
             (response2.data['data'] as List).map((e) => FindMyFriend.fromJson(e)).toList().cast<FindMyFriend>();
 
-        friendsWithLocation.value =
-            friends.where((item) => (item.latitude ?? 0) != 0 && (item.longitude ?? 0) != 0).toList();
-        friendsWithoutLocation.value =
-            friends.where((item) => (item.latitude ?? 0) == 0 && (item.longitude ?? 0) == 0).toList();
+        _updateFriendLists();
 
+        _clearFriendMarkers();
         for (FindMyFriend e in friendsWithLocation) {
           buildFriendMarker(e);
         }
@@ -251,7 +263,8 @@ class FindMyController extends GetxController {
           }
         }
 
-        for (FindMyDevice e in devices.where((e) => e.location?.latitude != null && e.location?.longitude != null)) {
+        for (FindMyDevice e in devices.where((e) =>
+            isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))) {
           buildDeviceMarker(e);
         }
         fetching.value = false;
@@ -274,6 +287,20 @@ class FindMyController extends GetxController {
       canRefresh.value = false;
       _scheduleRefreshGate();
     }
+  }
+
+  void _updateFriendLists() {
+    final withLocation = friends.where(hasUsableFindMyLocation).toList();
+    final currentLocation = location.value;
+
+    friendsWithLocation.value = currentLocation == null
+        ? withLocation
+        : sortFindMyFriendsByDistance(
+            withLocation,
+            originLatitude: currentLocation.latitude,
+            originLongitude: currentLocation.longitude,
+          );
+    friendsWithoutLocation.value = friends.where((item) => !hasUsableFindMyLocation(item)).toList();
   }
 
   void buildDeviceMarker(FindMyDevice e) {
@@ -315,6 +342,7 @@ class FindMyController extends GetxController {
 
   void buildFriendMarker(FindMyFriend friend) {
     final markerKey = friend.stableId ?? randomString(6);
+    _friendMarkerKeys.add(markerKey);
     markers[markerKey] = Marker(
       key: ValueKey('friend-$markerKey'),
       point: markerPointForFriend(friend),
@@ -332,6 +360,13 @@ class FindMyController extends GetxController {
       ),
       alignment: Alignment.topCenter,
     );
+  }
+
+  void _clearFriendMarkers() {
+    for (final markerKey in _friendMarkerKeys) {
+      markers.remove(markerKey);
+    }
+    _friendMarkerKeys.clear();
   }
 
   void buildLocationMarker(Position pos) {
@@ -392,6 +427,7 @@ class FindMyController extends GetxController {
     _hideContactInfoListener?.cancel();
     _findMyLocationListener?.cancel();
     locationSub?.cancel();
+    if (!completer.isCompleted) completer.complete();
     mapController.dispose();
     popupController.dispose();
     tabController?.dispose();

@@ -254,6 +254,7 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
         backgroundColor: context.material ? context.tileColor : context.headerColor,
         safeAreaLeft: false,
         safeAreaRight: false,
+        extendBodyBehindBottomPill: false,
         body: Stack(
           children: [
             SlidingUpPanel(
@@ -268,7 +269,11 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
               disableDraggableOnScrolling: true,
               backdropEnabled: true,
               parallaxEnabled: true,
-              panelSnapping: false,
+              // Snap to collapsed or fully open. The panel lays its content out at
+              // maxHeight regardless of how far open it is, so a half-open panel
+              // leaves the end of the list outside the visible area, unreachable by
+              // scrolling. Snapping keeps the panel out of that state.
+              panelSnapping: true,
               header: ForceDraggableWidget(
                 child: SizedBox(
                   width: MediaQuery.of(context).size.width,
