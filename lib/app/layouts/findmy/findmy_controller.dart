@@ -49,8 +49,10 @@ class FindMyController extends GetxController {
   final RxBool refreshing2 = false.obs;
   final RxBool canRefresh = false.obs;
   final RxBool hasMovedToCurrentLocation = false.obs;
+  final RxBool hasResolvedCurrentLocation = false.obs;
 
   StreamSubscription? locationSub;
+  Future<void>? _locationResolution;
   Timer? _refreshTimer;
   StreamSubscription? _redactedModeListener;
   StreamSubscription? _hideContactInfoListener;
@@ -146,6 +148,75 @@ class FindMyController extends GetxController {
     }
   }
 
+  void _ensureCurrentLocation() {
+    if (_locationResolution != null || locationSub != null) return;
+
+    final resolution = _resolveCurrentLocation();
+    _locationResolution = resolution;
+    unawaited(resolution.whenComplete(() {
+      if (identical(_locationResolution, resolution)) _locationResolution = null;
+    }));
+  }
+
+  Future<void> _moveMapToCurrentLocation(Position position) async {
+    await completer.future;
+    if (!_isAlive || hasMovedToCurrentLocation.value) return;
+    mapController.move(LatLng(position.latitude, position.longitude), 10);
+    hasMovedToCurrentLocation.value = true;
+  }
+
+  Future<void> _resolveCurrentLocation() async {
+    if (Platform.isLinux && !kIsWeb) {
+      hasResolvedCurrentLocation.value = true;
+      return;
+    }
+
+    try {
+      LocationPermission granted = await Geolocator.checkPermission();
+      if (!_isAlive) return;
+      if (granted == LocationPermission.denied) {
+        granted = await Geolocator.requestPermission();
+        if (!_isAlive) return;
+      }
+
+      if (granted != LocationPermission.whileInUse && granted != LocationPermission.always) return;
+
+      final loc = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(timeLimit: Duration(seconds: 10)),
+      );
+      if (!_isAlive) return;
+      location.value = loc;
+      _updateFriendLists();
+      buildLocationMarker(loc);
+
+      if (!kIsDesktop && locationSub == null) {
+        locationSub = Geolocator.getPositionStream().listen(
+          (event) {
+            if (!_isAlive) return;
+            location.value = event;
+            _updateFriendLists();
+            buildLocationMarker(event);
+
+            if (!hasMovedToCurrentLocation.value) {
+              unawaited(_moveMapToCurrentLocation(event));
+            }
+          },
+          onError: (Object error, StackTrace stack) {
+            locationSub = null;
+            if (!_isAlive) return;
+            Logger.warn("Current location stream failed", error: error, trace: stack, tag: 'FindMyController');
+          },
+          onDone: () => locationSub = null,
+          cancelOnError: true,
+        );
+      }
+    } catch (e, s) {
+      Logger.warn("Failed to resolve current location", error: e, trace: s, tag: 'FindMyController');
+    } finally {
+      if (_isAlive) hasResolvedCurrentLocation.value = true;
+    }
+  }
+
   /// Fetches the FindMy data from the server.
   /// The toggles for refresh friends & devices are separate due to an inconsistency in the server API.
   /// As of v1.9.7 (server), the refresh devices endpoint doesn't return the devices data,
@@ -155,36 +226,7 @@ class FindMyController extends GetxController {
   Future<void> getLocations({bool refreshFriends = true, bool refreshDevices = false}) async {
     if (!_isAlive) return;
 
-    if (!(Platform.isLinux && !kIsWeb)) {
-      LocationPermission granted = await Geolocator.checkPermission();
-      if (!_isAlive) return;
-      if (granted == LocationPermission.denied) {
-        granted = await Geolocator.requestPermission();
-        if (!_isAlive) return;
-      }
-
-      if (granted == LocationPermission.whileInUse || granted == LocationPermission.always) {
-        Geolocator.getCurrentPosition().then((loc) {
-          if (!_isAlive) return;
-          location.value = loc;
-          _updateFriendLists();
-          buildLocationMarker(location.value!);
-          if (!kIsDesktop && locationSub == null) {
-            locationSub = Geolocator.getPositionStream().listen((event) {
-              if (!_isAlive) return;
-              location.value = event;
-              _updateFriendLists();
-              buildLocationMarker(event);
-
-              if (!hasMovedToCurrentLocation.value) {
-                mapController.move(LatLng(event.latitude, event.longitude), 10);
-                hasMovedToCurrentLocation.value = true;
-              }
-            });
-          }
-        });
-      }
-    }
+    _ensureCurrentLocation();
 
     // Fetch friends data
     final response2 = refreshFriends
@@ -218,6 +260,8 @@ class FindMyController extends GetxController {
         Logger.error("Failed to parse FindMy Friends location data!", error: e, trace: s);
         fetching2.value = null;
         refreshing2.value = false;
+        fetching.value = null;
+        refreshing.value = false;
         return;
       }
     } else {
@@ -415,6 +459,7 @@ class FindMyController extends GetxController {
     _hideContactInfoListener?.cancel();
     _findMyLocationListener?.cancel();
     locationSub?.cancel();
+    if (!completer.isCompleted) completer.complete();
     mapController.dispose();
     popupController.dispose();
     tabController?.dispose();

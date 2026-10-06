@@ -18,15 +18,35 @@ class FindMyMapWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TrackpadBugWrapper(builder: (context, bugDetected) {
-      return Obx(() => FlutterMap(
+      return Obx(() {
+        final currentLocation = controller.location.value;
+        final waitingForFindMyFallback = currentLocation == null &&
+            (controller.fetching.value == true || controller.fetching2.value == true);
+        if (!controller.hasResolvedCurrentLocation.value || waitingForFindMyFallback) {
+          return ColoredBox(
+            color: context.theme.colorScheme.surface,
+            child: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (currentLocation == null && controller.markers.isEmpty) {
+          return ColoredBox(
+            color: context.theme.colorScheme.surface,
+            child: const Center(child: Text("Location unavailable")),
+          );
+        }
+
+        final initialCenter = currentLocation != null
+            ? LatLng(currentLocation.latitude, currentLocation.longitude)
+            : controller.markers.values.first.point;
+
+        return FlutterMap(
             mapController: controller.mapController,
             options: MapOptions(
               initialZoom: 5.0,
               minZoom: 1.0,
               maxZoom: 18.0,
-              initialCenter: controller.location.value == null
-                  ? const LatLng(0, 0)
-                  : LatLng(controller.location.value!.latitude, controller.location.value!.longitude),
+              initialCenter: initialCenter,
               onTap: (_, _) => controller.popupController.hideAllPopups(),
               keepAlive: true,
               interactionOptions: InteractionOptions(
@@ -62,7 +82,8 @@ class FindMyMapWidget extends StatelessWidget {
                 ],
               ),
             ],
-          ));
+          );
+      });
     });
   }
 
