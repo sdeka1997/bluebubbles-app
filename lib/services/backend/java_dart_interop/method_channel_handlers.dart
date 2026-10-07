@@ -101,19 +101,17 @@ class MethodChannelHandlers {
       final Map<String, dynamic>? data = arguments;
       if (!isNullOrEmpty(data)) {
         final payload = ServerPayload.fromJson(data!);
-        await IncomingMsgHandler.handle(
-          IncomingPayload(
-            type: MessageEventType.newMessage,
-            source: MessageSource.methodChannel,
-            chat: Chat.fromMap(payload.data['chats'].first.cast<String, Object>()),
-            message: Message.fromMap(payload.data),
-            attachments: ((payload.data['attachments'] as List?) ?? const [])
-                .whereType<Map>()
-                .map((e) => Attachment.fromMap(e.cast<String, Object>()))
-                .toList(),
-            tempGuid: payload.data['tempGuid'],
-          ),
-        );
+        await IncomingMsgHandler.handle(IncomingPayload(
+          type: MessageEventType.newMessage,
+          source: MessageSource.methodChannel,
+          chat: Chat.fromMap(payload.data['chats'].first.cast<String, Object>()),
+          message: Message.fromMap(payload.data),
+          attachments: ((payload.data['attachments'] as List?) ?? const [])
+              .whereType<Map>()
+              .map((e) => Attachment.fromMap(e.cast<String, Object>()))
+              .toList(),
+          tempGuid: payload.data['tempGuid'],
+        ));
       }
     } catch (e, s) {
       debugPrint('Error processing new message: $e');
@@ -156,19 +154,17 @@ class MethodChannelHandlers {
           }
         }
 
-        await IncomingMsgHandler.handle(
-          IncomingPayload(
-            type: MessageEventType.updatedMessage,
-            source: MessageSource.methodChannel,
-            chat: Chat.fromMap(payload.data['chats'].first.cast<String, Object>()),
-            message: Message.fromMap(payload.data),
-            attachments: ((payload.data['attachments'] as List?) ?? const [])
-                .whereType<Map>()
-                .map((e) => Attachment.fromMap(e.cast<String, Object>()))
-                .toList(),
-            tempGuid: payload.data['tempGuid'],
-          ),
-        );
+        await IncomingMsgHandler.handle(IncomingPayload(
+          type: MessageEventType.updatedMessage,
+          source: MessageSource.methodChannel,
+          chat: Chat.fromMap(payload.data['chats'].first.cast<String, Object>()),
+          message: Message.fromMap(payload.data),
+          attachments: ((payload.data['attachments'] as List?) ?? const [])
+              .whereType<Map>()
+              .map((e) => Attachment.fromMap(e.cast<String, Object>()))
+              .toList(),
+          tempGuid: payload.data['tempGuid'],
+        ));
       }
     } catch (e, s) {
       return Future.error(e, s);
@@ -191,8 +187,7 @@ class MethodChannelHandlers {
       if (!isNullOrEmpty(data)) {
         final payload = ServerPayload.fromJson(data!);
         await MessageHandlerSvc.handleNewOrUpdatedChat(
-          Chat.fromMap(payload.data['chats'].first.cast<String, Object>()),
-        );
+            Chat.fromMap(payload.data['chats'].first.cast<String, Object>()));
       }
     } catch (e, s) {
       return Future.error(e, s);
@@ -282,7 +277,12 @@ class MethodChannelHandlers {
 
     final Completer<void> completer = Completer();
     OutgoingMsgHandler.queue(
-      OutgoingMessage(completer: completer, chat: chat, message: replyMessage, clearNotificationsIfFromMe: false),
+      OutgoingMessage(
+        completer: completer,
+        chat: chat,
+        message: replyMessage,
+        clearNotificationsIfFromMe: false,
+      ),
     );
 
     await completer.future;
@@ -302,7 +302,10 @@ class MethodChannelHandlers {
     // as "recent". Writing it earlier meant a failed send poisoned its own retry:
     // the retry saw the cache entry, treated itself as a duplicate, and dropped the
     // message while reporting success.
-    await PrefsSvc.messaging.setRecentReply(messageGuid: data['messageGuid'], text: data['text']);
+    await PrefsSvc.messaging.setRecentReply(
+      messageGuid: data['messageGuid'],
+      text: data['text'],
+    );
     Logger.info('Updated recent reply cache to ${PrefsSvc.messaging.getRecentReplyRaw()}');
 
     return _ok();
@@ -330,26 +333,31 @@ class MethodChannelHandlers {
   }
 
   Future<bool> _handleChatReadStatusChanged(MethodCall _, Map<String, dynamic>? arguments) async {
-    if (!service.headless && LifecycleSvc.isAlive) return _ok();
+    if (!service.headless &&
+        LifecycleSvc.isAlive &&
+        (SocketSvc.socket?.connected ?? false)) {
+      return _ok();
+    }
+    if (arguments == null) return _retry();
     await Database.waitForInit();
     Logger.info('Received chat status change from FCM');
 
     try {
-      final Map<String, dynamic>? data = arguments;
-      if (!isNullOrEmpty(data)) {
-        final payload = ServerPayload.fromJson(data!);
-        final Chat? chat = Chat.findOne(guid: payload.data['chatGuid']);
-        if (chat == null || (payload.data['read'] != true && payload.data['read'] != false)) {
-          return await _retry();
-        }
-
-        chat.toggleHasUnreadAsync(!payload.data['read']!, privateMark: false);
-        return await _ok();
+      final payload = ServerPayload.fromJson(arguments);
+      final data = payload.data;
+      if (data['chatGuid'] is! String || (data['read'] != true && data['read'] != false)) {
+        return await _retry();
       }
 
-      return await _retry();
+      await MessageHandlerSvc.handleEvent(
+        MethodChannelInboundMethods.chatReadStatusChanged,
+        data,
+        'MethodChannel',
+        useQueue: false,
+      );
+      return await _ok();
     } catch (e, s) {
-      return Future.error(e, s);
+      Error.throwWithStackTrace(e, s);
     }
   }
 
