@@ -102,7 +102,7 @@ class FindMyFriendListTile extends StatelessWidget {
                 final marker = controller.markers[item.stableId];
                 if (marker == null) return;
                 controller.popupController.showPopupsOnlyFor([marker]);
-                controller.mapController.move(markerPoint, 10);
+                controller.focusMap(markerPoint);
               }
             : null,
         onLongPress: hideContactInfo

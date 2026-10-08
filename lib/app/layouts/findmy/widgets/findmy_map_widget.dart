@@ -65,6 +65,9 @@ class FindMyMapWidget extends StatelessWidget {
               maxZoom: 18.0,
               initialCenter: initialCenter,
               onTap: (_, _) => controller.popupController.hideAllPopups(),
+              onPositionChanged: (_, hasGesture) {
+                if (hasGesture) controller.noteCameraGesture();
+              },
               keepAlive: true,
               interactionOptions: InteractionOptions(
                 flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
@@ -74,6 +77,7 @@ class FindMyMapWidget extends StatelessWidget {
                 if (!controller.completer.isCompleted) {
                   controller.completer.complete();
                 }
+                controller.fitCameraToTab();
               },
             ),
             children: [

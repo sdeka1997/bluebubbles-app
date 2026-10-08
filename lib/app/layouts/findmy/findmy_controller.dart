@@ -14,7 +14,10 @@ import 'package:sliding_up_panel2/sliding_up_panel2.dart';
 import 'package:universal_io/io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:bluebubbles/app/components/avatars/contact_avatar_widget.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_location_cache.dart';
+import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_items_tab_view.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_clipper.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_pin_clipper.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
@@ -53,6 +56,14 @@ class FindMyController extends GetxController {
   final RxBool hasMovedToCurrentLocation = false.obs;
   final RxBool resolvingCurrentLocation = true.obs;
 
+  /// Insets of the map area the opening camera frames. On phones this is the
+  /// part left visible with the drawer at its halfway point, so the framing
+  /// stays put however the drawer is dragged.
+  EdgeInsets cameraPadding = const EdgeInsets.all(40);
+  bool _cameraMovedByUser = false;
+  late final FindMyLocationCache _locationCache = FindMyLocationCache.load();
+  Worker? _tabWorker;
+
   StreamSubscription? locationSub;
   Timer? _refreshTimer;
   StreamSubscription? _redactedModeListener;
@@ -73,6 +84,12 @@ class FindMyController extends GetxController {
 
     _scheduleRefreshGate();
     _setupRedactionListeners();
+
+    // Each tab opens on its own framing, as Find My does.
+    _tabWorker = ever(tabIndex, (_) {
+      _cameraMovedByUser = false;
+      fitCameraToTab();
+    });
   }
 
   bool get _isAlive => !isClosed;
@@ -116,6 +133,101 @@ class FindMyController extends GetxController {
         longitude: device.location!.longitude!,
       );
 
+  /// The locations the current tab's opening camera should frame.
+  List<LatLng> _cameraPointsForTab() {
+    switch (tabIndex.value) {
+      case 0:
+        return friendsWithLocation.map(markerPointForFriend).toList();
+      case 1:
+        return devices
+            .where((e) => !e.isConsideredAccessory && isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))
+            .map(markerPointForDevice)
+            .toList();
+      default:
+        // One point per product, so a pair of AirPods counts once rather than three times.
+        return collapseFindMyAccessoryComponents(devices.where((e) => e.isConsideredAccessory).toList())
+            .where((e) => isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))
+            .map(markerPointForDevice)
+            .toList();
+    }
+  }
+
+  /// Frames the current tab's locations, unless the user has since moved the
+  /// map themselves. Only the People tab is framed around the user's own
+  /// location; Devices and Items are framed around the things themselves.
+  void fitCameraToTab() {
+    if (!_isAlive || !completer.isCompleted || _cameraMovedByUser) return;
+    final current = location.value;
+    final anchor = tabIndex.value == 0 && current != null && isUsableFindMyCoordinate(current.latitude, current.longitude)
+        ? LatLng(current.latitude, current.longitude)
+        : null;
+    final focus = selectFindMyCameraFocus(_cameraPointsForTab(), anchor: anchor);
+    if (focus.isEmpty) return;
+    try {
+      // The zoom cap keeps a single location at neighbourhood scale.
+      mapController.fitCamera(CameraFit.coordinates(coordinates: focus, padding: cameraPadding, maxZoom: 13));
+    } catch (e, s) {
+      Logger.warn("Failed to frame the Find My map", error: e, trace: s, tag: 'FindMyController');
+    }
+  }
+
+  void noteCameraGesture() => _cameraMovedByUser = true;
+
+  /// Centers the map on one location the user picked from the list.
+  void focusMap(LatLng point) {
+    _cameraMovedByUser = true;
+    mapController.move(point, 10);
+  }
+
+  /// Records friends' current locations and fills in a missing one from the
+  /// last known location.
+  List<FindMyFriend> _withCachedFriendLocations(List<FindMyFriend> source) {
+    return source.map((friend) {
+      final key = friend.stableId;
+      if (key == null) return friend;
+      if (hasUsableFindMyLocation(friend)) {
+        _locationCache.remember(
+          'friend:$key',
+          FindMyCachedLocation(
+            latitude: friend.latitude!,
+            longitude: friend.longitude!,
+            timestamp: (friend.lastUpdated ?? DateTime.now()).millisecondsSinceEpoch,
+            label: friend.shortAddress,
+            fullAddress: friend.longAddress,
+          ),
+        );
+        return friend;
+      }
+      final cached = _locationCache['friend:$key'];
+      return cached == null ? friend : friendWithCachedLocation(friend, cached);
+    }).toList();
+  }
+
+  /// Records devices' current locations and fills in a missing one from the
+  /// last known location.
+  void _applyCachedDeviceLocations(List<FindMyDevice> source) {
+    for (final device in source) {
+      final id = device.id;
+      if (id == null || id.isEmpty) continue;
+      final location = device.location;
+      if (isUsableFindMyCoordinate(location?.latitude, location?.longitude)) {
+        _locationCache.remember(
+          'device:$id',
+          FindMyCachedLocation(
+            latitude: location!.latitude!,
+            longitude: location.longitude!,
+            timestamp: location.timeStamp ?? DateTime.now().millisecondsSinceEpoch,
+            label: device.address?.label,
+            fullAddress: device.address?.mapItemFullAddress,
+          ),
+        );
+        continue;
+      }
+      final cached = _locationCache['device:$id'];
+      if (cached != null) applyCachedDeviceLocation(device, cached);
+    }
+  }
+
   void _handleNewFindMyLocation(dynamic data) {
     if (!_isAlive) return;
     try {
@@ -123,6 +235,8 @@ class FindMyController extends GetxController {
       Logger.info("Received new location for ${friend.handle?.address}");
       // Keep the last known good location when Apple pushes a no-fix or malformed update.
       if (!hasUsableFindMyLocation(friend)) return;
+      _withCachedFriendLocations([friend]);
+      _locationCache.save();
 
       final existingFriendIndex = friends.indexWhere((e) => e.stableId != null && e.stableId == friend.stableId);
       final existingFriend = existingFriendIndex == -1 ? null : friends[existingFriendIndex];
@@ -174,6 +288,7 @@ class FindMyController extends GetxController {
           location.value = loc;
           _updateFriendLists();
           buildLocationMarker(location.value!);
+          fitCameraToTab();
           if (!kIsDesktop && locationSub == null) {
             locationSub = Geolocator.getPositionStream().listen((event) async {
               if (!_isAlive) return;
@@ -184,7 +299,7 @@ class FindMyController extends GetxController {
               if (!hasMovedToCurrentLocation.value) {
                 if (!completer.isCompleted) await completer.future;
                 if (!_isAlive) return;
-                mapController.move(LatLng(event.latitude, event.longitude), 10);
+                fitCameraToTab();
                 hasMovedToCurrentLocation.value = true;
               }
             });
@@ -216,8 +331,9 @@ class FindMyController extends GetxController {
 
     if (response2.statusCode == 200 && response2.data['data'] != null) {
       try {
-        friends.value =
-            (response2.data['data'] as List).map((e) => FindMyFriend.fromJson(e)).toList().cast<FindMyFriend>();
+        friends.value = _withCachedFriendLocations(
+            (response2.data['data'] as List).map((e) => FindMyFriend.fromJson(e)).toList().cast<FindMyFriend>());
+        _locationCache.save();
 
         _updateFriendLists();
 
@@ -225,6 +341,7 @@ class FindMyController extends GetxController {
         for (FindMyFriend e in friends.where(hasUsableFindMyLocation)) {
           buildFriendMarker(e);
         }
+        fitCameraToTab();
         fetching2.value = false;
         refreshing2.value = false;
       } catch (e, s) {
@@ -264,12 +381,15 @@ class FindMyController extends GetxController {
             device.address?.label = device.safeLocations.first.name;
           }
         }
+        _applyCachedDeviceLocations(devices);
+        _locationCache.save();
 
         _clearDeviceMarkers();
         for (FindMyDevice e in devices.where((e) =>
             isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))) {
           buildDeviceMarker(e);
         }
+        fitCameraToTab();
         fetching.value = false;
         refreshing.value = false;
       } catch (e, s) {
@@ -463,6 +583,7 @@ class FindMyController extends GetxController {
 
   @override
   void onClose() {
+    _tabWorker?.dispose();
     _refreshTimer?.cancel();
     _redactedModeListener?.cancel();
     _hideContactInfoListener?.cancel();

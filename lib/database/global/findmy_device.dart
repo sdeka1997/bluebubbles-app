@@ -67,8 +67,8 @@ class FindMyDevice {
   final double? batteryLevel;
   final dynamic locationEnabled;
   final bool isConsideredAccessory;
-  final Address? address;
-  final Location? location;
+  Address? address;
+  Location? location;
   final String? modelDisplayName;
   final dynamic deviceColor;
   final dynamic activationLocked;
@@ -108,6 +108,10 @@ class FindMyDevice {
   final Map<String, dynamic>? lostModeMetadata;
   final String? groupIdentifier;
   final String? groupName;
+
+  /// Set when [location] is the last known location from the local cache
+  /// because Apple currently reports none.
+  DateTime? lastKnownLocationAt;
 
   /// Apple reports some accessories as a component of a parent accessory: an
   /// AirPods Max earpiece arrives as its own entry named "single" with

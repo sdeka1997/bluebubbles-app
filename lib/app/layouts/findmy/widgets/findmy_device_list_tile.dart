@@ -34,6 +34,10 @@ class FindMyDeviceListTile extends StatelessWidget {
           : (item.address?.label ??
               item.address?.mapItemFullAddress ??
               (hasUsableCoordinates ? "Locating…" : "No location found"));
+      final lastKnownAt = item.lastKnownLocationAt;
+      final subtitle = hideContactInfo || lastKnownAt == null
+          ? displayLocation
+          : "$displayLocation\nLast updated ${buildDate(lastKnownAt)}";
       final fullAddress = item.address?.mapItemFullAddress?.trim();
       final hasFullAddress = fullAddress?.isNotEmpty ?? false;
       final markerPoint = hasUsableCoordinates ? controller.markerPointForDevice(item) : null;
@@ -42,7 +46,7 @@ class FindMyDeviceListTile extends StatelessWidget {
       return ListTile(
         mouseCursor: MouseCursor.defer,
         title: Text(displayName),
-        subtitle: Text(displayLocation),
+        subtitle: Text(subtitle),
         onTap: markerPoint != null
             ? () async {
                 await controller.panelController.close();
@@ -50,7 +54,7 @@ class FindMyDeviceListTile extends StatelessWidget {
                 final marker = controller.markers[item.id];
                 if (marker == null) return;
                 controller.popupController.showPopupsOnlyFor([marker]);
-                controller.mapController.move(markerPoint, 10);
+                controller.focusMap(markerPoint);
               }
             : null,
         trailing: canOpenMaps

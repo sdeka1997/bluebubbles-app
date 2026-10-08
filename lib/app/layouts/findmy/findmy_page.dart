@@ -73,11 +73,11 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
             Row(
               children: [
                 ConstrainedBox(
-                  constraints:
-                      BoxConstraints(minWidth: 300, maxWidth: max(300, min(500, NavigationSvc.width(context) / 3))),
-                  child: Container(
-                    width: 500,
+                  constraints: BoxConstraints(
+                    minWidth: 300,
+                    maxWidth: max(300, min(500, NavigationSvc.width(context) / 3)),
                   ),
+                  child: Container(width: 500),
                 ),
                 Expanded(
                   child: Stack(
@@ -92,8 +92,10 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
               ],
             ),
             ConstrainedBox(
-              constraints:
-                  BoxConstraints(minWidth: 300, maxWidth: max(300, min(500, NavigationSvc.width(context) / 3))),
+              constraints: BoxConstraints(
+                minWidth: 300,
+                maxWidth: max(300, min(500, NavigationSvc.width(context) / 3)),
+              ),
               child: Column(
                 children: [
                   if (!context.samsung)
@@ -122,7 +124,7 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
                       ),
                     ),
                   ),
-                  if (context.samsung) _buildDesktopTabBar()
+                  if (context.samsung) _buildDesktopTabBar(),
                 ],
               ),
             ),
@@ -146,8 +148,8 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
               SliverToBoxAdapter(
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                      minHeight:
-                          context.height - 50 - context.mediaQueryPadding.top - context.mediaQueryViewPadding.top),
+                    minHeight: context.height - 50 - context.mediaQueryPadding.top - context.mediaQueryViewPadding.top,
+                  ),
                   child: CustomScrollView(
                     physics: const NeverScrollableScrollPhysics(),
                     shrinkWrap: true,
@@ -175,8 +177,8 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
               SliverToBoxAdapter(
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                      minHeight:
-                          context.height - 50 - context.mediaQueryPadding.top - context.mediaQueryViewPadding.top),
+                    minHeight: context.height - 50 - context.mediaQueryPadding.top - context.mediaQueryViewPadding.top,
+                  ),
                   child: CustomScrollView(
                     physics: const NeverScrollableScrollPhysics(),
                     shrinkWrap: true,
@@ -204,8 +206,8 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
               SliverToBoxAdapter(
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                      minHeight:
-                          context.height - 50 - context.mediaQueryPadding.top - context.mediaQueryViewPadding.top),
+                    minHeight: context.height - 50 - context.mediaQueryPadding.top - context.mediaQueryViewPadding.top,
+                  ),
                   child: CustomScrollView(
                     physics: const NeverScrollableScrollPhysics(),
                     shrinkWrap: true,
@@ -228,30 +230,21 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
           padding: const EdgeInsets.only(top: 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(context.iOS ? CupertinoIcons.person_2 : Icons.person),
-              const Text("Friends"),
-            ],
+            children: [Icon(context.iOS ? CupertinoIcons.person_2 : Icons.person), const Text("Friends")],
           ),
         ),
         Container(
           padding: const EdgeInsets.only(top: 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(context.iOS ? CupertinoIcons.device_desktop : Icons.devices),
-              const Text("Devices"),
-            ],
+            children: [Icon(context.iOS ? CupertinoIcons.device_desktop : Icons.devices), const Text("Devices")],
           ),
         ),
         Container(
           padding: const EdgeInsets.only(top: 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(context.iOS ? CupertinoIcons.device_phone_portrait : Icons.devices),
-              const Text("Items"),
-            ],
+            children: [Icon(context.iOS ? CupertinoIcons.device_phone_portrait : Icons.devices), const Text("Items")],
           ),
         ),
       ],
@@ -261,6 +254,7 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
   Widget _buildNormalLayout(BuildContext context) {
     const minPanelHeight = 50.0;
     final maxPanelHeight = MediaQuery.of(context).size.height * 0.75;
+    const snapPoint = 0.5;
     return Obx(
       () => BBScaffold(
         backgroundColor: context.material ? context.tileColor : context.headerColor,
@@ -269,88 +263,78 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
         extendBodyBehindBottomPill: false,
         body: Stack(
           children: [
-            SlidingUpPanel(
-              controller: controller.panelController,
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(25.0),
-                topRight: Radius.circular(25.0),
-              ),
-              minHeight: minPanelHeight,
-              maxHeight: maxPanelHeight,
-              snapPoint: 0.5,
-              disableDraggableOnScrolling: true,
-              backdropEnabled: false,
-              parallaxEnabled: true,
-              panelSnapping: true,
-              onPanelSlide: (position) => _panelPosition.value = position,
-              header: ForceDraggableWidget(
-                child: SizedBox(
-                  width: MediaQuery.of(context).size.width,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 10.0, bottom: 40),
-                    child: Align(
-                      alignment: Alignment.topCenter,
-                      child: Container(
-                        width: 50,
-                        height: 5,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.outline,
-                          borderRadius: BorderRadius.circular(5),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // The panel sizes its map to the full screen height, so the map runs
+                // under the bottom navigation bar. Frame the map for the part left
+                // visible above the halfway drawer; it stays put while the drawer moves.
+                final hiddenBelowPanel = max(0.0, MediaQuery.of(context).size.height - constraints.maxHeight);
+                controller.cameraPadding = EdgeInsets.fromLTRB(
+                  40,
+                  MediaQuery.of(context).padding.top + 80,
+                  40,
+                  hiddenBelowPanel + minPanelHeight + snapPoint * (maxPanelHeight - minPanelHeight) + 40,
+                );
+                return SlidingUpPanel(
+                  controller: controller.panelController,
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(25.0),
+                    topRight: Radius.circular(25.0),
+                  ),
+                  minHeight: minPanelHeight,
+                  maxHeight: maxPanelHeight,
+                  snapPoint: snapPoint,
+                  disableDraggableOnScrolling: true,
+                  backdropEnabled: false,
+                  parallaxEnabled: false,
+                  panelSnapping: true,
+                  onPanelSlide: (position) => _panelPosition.value = position,
+                  header: ForceDraggableWidget(
+                    child: SizedBox(
+                      width: MediaQuery.of(context).size.width,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 10.0, bottom: 40),
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child: Container(
+                            width: 50,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.outline,
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ),
-              panelBuilder: () => ValueListenableBuilder<double>(
-                valueListenable: _panelPosition,
-                child: TabBarView(
-                  physics: const NeverScrollableScrollPhysics(),
-                  controller: controller.tabController,
-                  children: <Widget>[
-                    _buildScrollNotificationWrapper(
-                      controller.friendsController,
-                      _buildFriendsTab(context, false),
+                  panelBuilder: () => ValueListenableBuilder<double>(
+                    valueListenable: _panelPosition,
+                    child: TabBarView(
+                      physics: const NeverScrollableScrollPhysics(),
+                      controller: controller.tabController,
+                      children: <Widget>[
+                        _buildScrollNotificationWrapper(controller.friendsController, _buildFriendsTab(context, false)),
+                        _buildScrollNotificationWrapper(controller.devicesController, _buildDevicesTab(context, false)),
+                        _buildScrollNotificationWrapper(controller.itemsController, _buildItemsTab(context, false)),
+                      ],
                     ),
-                    _buildScrollNotificationWrapper(
-                      controller.devicesController,
-                      _buildDevicesTab(context, false),
-                    ),
-                    _buildScrollNotificationWrapper(
-                      controller.itemsController,
-                      _buildItemsTab(context, false),
-                    ),
-                  ],
-                ),
-                builder: (context, position, child) {
-                  final hiddenHeight = (1 - position) * (maxPanelHeight - minPanelHeight);
-                  final isCollapsed = position <= 0.01;
-                  return Padding(
-                    padding: EdgeInsets.only(bottom: hiddenHeight),
-                    child: IgnorePointer(
-                      ignoring: isCollapsed,
-                      child: Opacity(opacity: isCollapsed ? 0 : 1, child: child!),
-                    ),
-                  );
-                },
-              ),
-              body: ValueListenableBuilder<double>(
-                valueListenable: _panelPosition,
-                builder: (context, position, _) {
-                  final panelHeight = minPanelHeight + position * (maxPanelHeight - minPanelHeight);
-                  return Padding(
-                    padding: EdgeInsets.only(bottom: panelHeight),
-                    child: Listener(
-                      behavior: HitTestBehavior.translucent,
-                      onPointerDown: (_) {
-                        if (_panelPosition.value > 0.01) controller.panelController.close();
-                      },
-                      child: FindMyMapWidget(controller: controller),
-                    ),
-                  );
-                },
-              ),
+                    builder: (context, position, child) {
+                      final hiddenHeight = (1 - position) * (maxPanelHeight - minPanelHeight);
+                      final isCollapsed = position <= 0.01;
+                      return Padding(
+                        padding: EdgeInsets.only(bottom: hiddenHeight),
+                        child: IgnorePointer(
+                          ignoring: isCollapsed,
+                          child: Opacity(opacity: isCollapsed ? 0 : 1, child: child!),
+                        ),
+                      );
+                    },
+                  ),
+                  body: FindMyMapWidget(controller: controller),
+                );
+              },
             ),
             if (!context.samsung)
               Positioned(
@@ -385,8 +369,13 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
         if (scrollController.hasClients && scrollController.offset > 0 && scrollController.offset < scrollDistance) {
           final double snapOffset = scrollController.offset / scrollDistance > 0.5 ? scrollDistance : 0;
 
-          Future.microtask(() => scrollController.animateTo(snapOffset,
-              duration: const Duration(milliseconds: 200), curve: Curves.linear));
+          Future.microtask(
+            () => scrollController.animateTo(
+              snapOffset,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.linear,
+            ),
+          );
         }
         return false;
       },
@@ -400,18 +389,12 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
         selectedIndex: controller.tabIndex.value,
         backgroundColor: context.headerColor,
         destinations: [
-          NavigationDestination(
-            icon: Icon(context.iOS ? CupertinoIcons.person_2 : Icons.person),
-            label: "FRIENDS",
-          ),
+          NavigationDestination(icon: Icon(context.iOS ? CupertinoIcons.person_2 : Icons.person), label: "FRIENDS"),
           NavigationDestination(
             icon: Icon(context.iOS ? CupertinoIcons.device_desktop : Icons.devices),
             label: "DEVICES",
           ),
-          NavigationDestination(
-            icon: Icon(context.iOS ? CupertinoIcons.headphones : Icons.earbuds),
-            label: "ITEMS",
-          ),
+          NavigationDestination(icon: Icon(context.iOS ? CupertinoIcons.headphones : Icons.earbuds), label: "ITEMS"),
         ],
         onDestinationSelected: (page) {
           final oldIndex = controller.tabIndex.value;
@@ -479,8 +462,11 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
                 ? buildProgressIndicator(context)
                 : IconButton(
                     iconSize: 22,
-                    icon: Icon(context.iOS ? CupertinoIcons.arrow_counterclockwise : Icons.refresh,
-                        color: context.theme.colorScheme.onSurface, size: 22),
+                    icon: Icon(
+                      context.iOS ? CupertinoIcons.arrow_counterclockwise : Icons.refresh,
+                      color: context.theme.colorScheme.onSurface,
+                      size: 22,
+                    ),
                     onPressed: () {
                       controller.refreshing.value = true;
                       controller.refreshing2.value = true;
@@ -497,18 +483,21 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
     return SizedBox(
       height: appWindow.titleBarHeight,
       child: AbsorbPointer(
-        child: Row(children: [
-          Expanded(child: Container()),
-          ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaY: 2, sigmaX: 2),
-              child: Container(
+        child: Row(
+          children: [
+            Expanded(child: Container()),
+            ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaY: 2, sigmaX: 2),
+                child: Container(
                   height: appWindow.titleBarHeight,
                   width: appWindow.titleBarButtonSize.width * 3,
-                  color: context.theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)),
+                  color: context.theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                ),
+              ),
             ),
-          ),
-        ]),
+          ],
+        ),
       ),
     );
   }
@@ -534,21 +523,27 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
               fit: StackFit.expand,
               children: [
                 FadeTransition(
-                  opacity: Tween(begin: 0.0, end: 1.0).animate(CurvedAnimation(
-                    parent: animation,
-                    curve: const Interval(0.3, 1.0, curve: Curves.easeIn),
-                  )),
+                  opacity: Tween(begin: 0.0, end: 1.0).animate(
+                    CurvedAnimation(
+                      parent: animation,
+                      curve: const Interval(0.3, 1.0, curve: Curves.easeIn),
+                    ),
+                  ),
                   child: Center(
-                      child: Text(title,
-                          style: context.theme.textTheme.displaySmall!
-                              .copyWith(color: context.theme.colorScheme.onSurface),
-                          textAlign: TextAlign.center)),
+                    child: Text(
+                      title,
+                      style: context.theme.textTheme.displaySmall!.copyWith(color: context.theme.colorScheme.onSurface),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ),
                 FadeTransition(
-                  opacity: Tween(begin: 1.0, end: 0.0).animate(CurvedAnimation(
-                    parent: animation,
-                    curve: const Interval(0.0, 0.7, curve: Curves.easeOut),
-                  )),
+                  opacity: Tween(begin: 1.0, end: 0.0).animate(
+                    CurvedAnimation(
+                      parent: animation,
+                      curve: const Interval(0.0, 0.7, curve: Curves.easeOut),
+                    ),
+                  ),
                   child: Align(
                     alignment: Alignment.bottomLeft,
                     child: Container(
@@ -556,10 +551,7 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
                       height: 50,
                       child: Align(
                         alignment: Alignment.centerLeft,
-                        child: Text(
-                          title,
-                          style: context.theme.textTheme.titleLarge,
-                        ),
+                        child: Text(title, style: context.theme.textTheme.titleLarge),
                       ),
                     ),
                   ),
@@ -570,10 +562,7 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
                     alignment: Alignment.bottomLeft,
                     child: SizedBox(
                       height: 50,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: buildBackButton(context),
-                      ),
+                      child: Align(alignment: Alignment.centerLeft, child: buildBackButton(context)),
                     ),
                   ),
                 ),
@@ -597,8 +586,11 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
                                     ? buildProgressIndicator(context)
                                     : IconButton(
                                         iconSize: 22,
-                                        icon: Icon(context.iOS ? CupertinoIcons.arrow_counterclockwise : Icons.refresh,
-                                            color: context.theme.colorScheme.onSurface, size: 22),
+                                        icon: Icon(
+                                          context.iOS ? CupertinoIcons.arrow_counterclockwise : Icons.refresh,
+                                          color: context.theme.colorScheme.onSurface,
+                                          size: 22,
+                                        ),
                                         onPressed: () {
                                           controller.refreshing.value = true;
                                           controller.refreshing2.value = true;
