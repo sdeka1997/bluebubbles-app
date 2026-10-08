@@ -29,4 +29,34 @@ void main() {
   test('does not use a display title as a contact address', () {
     expect(findMyContactLookupAddress(friend(title: 'Saved Person')), isNull);
   });
+  test('matches native phone contacts across a country-code difference', () {
+    final contact = ContactV2(
+      displayName: 'Saved Person',
+      nativeContactId: 'native-id',
+      isNative: true,
+      addresses: ['2145550123'],
+    );
+    expect(findMyContactMatchesAddress(contact, '+12145550123'), isTrue);
+  });
+
+  test('matches email addresses case-insensitively', () {
+    final contact = ContactV2(
+      displayName: 'Saved Person',
+      nativeContactId: 'native-id',
+      isNative: true,
+      addresses: ['Person@Example.com'],
+    );
+    expect(findMyContactMatchesAddress(contact, 'person@example.com'), isTrue);
+  });
+
+  test('does not match a different phone number', () {
+    final contact = ContactV2(
+      displayName: 'Saved Person',
+      nativeContactId: 'native-id',
+      isNative: true,
+      addresses: ['2145550123'],
+    );
+    expect(findMyContactMatchesAddress(contact, '+19725550123'), isFalse);
+  });
+
 }
