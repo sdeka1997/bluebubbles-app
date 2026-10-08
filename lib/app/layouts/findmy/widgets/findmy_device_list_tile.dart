@@ -44,7 +44,6 @@ class FindMyDeviceListTile extends StatelessWidget {
         subtitle: Text(subtitle),
         onTap: markerPoint != null
             ? () async {
-                await controller.panelController.close();
                 await controller.completer.future;
                 final marker = controller.markers[item.id];
                 if (marker == null) return;

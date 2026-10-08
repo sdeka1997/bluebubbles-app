@@ -26,21 +26,29 @@ class FindMyMapWidget extends StatelessWidget {
     return TrackpadBugWrapper(
       builder: (context, bugDetected) {
         return Obx(() {
-          final visibleItems = controller.tabIndex.value == 2
+          final tab = controller.tabIndex.value;
+          final logicalItems = tab == 2
               ? collapseFindMyAccessoryComponents(
                   controller.devices.where((item) => item.isConsideredAccessory).toList(),
                 )
               : const <FindMyDevice>[];
-          final visibleMarkers = controller.visibleMarkers.where((marker) {
-            if (controller.tabIndex.value != 2) return true;
-            final key = (marker.key as ValueKey?)?.value as String? ?? '';
-            if (key == 'current' || !key.startsWith('device-')) return true;
-            final deviceId = key.substring('device-'.length);
-            final device = controller.devices.firstWhereOrNull((item) => item.id == deviceId);
-            return device == null || visibleItems.contains(device);
-          }).toList();
+          final products = switch (tab) {
+            1 => controller.devices.where((item) => !item.isConsideredAccessory).toList(),
+            2 => logicalItems,
+            _ => const <FindMyDevice>[],
+          };
+          // Friends always remain individual. Devices and items group only by
+          // Apple owner plus physical place, independent of the map zoom.
+          final markerGroups = tab == 0
+              ? controller.visibleMarkers.map((marker) => [marker]).toList()
+              : _groupProductMarkers(products);
+          final visibleMarkers = markerGroups.expand((group) => group).toList();
+          final renderedMarkers = markerGroups
+              .map((group) => group.length == 1 ? group.single : _buildGroupMarker(context, group))
+              .toList();
           final currentLocation = controller.location.value;
-          final currentCenter = isUsableFindMyCoordinate(currentLocation?.latitude, currentLocation?.longitude)
+          final currentCenter =
+              tab == 0 && isUsableFindMyCoordinate(currentLocation?.latitude, currentLocation?.longitude)
               ? LatLng(currentLocation!.latitude, currentLocation.longitude)
               : null;
           LatLng? markerCenter;
@@ -89,22 +97,14 @@ class FindMyMapWidget extends StatelessWidget {
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.bluebubbles.app',
               ),
-              Builder(
-                builder: (context) {
-                  // Rebuilds as the map moves, so markers regroup at every zoom level.
-                  final grouped = groupOverlappingFindMyMarkers(visibleMarkers, MapCamera.of(context));
-                  return PopupMarkerLayer(
-                    options: PopupMarkerLayerOptions(
-                      popupController: controller.popupController,
-                      markers: grouped
-                          .map((group) => group.length == 1 ? group.single : _buildGroupMarker(context, group))
-                          .toList(),
-                      popupDisplayOptions: PopupDisplayOptions(
-                        builder: (context, marker) => _buildMarkerPopup(context, marker),
-                      ),
-                    ),
-                  );
-                },
+              PopupMarkerLayer(
+                options: PopupMarkerLayerOptions(
+                  popupController: controller.popupController,
+                  markers: renderedMarkers,
+                  popupDisplayOptions: PopupDisplayOptions(
+                    builder: (context, marker) => _buildMarkerPopup(context, marker),
+                  ),
+                ),
               ),
               RichAttributionWidget(
                 attributions: [
@@ -121,8 +121,29 @@ class FindMyMapWidget extends StatelessWidget {
     );
   }
 
-  /// One marker standing in for several that would overlap on screen, drawn
-  /// as the top marker with a count badge, as Find My does.
+  List<List<Marker>> _groupProductMarkers(List<FindMyDevice> products) {
+    final points = <FindMyProductPoint>[];
+    for (final product in products) {
+      final id = product.id;
+      final location = product.location;
+      if (id == null || !isUsableFindMyCoordinate(location?.latitude, location?.longitude)) continue;
+      points.add(
+        FindMyProductPoint(
+          id: id,
+          ownerId: product.prsId,
+          location: controller.markerPointForDevice(product),
+          accuracyMeters: location!.horizontalAccuracy ?? 50,
+        ),
+      );
+    }
+    return groupFindMyProductsByOwnerAndPlace(points)
+        .map((group) => group.map((point) => controller.markers[point.id]).whereType<Marker>().toList())
+        .where((group) => group.isNotEmpty)
+        .toList();
+  }
+
+  /// One marker standing in for multiple products owned by one person at one
+  /// physical place, drawn as the first product with a total-count badge.
   Marker _buildGroupMarker(BuildContext context, List<Marker> group) {
     final memberKeys = group.map(_markerKey).toList();
     _groupMembers[memberKeys.join('|')] = memberKeys;
@@ -205,7 +226,7 @@ class FindMyMapWidget extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.only(bottom: 5.0),
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 260, maxHeight: 280),
+          constraints: const BoxConstraints(maxWidth: 260, maxHeight: 180),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(10),
             color: context.theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.9),

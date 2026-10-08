@@ -1,6 +1,4 @@
 import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
-import 'package:flutter/widgets.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -69,29 +67,51 @@ void main() {
     expect(clusters, hasLength(1));
   });
 
-  group('groupOverlappingFindMyMarkers', () {
-    Marker marker(String key, LatLng point) => Marker(key: ValueKey(key), point: point, child: const SizedBox());
-    final camera = MapCamera(
-      crs: const Epsg3857(),
-      center: dallas,
-      zoom: 13,
-      rotation: 0,
-      nonRotatedSize: const Size(400, 800),
-    );
+  group('groupFindMyProductsByOwnerAndPlace', () {
+    FindMyProductPoint point(String id, String? owner, LatLng location, double accuracy) =>
+        FindMyProductPoint(id: id, ownerId: owner, location: location, accuracyMeters: accuracy);
 
-    test('stacks co-located devices even when the user is in the same spot', () {
-      final groups = groupOverlappingFindMyMarkers([
-        marker('current', dallas),
-        marker('device-a', dallas),
-        marker('device-b', dallas),
-        marker('device-c', const LatLng(32.7768, -96.7971)),
-        marker('device-d', plano),
-      ], camera);
-      final keys = groups.map((g) => g.map((m) => (m.key as ValueKey).value).toList()).toList();
-      expect(keys, [
-        ['current'],
-        ['device-a', 'device-b', 'device-c'],
-        ['device-d'],
+    test('groups one owner devices whose accuracy areas overlap', () {
+      final groups = groupFindMyProductsByOwnerAndPlace([
+        point('phone', 'owner-a', dallas, 5),
+        point('laptop', 'owner-a', const LatLng(32.77695, -96.7970), 45),
+        point('watch', 'owner-a', const LatLng(32.77705, -96.7970), 65),
+      ]);
+      expect(groups.map((group) => group.map((e) => e.id).toList()), [
+        ['phone', 'laptop', 'watch'],
+      ]);
+    });
+
+    test('keeps different owners separate at the same place', () {
+      final groups = groupFindMyProductsByOwnerAndPlace([
+        point('mine', 'owner-a', dallas, 5),
+        point('family', 'owner-b', dallas, 5),
+      ]);
+      expect(groups.map((group) => group.map((e) => e.id).toList()), [
+        ['mine'],
+        ['family'],
+      ]);
+    });
+
+    test('keeps the same owner separate at genuinely different places', () {
+      final groups = groupFindMyProductsByOwnerAndPlace([
+        point('home', 'owner-a', dallas, 100),
+        point('away', 'owner-a', plano, 100),
+      ]);
+      expect(groups.map((group) => group.map((e) => e.id).toList()), [
+        ['home'],
+        ['away'],
+      ]);
+    });
+
+    test('does not merge records with an unknown owner', () {
+      final groups = groupFindMyProductsByOwnerAndPlace([
+        point('unknown-a', null, dallas, 100),
+        point('unknown-b', null, dallas, 100),
+      ]);
+      expect(groups.map((group) => group.map((e) => e.id).toList()), [
+        ['unknown-a'],
+        ['unknown-b'],
       ]);
     });
   });

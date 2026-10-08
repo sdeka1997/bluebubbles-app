@@ -167,18 +167,23 @@ class FindMyController extends GetxController {
     if (focus.isEmpty) return;
     try {
       // The zoom cap keeps a single location at neighbourhood scale.
-      mapController.fitCamera(CameraFit.coordinates(coordinates: focus, padding: cameraPadding, maxZoom: 13));
+      mapController.fitCamera(CameraFit.coordinates(coordinates: focus, padding: cameraPadding, maxZoom: 16));
     } catch (e, s) {
       Logger.warn("Failed to frame the Find My map", error: e, trace: s, tag: 'FindMyController');
     }
   }
 
-  void noteCameraGesture() => _cameraMovedByUser = true;
+  void noteCameraGesture() {
+    _cameraMovedByUser = true;
+    popupController.hideAllPopups();
+  }
 
-  /// Centers the map on one location the user picked from the list.
+  /// Shows one selected person or product at street level while respecting the
+  /// same halfway-drawer viewport as the opening camera.
   void focusMap(LatLng point) {
     _cameraMovedByUser = true;
-    mapController.move(point, 10);
+    popupController.hideAllPopups();
+    mapController.fitCamera(CameraFit.coordinates(coordinates: [point], padding: cameraPadding, maxZoom: 16));
   }
 
   /// Records friends' current locations and fills in a missing one from the
@@ -454,7 +459,7 @@ class FindMyController extends GetxController {
       _ => _itemMarkerKeys,
     };
     return markers.entries
-        .where((entry) => entry.key == 'current' || visibleKeys.contains(entry.key))
+        .where((entry) => (tabIndex.value == 0 && entry.key == 'current') || visibleKeys.contains(entry.key))
         .map((entry) => entry.value)
         .toList();
   }
@@ -477,7 +482,9 @@ class FindMyController extends GetxController {
           child: Center(
             child: Padding(
               padding: const EdgeInsets.only(bottom: 5.0),
-              child: e.role?['emoji'] != null
+              child: (e.isAppleAudioAccessory || (e.modelDisplayName?.toLowerCase().contains('airpods') ?? false))
+                  ? const Icon(Icons.headphones, color: Colors.black, size: 20)
+                  : e.role?['emoji'] != null
                   ? Text(
                       e.role!['emoji'],
                       style: Get.context!.theme.textTheme.bodyLarge!.copyWith(fontFamily: 'Apple Color Emoji'),

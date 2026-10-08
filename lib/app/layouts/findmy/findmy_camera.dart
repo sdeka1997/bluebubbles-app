@@ -1,5 +1,3 @@
-import 'package:flutter/widgets.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 const Distance _distance = Distance();
@@ -94,35 +92,58 @@ List<LatLng> selectFindMyCameraFocus(List<LatLng> points, {LatLng? anchor}) {
   return all;
 }
 
-/// Markers closer than this on screen, in logical pixels, are drawn as one.
-const double _overlapDistance = 30;
+/// A logical Find My product to group by owner and physical place.
+class FindMyProductPoint {
+  const FindMyProductPoint({
+    required this.id,
+    required this.ownerId,
+    required this.location,
+    required this.accuracyMeters,
+  });
 
-/// Groups [markers] that would overlap at the [camera]'s current zoom.
+  final String id;
+  final String? ownerId;
+  final LatLng location;
+  final double accuracyMeters;
+}
+
+/// Groups devices or items only when Apple says they have the same owner and
+/// their reported accuracy areas describe the same physical place.
 ///
-/// Each group keeps the order of [markers], so the first marker in a group is
-/// the one drawn on top. The user's own location is never grouped.
-List<List<Marker>> groupOverlappingFindMyMarkers(List<Marker> markers, MapCamera camera) {
-  final groups = <List<Marker>>[];
-  final anchors = <Offset>[];
-  for (final marker in markers) {
-    final key = (marker.key as ValueKey?)?.value;
-    final position = camera.projectAtZoom(marker.point, camera.zoom);
-    if (key != 'current') {
-      var index = -1;
-      for (var i = 0; i < groups.length; i++) {
-        final groupKey = (groups[i].first.key as ValueKey?)?.value;
-        if (groupKey != 'current' && (anchors[i] - position).distance < _overlapDistance) {
-          index = i;
-          break;
+/// The 50 m floor absorbs normal GPS/Wi-Fi disagreement at one home. The
+/// 150 m ceiling prevents a very rough fix from swallowing a neighborhood.
+/// Unknown owners stay separate because combining them could mix people.
+List<List<FindMyProductPoint>> groupFindMyProductsByOwnerAndPlace(List<FindMyProductPoint> points) {
+  final groups = <List<FindMyProductPoint>>[
+    for (final point in points) [point],
+  ];
+
+  bool samePlace(FindMyProductPoint a, FindMyProductPoint b) {
+    if (a.ownerId == null || b.ownerId == null || a.ownerId != b.ownerId) return false;
+    final threshold = (a.accuracyMeters + b.accuracyMeters).clamp(50.0, 150.0);
+    return _distance.as(LengthUnit.Meter, a.location, b.location) <= threshold;
+  }
+
+  while (true) {
+    var bestA = -1;
+    var bestB = -1;
+    var bestDistance = double.infinity;
+    for (var a = 0; a < groups.length; a++) {
+      for (var b = a + 1; b < groups.length; b++) {
+        // Complete-link merging avoids a chain of marginal fixes stretching a
+        // single "place" across a neighborhood.
+        if (!groups[a].every((left) => groups[b].every((right) => samePlace(left, right)))) continue;
+        final distance = _distance.as(LengthUnit.Meter, groups[a].first.location, groups[b].first.location);
+        if (distance < bestDistance) {
+          bestA = a;
+          bestB = b;
+          bestDistance = distance;
         }
       }
-      if (index != -1) {
-        groups[index].add(marker);
-        continue;
-      }
     }
-    groups.add([marker]);
-    anchors.add(position);
+    if (bestA == -1) break;
+    groups[bestA].addAll(groups.removeAt(bestB));
   }
+
   return groups;
 }
