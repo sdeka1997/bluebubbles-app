@@ -173,6 +173,14 @@ class FindMyController extends GetxController {
     }
   }
 
+  /// Returns the current tab to its opening camera after a row selection or
+  /// manual pan/zoom.
+  void resetMapToTab() {
+    _cameraMovedByUser = false;
+    popupController.hideAllPopups();
+    fitCameraToTab();
+  }
+
   void noteCameraGesture() {
     _cameraMovedByUser = true;
     popupController.hideAllPopups();

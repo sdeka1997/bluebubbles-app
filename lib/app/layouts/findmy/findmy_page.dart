@@ -398,21 +398,16 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
         ],
         onDestinationSelected: (page) {
           final oldIndex = controller.tabIndex.value;
-          final panelPosition = controller.panelController.panelPosition;
           controller.popupController.hideAllPopups();
           controller.tabIndex.value = page;
           controller.tabController!.animateTo(page);
 
-          // Switching tabs preserves the drawer height. Re-tapping the active tab
-          // advances collapsed → half → open, then returns to collapsed.
+          // Switching tabs opens that tab's normal camera while preserving the
+          // drawer. Re-tapping the active tab is Find My's "return to default":
+          // snap the drawer halfway and restore that tab's opening camera.
           if (oldIndex != page) return;
-          if (panelPosition <= 0.01) {
-            controller.panelController.animatePanelToSnapPoint();
-          } else if (panelPosition < 0.99) {
-            controller.panelController.open();
-          } else {
-            controller.panelController.close();
-          }
+          controller.panelController.animatePanelToSnapPoint();
+          controller.resetMapToTab();
         },
       ),
     );
