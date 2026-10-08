@@ -90,9 +90,6 @@ class FindMyFriendListTile extends StatelessWidget {
             : null,
         onTap: withLocation && markerPoint != null
             ? () async {
-                if (context.isPhone) {
-                  await controller.panelController.close();
-                }
                 await controller.completer.future;
                 final marker = controller.markers[item.stableId];
                 if (marker == null) return;
