@@ -44,8 +44,6 @@ class FindMyFriendListTile extends StatelessWidget {
       final distance = hasLocation && withLocation
           ? controller.distanceLabelTo(LatLng(item.latitude!, item.longitude!))
           : null;
-      // Only people saved in the phone's own contacts get a Contact button.
-      final contact = hideContactInfo ? null : item.handle?.contactsV2.where((c) => c.isNative).firstOrNull;
 
       final leading = Stack(
         clipBehavior: Clip.none,
@@ -88,28 +86,34 @@ class FindMyFriendListTile extends StatelessWidget {
         curve: Curves.easeOut,
         alignment: Alignment.topCenter,
         child: selected
-            ? FindMySelectedCard(
-                leading: leading,
-                title: displayName,
-                distance: distance,
-                street: hideContactInfo ? 'Location' : (item.longAddress ?? item.shortAddress ?? 'No location found'),
-                status: live ? 'Live' : age,
-                live: live,
-                onTap: markerPoint == null ? null : select,
-                onLongPress: hideContactInfo ? null : showRawData,
-                onDirections: withLocation && markerPoint != null
-                    ? () => MapsLauncher.launchCoordinates(markerPoint.latitude, markerPoint.longitude)
-                    : null,
-                onContact: contact == null
-                    ? null
-                    : () async {
-                        try {
-                          await MethodChannelSvc.actions.viewContactForm(nativeContactId: contact.nativeContactId);
-                        } catch (e, s) {
-                          Logger.error("Failed to find contact on device", error: e, trace: s);
-                          showSnackbar("Error", "Failed to find contact on device!", type: SnackbarType.error);
-                        }
-                      },
+            ? FutureBuilder<ContactV2?>(
+                future: hideContactInfo ? Future.value() : controller.nativeContactForFriend(item),
+                builder: (context, snapshot) {
+                  final contact = snapshot.data;
+                  return FindMySelectedCard(
+                    leading: leading,
+                    title: displayName,
+                    distance: distance,
+                    street: hideContactInfo ? 'Location' : (item.longAddress ?? item.shortAddress ?? 'No location found'),
+                    status: live ? 'Live' : age,
+                    live: live,
+                    onTap: markerPoint == null ? null : select,
+                    onLongPress: hideContactInfo ? null : showRawData,
+                    onDirections: withLocation && markerPoint != null
+                        ? () => MapsLauncher.launchCoordinates(markerPoint.latitude, markerPoint.longitude)
+                        : null,
+                    onContact: contact == null
+                        ? null
+                        : () async {
+                            try {
+                              await MethodChannelSvc.actions.viewContactForm(nativeContactId: contact.nativeContactId);
+                            } catch (e, s) {
+                              Logger.error("Failed to find contact on device", error: e, trace: s);
+                              showSnackbar("Error", "Failed to find contact on device!", type: SnackbarType.error);
+                            }
+                          },
+                  );
+                },
               )
             : ListTile(
                 mouseCursor: MouseCursor.defer,

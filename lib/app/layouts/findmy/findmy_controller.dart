@@ -15,9 +15,11 @@ import 'package:universal_io/io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:bluebubbles/app/components/avatars/contact_avatar_widget.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_contact.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_format.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_cache.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_scroll.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_items_tab_view.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_clipper.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_pin_clipper.dart';
@@ -47,6 +49,7 @@ class FindMyController extends GetxController {
   final RxMap<String, Marker> markers = <String, Marker>{}.obs;
   final RxnString selectedMarkerKey = RxnString();
   final Map<String, GlobalKey> _rowKeys = <String, GlobalKey>{};
+  final Map<String, Future<ContactV2?>> _contactLookups = <String, Future<ContactV2?>>{};
   final Set<String> _friendMarkerKeys = <String>{};
   final Set<String> _deviceMarkerKeys = <String>{};
   final Set<String> _itemMarkerKeys = <String>{};
@@ -180,6 +183,19 @@ class FindMyController extends GetxController {
     }
   }
 
+  /// Resolves a saved phone contact even when Find My's exact iMessage
+  /// handle was not hydrated with its ContactV2 relationship.
+  Future<ContactV2?> nativeContactForFriend(FindMyFriend friend) {
+    final linked = friend.handle?.contactsV2.where((contact) => contact.isNative).firstOrNull;
+    if (linked != null) return Future.value(linked);
+    final address = findMyContactLookupAddress(friend);
+    if (address == null) return Future.value(null);
+    return _contactLookups.putIfAbsent(friend.stableId ?? address, () async {
+      final contact = await ContactsSvcV2.getContact(address);
+      return contact?.isNative == true ? contact : null;
+    });
+  }
+
   /// Distance from the user's own location to [point] in Find My's format,
   /// or null when the user's location is unknown or contact info is hidden.
   String? distanceLabelTo(LatLng point) {
@@ -214,13 +230,10 @@ class FindMyController extends GetxController {
     if (panelController.isAttached) await panelController.animatePanelToSnapPoint();
     if (!selectionIsCurrent()) return;
     focusMap(point);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!selectionIsCurrent()) return;
-      final rowContext = _rowKeys[markerKey]?.currentContext;
-      if (rowContext != null) {
-        Scrollable.ensureVisible(rowContext, duration: const Duration(milliseconds: 250));
-      }
-    });
+    final rowKey = _rowKeys[markerKey];
+    if (rowKey != null) {
+      unawaited(ensureFindMyRowVisibleAfterExpansion(rowKey, isCurrent: selectionIsCurrent));
+    }
   }
 
   /// Returns the current tab to its opening camera after a row selection or

@@ -37,7 +37,7 @@ class FindMyFriend {
 
   /// Stable identifier for matching and map marker keys.
   /// Prefers the hydrated handle key; falls back to the raw server address.
-  String? get stableId => handle?.uniqueAddressAndService ?? handleAddress;
+  String? get stableId => handle?.uniqueAddressAndService ?? handleAddress ?? title;
 
   factory FindMyFriend.fromJson(Map<String, dynamic> json) => FindMyFriend(
         latitude: json["coordinates"]?[0].toDouble(),
@@ -46,7 +46,7 @@ class FindMyFriend {
         shortAddress: json["short_address"],
         title: json["title"],
         subtitle: json["subtitle"],
-        handleAddress: json["handle"] ?? json["title"],
+        handleAddress: json["handle"],
         handle: json["handle"] == null && json["title"] == null
             ? null
             : Handle.findOne(addressAndService: HandleLookupKey(json["handle"] ?? json["title"], "iMessage")),
