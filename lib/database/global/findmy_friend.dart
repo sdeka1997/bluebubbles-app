@@ -18,6 +18,7 @@ class FindMyFriend {
     required this.lastUpdated,
     required this.status,
     required this.locatingInProgress,
+    required this.favoriteOrder,
   });
 
   final double? latitude;
@@ -32,6 +33,7 @@ class FindMyFriend {
   final DateTime? lastUpdated;
   final LocationStatus? status;
   final bool locatingInProgress;
+  final int? favoriteOrder;
 
   /// Stable identifier for matching and map marker keys.
   /// Prefers the hydrated handle key; falls back to the raw server address.
@@ -52,6 +54,7 @@ class FindMyFriend {
             (json["last_updated"] ?? 0) == 0 ? null : DateTime.fromMillisecondsSinceEpoch(json["last_updated"]),
         status: LocationStatus.values.firstWhereOrNull((e) => e.name == json["status"]),
         locatingInProgress: json["is_locating_in_progress"] ?? false,
+        favoriteOrder: (json["favorite_order"] as num?)?.toInt(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -64,5 +67,6 @@ class FindMyFriend {
         "last_updated": lastUpdated == null ? null : DateFormat("MMMM d, yyyy h:mm:ss a").format(lastUpdated!),
         "status": status?.name,
         "locating_in_progress": locatingInProgress,
+        "favorite_order": favoriteOrder,
       };
 }

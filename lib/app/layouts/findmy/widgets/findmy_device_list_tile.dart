@@ -27,12 +27,13 @@ class FindMyDeviceListTile extends StatelessWidget {
       final displayName =
           hideContactInfo ? (isItem ? "Item" : "Device") : (item.displayName ?? (isItem ? "Unknown Item" : "Unknown Device"));
 
-      final displayLocation = hideContactInfo
-          ? "Location"
-          : (item.address?.label ?? item.address?.mapItemFullAddress ?? "No location found");
-
       final hasUsableCoordinates =
           isUsableFindMyCoordinate(item.location?.latitude, item.location?.longitude);
+      final displayLocation = hideContactInfo
+          ? "Location"
+          : (item.address?.label ??
+              item.address?.mapItemFullAddress ??
+              (hasUsableCoordinates ? "Locating…" : "No location found"));
       final fullAddress = item.address?.mapItemFullAddress?.trim();
       final hasFullAddress = fullAddress?.isNotEmpty ?? false;
       final markerPoint = hasUsableCoordinates ? controller.markerPointForDevice(item) : null;

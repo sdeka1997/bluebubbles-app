@@ -33,6 +33,9 @@ class FindMyDevice {
     required this.isMac,
     required this.rawDeviceModel,
     required this.baUuid,
+    required this.productIdentifier,
+    required this.serialNumber,
+    required this.isAppleAudioAccessory,
     required this.trackingInfo,
     required this.features,
     required this.deviceDiscoveryId,
@@ -85,6 +88,9 @@ class FindMyDevice {
   final dynamic isMac;
   final String? rawDeviceModel;
   final String? baUuid;
+  final String? productIdentifier;
+  final String? serialNumber;
+  final bool isAppleAudioAccessory;
   final dynamic trackingInfo;
   final Map<String, bool?>? features;
   final String? deviceDiscoveryId;
@@ -107,7 +113,22 @@ class FindMyDevice {
   /// AirPods Max earpiece arrives as its own entry named "single" with
   /// [groupName] set to the headphones it belongs to. Find My displays the
   /// group, so prefer [groupName] and keep [name] only as a fallback.
-  String? get displayName => (groupName?.isNotEmpty ?? false) ? groupName : name;
+  String? get displayName {
+    if (groupName?.isNotEmpty ?? false) return groupName;
+    if (isAppleAudioAccessory && deviceModel == 'hawkeye') {
+      switch (name?.toLowerCase()) {
+        case 'left':
+          return 'Left earbud';
+        case 'right':
+          return 'Right earbud';
+        case 'case':
+          return 'AirPods case';
+        case 'single':
+          return 'AirPods component';
+      }
+    }
+    return name;
+  }
 
   /// True when this entry is a component of another accessory rather than a
   /// standalone item the user owns.
@@ -149,6 +170,9 @@ class FindMyDevice {
         isMac: json["isMac"],
         rawDeviceModel: json["rawDeviceModel"],
         baUuid: json["baUUID"],
+        productIdentifier: json["productIdentifier"],
+        serialNumber: json["serialNumber"],
+        isAppleAudioAccessory: json["isAppleAudioAccessory"] ?? false,
         trackingInfo: json["trackingInfo"],
         features: json["features"]?.cast<String, bool?>(),
         deviceDiscoveryId: json["deviceDiscoveryId"],
@@ -202,6 +226,9 @@ class FindMyDevice {
         "isMac": isMac,
         "rawDeviceModel": rawDeviceModel,
         "baUUID": baUuid,
+        "productIdentifier": productIdentifier,
+        "serialNumber": serialNumber,
+        "isAppleAudioAccessory": isAppleAudioAccessory,
         "trackingInfo": trackingInfo,
         "features": features,
         "deviceDiscoveryId": deviceDiscoveryId,

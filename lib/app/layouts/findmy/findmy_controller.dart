@@ -92,7 +92,7 @@ class FindMyController extends GetxController {
 
   void _rebuildAllMarkers() {
     if (!_isAlive) return;
-    for (final friend in friendsWithLocation) {
+    for (final friend in friends.where(hasUsableFindMyLocation)) {
       buildFriendMarker(friend);
     }
     for (final device in devices.where((e) =>
@@ -220,7 +220,7 @@ class FindMyController extends GetxController {
         _updateFriendLists();
 
         _clearFriendMarkers();
-        for (FindMyFriend e in friendsWithLocation) {
+        for (FindMyFriend e in friends.where(hasUsableFindMyLocation)) {
           buildFriendMarker(e);
         }
         fetching2.value = false;
@@ -290,17 +290,31 @@ class FindMyController extends GetxController {
   }
 
   void _updateFriendLists() {
-    final withLocation = friends.where(hasUsableFindMyLocation).toList();
-    final currentLocation = location.value;
+    List<FindMyFriend> favoritesFirst(Iterable<FindMyFriend> source) {
+      final favorites = source.where((friend) => friend.favoriteOrder != null).toList()
+        ..sort((a, b) => a.favoriteOrder!.compareTo(b.favoriteOrder!));
+      final regular = source.where((friend) => friend.favoriteOrder == null).toList();
+      return [...favorites, ...regular];
+    }
 
-    friendsWithLocation.value = currentLocation == null
-        ? withLocation
+    final currentLocation = location.value;
+    final regularWithLocation = friends
+        .where((friend) => friend.favoriteOrder == null && hasUsableFindMyLocation(friend))
+        .toList();
+    final sortedRegular = currentLocation == null
+        ? regularWithLocation
         : sortFindMyFriendsByDistance(
-            withLocation,
+            regularWithLocation,
             originLatitude: currentLocation.latitude,
             originLongitude: currentLocation.longitude,
           );
-    friendsWithoutLocation.value = friends.where((item) => !hasUsableFindMyLocation(item)).toList();
+    final favoriteWithLocation = friends
+        .where((friend) => friend.favoriteOrder != null && hasUsableFindMyLocation(friend))
+        .toList()
+      ..sort((a, b) => a.favoriteOrder!.compareTo(b.favoriteOrder!));
+    friendsWithLocation.value = [...favoriteWithLocation, ...sortedRegular];
+    friendsWithoutLocation.value =
+        favoritesFirst(friends.where((friend) => !hasUsableFindMyLocation(friend)));
   }
 
   void buildDeviceMarker(FindMyDevice e) {
