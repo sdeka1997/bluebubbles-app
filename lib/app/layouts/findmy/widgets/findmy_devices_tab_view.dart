@@ -1,6 +1,7 @@
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_device_list_tile.dart';
+import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_items_tab_view.dart';
 import 'package:bluebubbles/app/layouts/settings/widgets/settings_widgets.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
@@ -15,7 +16,7 @@ class FindMyDevicesTabView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Obx(() {
-      final allDevices = controller.devices.where((item) => !item.isConsideredAccessory).toList();
+      final allDevices = findMyDeviceProducts(controller.devices);
 
       bool hasUsableLocation(FindMyDevice item) {
         final hasCoordinates = isUsableFindMyCoordinate(item.location?.latitude, item.location?.longitude);

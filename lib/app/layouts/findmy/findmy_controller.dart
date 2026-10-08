@@ -44,6 +44,8 @@ class FindMyController extends GetxController {
   final RxList<FindMyFriend> friendsWithLocation = <FindMyFriend>[].obs;
   final RxList<FindMyFriend> friendsWithoutLocation = <FindMyFriend>[].obs;
   final RxMap<String, Marker> markers = <String, Marker>{}.obs;
+  final RxnString selectedMarkerKey = RxnString();
+  final Map<String, GlobalKey> _rowKeys = <String, GlobalKey>{};
   final Set<String> _friendMarkerKeys = <String>{};
   final Set<String> _deviceMarkerKeys = <String>{};
   final Set<String> _itemMarkerKeys = <String>{};
@@ -87,6 +89,7 @@ class FindMyController extends GetxController {
 
     // Each tab opens on its own framing, as Find My does.
     _tabWorker = ever(tabIndex, (_) {
+      clearSelection();
       _cameraMovedByUser = false;
       fitCameraToTab();
     });
@@ -120,14 +123,20 @@ class FindMyController extends GetxController {
     markers.refresh();
   }
 
+  String markerIdentityForFriend(FindMyFriend friend) =>
+      findMyMarkerIdentity(stableId: friend.stableId, fallbackObject: friend);
+
+  String markerIdentityForDevice(FindMyDevice device) =>
+      findMyMarkerIdentity(stableId: device.id, fallbackObject: device);
+
   LatLng markerPointForFriend(FindMyFriend friend) => resolveFindMyMarkerPoint(
-    stableKey: friend.stableId ?? friend.title ?? 'friend',
+    stableKey: markerIdentityForFriend(friend),
     latitude: friend.latitude!,
     longitude: friend.longitude!,
   );
 
   LatLng markerPointForDevice(FindMyDevice device) => resolveFindMyMarkerPoint(
-    stableKey: device.id ?? device.name ?? 'device',
+    stableKey: markerIdentityForDevice(device),
     latitude: device.location!.latitude!,
     longitude: device.location!.longitude!,
   );
@@ -138,15 +147,12 @@ class FindMyController extends GetxController {
       case 0:
         return friendsWithLocation.map(markerPointForFriend).toList();
       case 1:
-        return devices
-            .where(
-              (e) => !e.isConsideredAccessory && isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude),
-            )
+        return findMyDeviceProducts(devices)
+            .where((e) => isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))
             .map(markerPointForDevice)
             .toList();
       default:
-        // One point per product, so a pair of AirPods counts once rather than three times.
-        return collapseFindMyAccessoryComponents(devices.where((e) => e.isConsideredAccessory).toList())
+        return findMyItemProducts(devices)
             .where((e) => isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))
             .map(markerPointForDevice)
             .toList();
@@ -173,9 +179,42 @@ class FindMyController extends GetxController {
     }
   }
 
+  GlobalKey rowKeyFor(String markerKey) => _rowKeys.putIfAbsent(markerKey, GlobalKey.new);
+
+  bool isSelected(String markerKey) => selectedMarkerKey.value == markerKey;
+
+  void clearSelection() {
+    if (selectedMarkerKey.value == null) return;
+    selectedMarkerKey.value = null;
+    _rebuildAllMarkers();
+  }
+
+  /// Selects one logical entity from either its map marker or drawer row.
+  Future<void> selectMarker(String markerKey, LatLng point) async {
+    final selectedTab = tabIndex.value;
+    bool selectionIsCurrent() => _isAlive && selectedMarkerKey.value == markerKey && tabIndex.value == selectedTab;
+
+    selectedMarkerKey.value = markerKey;
+    _rebuildAllMarkers();
+    popupController.hideAllPopups();
+    if (!completer.isCompleted) await completer.future;
+    if (!selectionIsCurrent()) return;
+    if (panelController.isAttached) await panelController.animatePanelToSnapPoint();
+    if (!selectionIsCurrent()) return;
+    focusMap(point);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!selectionIsCurrent()) return;
+      final rowContext = _rowKeys[markerKey]?.currentContext;
+      if (rowContext != null) {
+        Scrollable.ensureVisible(rowContext, duration: const Duration(milliseconds: 250), alignment: 0.15);
+      }
+    });
+  }
+
   /// Returns the current tab to its opening camera after a row selection or
   /// manual pan/zoom.
   void resetMapToTab() {
+    clearSelection();
     _cameraMovedByUser = false;
     popupController.hideAllPopups();
     fitCameraToTab();
@@ -192,6 +231,22 @@ class FindMyController extends GetxController {
     _cameraMovedByUser = true;
     popupController.hideAllPopups();
     mapController.fitCamera(CameraFit.coordinates(coordinates: [point], padding: cameraPadding, maxZoom: 16));
+  }
+
+  /// Zooms into a capsule until its logical products become individual markers.
+  void focusMarkerGroup(List<LatLng> points) {
+    clearSelection();
+    popupController.hideAllPopups();
+    _cameraMovedByUser = true;
+    final latitude = points.map((point) => point.latitude).reduce((a, b) => a + b) / points.length;
+    final longitude = points.map((point) => point.longitude).reduce((a, b) => a + b) / points.length;
+    mapController.fitCamera(
+      CameraFit.coordinates(
+        coordinates: [LatLng(latitude, longitude)],
+        padding: cameraPadding,
+        maxZoom: findMyDetailZoom,
+      ),
+    );
   }
 
   /// Records friends' current locations and fills in a missing one from the
@@ -466,46 +521,59 @@ class FindMyController extends GetxController {
       1 => _deviceMarkerKeys,
       _ => _itemMarkerKeys,
     };
-    return markers.entries
+    final visible = markers.entries
         .where((entry) => (tabIndex.value == 0 && entry.key == 'current') || visibleKeys.contains(entry.key))
         .map((entry) => entry.value)
         .toList();
+    final selected = selectedMarkerKey.value;
+    if (selected != null) {
+      visible.sort((a, b) {
+        final aSelected = (a.key as ValueKey?)?.value == selected;
+        final bSelected = (b.key as ValueKey?)?.value == selected;
+        return aSelected == bSelected ? 0 : (aSelected ? 1 : -1);
+      });
+    }
+    return visible;
   }
 
   void buildDeviceMarker(FindMyDevice e) {
-    final markerKey = e.id ?? randomString(6);
+    final markerKey = markerIdentityForDevice(e);
+    final selected = isSelected('device-$markerKey');
     _deviceMarkerKeys.remove(markerKey);
     _itemMarkerKeys.remove(markerKey);
-    (e.isConsideredAccessory ? _itemMarkerKeys : _deviceMarkerKeys).add(markerKey);
+    (e.isConsideredAccessory && !isFindMyAudioProduct(e) ? _itemMarkerKeys : _deviceMarkerKeys).add(markerKey);
     markers[markerKey] = Marker(
       key: ValueKey('device-$markerKey'),
       point: markerPointForDevice(e),
-      width: 30,
-      height: 35,
-      child: ClipShadowPath(
-        clipper: const FindMyPinClipper(),
-        shadow: const BoxShadow(color: Colors.black, blurRadius: 2),
-        child: Container(
-          color: Colors.white,
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 5.0),
-              child: (e.isAppleAudioAccessory || (e.modelDisplayName?.toLowerCase().contains('airpods') ?? false))
-                  ? const Icon(Icons.headphones, color: Colors.black, size: 20)
-                  : e.role?['emoji'] != null
-                  ? Text(
-                      e.role!['emoji'],
-                      style: Get.context!.theme.textTheme.bodyLarge!.copyWith(fontFamily: 'Apple Color Emoji'),
-                    )
-                  : Icon(
-                      (e.isMac ?? false)
-                          ? Icons.computer
-                          : e.isConsideredAccessory
-                          ? Icons.headphones
-                          : Icons.phone_iphone,
-                      color: Colors.black,
-                      size: 20,
-                    ),
+      width: selected ? 44 : 30,
+      height: selected ? 51 : 35,
+      child: Transform.scale(
+        scale: selected ? 1.35 : 1,
+        child: ClipShadowPath(
+          clipper: const FindMyPinClipper(),
+          shadow: const BoxShadow(color: Colors.black, blurRadius: 2),
+          child: Container(
+            color: Colors.white,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 5.0),
+                child: (e.isAppleAudioAccessory || (e.modelDisplayName?.toLowerCase().contains('airpods') ?? false))
+                    ? const Icon(Icons.headphones, color: Colors.black, size: 20)
+                    : e.role?['emoji'] != null
+                    ? Text(
+                        e.role!['emoji'],
+                        style: Get.context!.theme.textTheme.bodyLarge!.copyWith(fontFamily: 'Apple Color Emoji'),
+                      )
+                    : Icon(
+                        (e.isMac ?? false)
+                            ? Icons.computer
+                            : e.isConsideredAccessory
+                            ? Icons.headphones
+                            : Icons.phone_iphone,
+                        color: Colors.black,
+                        size: 20,
+                      ),
+              ),
             ),
           ),
         ),
@@ -515,15 +583,21 @@ class FindMyController extends GetxController {
   }
 
   void buildFriendMarker(FindMyFriend friend) {
-    final markerKey = friend.stableId ?? randomString(6);
+    final markerKey = markerIdentityForFriend(friend);
+    final selected = isSelected('friend-$markerKey');
     _friendMarkerKeys.add(markerKey);
     markers[markerKey] = Marker(
       key: ValueKey('friend-$markerKey'),
       point: markerPointForFriend(friend),
-      width: 35,
-      height: 35,
+      width: selected ? 54 : 35,
+      height: selected ? 54 : 35,
       child: Container(
-        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          border: selected ? Border.all(color: Get.context!.theme.colorScheme.primary, width: 4) : null,
+          boxShadow: selected ? const [BoxShadow(color: Colors.black26, blurRadius: 5)] : null,
+        ),
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(3),

@@ -37,47 +37,57 @@ class FindMyDeviceListTile extends StatelessWidget {
       final hasFullAddress = fullAddress?.isNotEmpty ?? false;
       final markerPoint = hasUsableCoordinates ? controller.markerPointForDevice(item) : null;
       final canOpenMaps = markerPoint != null || hasFullAddress;
+      final markerKey = 'device-${controller.markerIdentityForDevice(item)}';
+      final selected = controller.isSelected(markerKey);
+      final selectedLocation = hideContactInfo ? 'Location' : (item.address?.mapItemFullAddress ?? displayLocation);
+      final selectedSubtitle = lastKnownAt == null
+          ? selectedLocation
+          : '$selectedLocation\nLast updated ${buildDate(lastKnownAt)}';
 
-      return ListTile(
-        mouseCursor: MouseCursor.defer,
-        title: Text(displayName),
-        subtitle: Text(subtitle),
-        onTap: markerPoint != null
-            ? () async {
-                await controller.completer.future;
-                final marker = controller.markers[item.id];
-                if (marker == null) return;
-                controller.popupController.showPopupsOnlyFor([marker]);
-                controller.focusMap(markerPoint);
-              }
-            : null,
-        trailing: canOpenMaps
-            ? ButtonTheme(
-                minWidth: 1,
-                child: TextButton(
-                  style: TextButton.styleFrom(
-                    shape: const CircleBorder(),
-                    backgroundColor: context.theme.colorScheme.primaryContainer,
+      return AnimatedContainer(
+        key: controller.rowKeyFor(markerKey),
+        duration: const Duration(milliseconds: 180),
+        color: selected ? context.theme.colorScheme.primaryContainer.withValues(alpha: 0.35) : Colors.transparent,
+        child: ListTile(
+          selected: selected,
+          mouseCursor: MouseCursor.defer,
+          title: Text(displayName),
+          subtitle: Text(selected ? selectedSubtitle : subtitle),
+          isThreeLine: selected,
+          onTap: markerPoint != null
+              ? () async {
+                  await controller.completer.future;
+                  await controller.selectMarker(markerKey, markerPoint);
+                }
+              : null,
+          trailing: selected && canOpenMaps
+              ? ButtonTheme(
+                  minWidth: 1,
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      shape: const CircleBorder(),
+                      backgroundColor: context.theme.colorScheme.primaryContainer,
+                    ),
+                    onPressed: () async {
+                      if (markerPoint != null) {
+                        await MapsLauncher.launchCoordinates(markerPoint.latitude, markerPoint.longitude);
+                      } else {
+                        await MapsLauncher.launchQuery(fullAddress!);
+                      }
+                    },
+                    child: const Icon(Icons.directions, size: 20),
                   ),
-                  onPressed: () async {
-                    if (markerPoint != null) {
-                      await MapsLauncher.launchCoordinates(markerPoint.latitude, markerPoint.longitude);
-                    } else {
-                      await MapsLauncher.launchQuery(fullAddress!);
-                    }
-                  },
-                  child: const Icon(Icons.directions, size: 20),
-                ),
-              )
-            : null,
-        onLongPress: hideContactInfo
-            ? null
-            : () async {
-                showDialog(
-                  context: context,
-                  builder: (context) => FindMyRawDataDialog(item: item),
-                );
-              },
+                )
+              : null,
+          onLongPress: hideContactInfo
+              ? null
+              : () async {
+                  showDialog(
+                    context: context,
+                    builder: (context) => FindMyRawDataDialog(item: item),
+                  );
+                },
+        ),
       );
     });
   }

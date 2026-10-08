@@ -36,75 +36,89 @@ class FindMyFriendListTile extends StatelessWidget {
 
       final hasLocation = item.latitude != null && item.longitude != null;
       final markerPoint = hasLocation ? controller.markerPointForFriend(item) : null;
+      final markerKey = 'friend-${controller.markerIdentityForFriend(item)}';
+      final selected = controller.isSelected(markerKey);
+      final selectedLocation = hideContactInfo
+          ? 'Location'
+          : (item.longAddress ?? item.shortAddress ?? 'No location found');
+      final selectedStatus = item.status == LocationStatus.live
+          ? 'Live location'
+          : item.lastUpdated == null
+          ? null
+          : 'Last updated ${buildDate(item.lastUpdated)}';
 
-      return ListTile(
-        mouseCursor: MouseCursor.defer,
-        leading: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            ContactAvatarWidget(handle: item.handle),
-            if (item.favoriteOrder != null)
-              Positioned(
-                right: -3,
-                bottom: -2,
-                child: Semantics(
-                  label: "Favorite",
-                  child: Container(
-                    width: 19,
-                    height: 19,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: context.theme.colorScheme.primary,
-                      border: Border.all(color: context.theme.colorScheme.surface, width: 2),
+      return AnimatedContainer(
+        key: controller.rowKeyFor(markerKey),
+        duration: const Duration(milliseconds: 180),
+        color: selected ? context.theme.colorScheme.primaryContainer.withValues(alpha: 0.35) : Colors.transparent,
+        child: ListTile(
+          selected: selected,
+          mouseCursor: MouseCursor.defer,
+          leading: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              ContactAvatarWidget(handle: item.handle),
+              if (item.favoriteOrder != null)
+                Positioned(
+                  right: -3,
+                  bottom: -2,
+                  child: Semantics(
+                    label: "Favorite",
+                    child: Container(
+                      width: 19,
+                      height: 19,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: context.theme.colorScheme.primary,
+                        border: Border.all(color: context.theme.colorScheme.surface, width: 2),
+                      ),
+                      child: Icon(Icons.star, size: 11, color: context.theme.colorScheme.onPrimary),
                     ),
-                    child: Icon(Icons.star, size: 11, color: context.theme.colorScheme.onPrimary),
                   ),
                 ),
-              ),
-          ],
-        ),
-        title: Text(displayName),
-        subtitle: Text(displayLocation),
-        trailing: withLocation && hasLocation
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (item.status == LocationStatus.live) const Icon(CupertinoIcons.largecircle_fill_circle),
-                  if (item.locatingInProgress) buildProgressIndicator(context),
-                  ButtonTheme(
-                    minWidth: 1,
-                    child: TextButton(
-                      style: TextButton.styleFrom(
-                        shape: const CircleBorder(),
-                        backgroundColor: context.theme.colorScheme.primaryContainer,
+            ],
+          ),
+          title: Text(displayName),
+          subtitle: Text(selected ? [selectedLocation, ?selectedStatus].join('\n') : displayLocation),
+          isThreeLine: selected,
+          trailing: selected && withLocation && hasLocation
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (item.status == LocationStatus.live) const Icon(CupertinoIcons.largecircle_fill_circle),
+                    if (item.locatingInProgress) buildProgressIndicator(context),
+                    ButtonTheme(
+                      minWidth: 1,
+                      child: TextButton(
+                        style: TextButton.styleFrom(
+                          shape: const CircleBorder(),
+                          backgroundColor: context.theme.colorScheme.primaryContainer,
+                        ),
+                        onPressed: () async {
+                          if (markerPoint == null) return;
+                          await MapsLauncher.launchCoordinates(markerPoint.latitude, markerPoint.longitude);
+                        },
+                        child: const Icon(Icons.directions, size: 20),
                       ),
-                      onPressed: () async {
-                        if (markerPoint == null) return;
-                        await MapsLauncher.launchCoordinates(markerPoint.latitude, markerPoint.longitude);
-                      },
-                      child: const Icon(Icons.directions, size: 20),
                     ),
-                  ),
-                ],
-              )
-            : null,
-        onTap: withLocation && markerPoint != null
-            ? () async {
-                await controller.completer.future;
-                final marker = controller.markers[item.stableId];
-                if (marker == null) return;
-                controller.popupController.showPopupsOnlyFor([marker]);
-                controller.focusMap(markerPoint);
-              }
-            : null,
-        onLongPress: hideContactInfo
-            ? null
-            : () async {
-                showDialog(
-                  context: context,
-                  builder: (context) => FindMyRawDataDialog(item: item),
-                );
-              },
+                  ],
+                )
+              : null,
+          onTap: withLocation && markerPoint != null
+              ? () async {
+                  await controller.completer.future;
+                  await controller.selectMarker(markerKey, markerPoint);
+                }
+              : null,
+          onLongPress: hideContactInfo
+              ? null
+              : () async {
+                  showDialog(
+                    context: context,
+                    builder: (context) => FindMyRawDataDialog(item: item),
+                  );
+                },
+        ),
       );
     });
   }

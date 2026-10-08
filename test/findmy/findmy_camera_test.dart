@@ -1,4 +1,6 @@
 import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -81,52 +83,56 @@ void main() {
     });
   });
 
-  group('groupFindMyProductsByOwnerAndPlace', () {
-    FindMyProductPoint point(String id, String? owner, LatLng location, double accuracy) =>
-        FindMyProductPoint(id: id, ownerId: owner, location: location, accuracyMeters: accuracy);
-
-    test('groups one owner devices whose accuracy areas overlap', () {
-      final groups = groupFindMyProductsByOwnerAndPlace([
-        point('phone', 'owner-a', dallas, 5),
-        point('laptop', 'owner-a', const LatLng(32.77695, -96.7970), 45),
-        point('watch', 'owner-a', const LatLng(32.77705, -96.7970), 65),
-      ]);
-      expect(groups.map((group) => group.map((e) => e.id).toList()), [
-        ['phone', 'laptop', 'watch'],
-      ]);
+  group('findMyMarkerIdentity', () {
+    test('preserves a non-empty Apple identifier', () {
+      expect(findMyMarkerIdentity(stableId: 'apple-id', fallbackObject: Object()), 'apple-id');
     });
 
-    test('keeps different owners separate at the same place', () {
-      final groups = groupFindMyProductsByOwnerAndPlace([
-        point('mine', 'owner-a', dallas, 5),
-        point('family', 'owner-b', dallas, 5),
-      ]);
-      expect(groups.map((group) => group.map((e) => e.id).toList()), [
-        ['mine'],
-        ['family'],
-      ]);
+    test('returns the same fallback for the same anonymous record', () {
+      final record = Object();
+      expect(
+        findMyMarkerIdentity(stableId: null, fallbackObject: record),
+        findMyMarkerIdentity(stableId: null, fallbackObject: record),
+      );
     });
 
-    test('keeps the same owner separate at genuinely different places', () {
-      final groups = groupFindMyProductsByOwnerAndPlace([
-        point('home', 'owner-a', dallas, 100),
-        point('away', 'owner-a', plano, 100),
-      ]);
-      expect(groups.map((group) => group.map((e) => e.id).toList()), [
-        ['home'],
+    test('keeps separate anonymous records distinct', () {
+      expect(
+        findMyMarkerIdentity(stableId: null, fallbackObject: Object()),
+        isNot(findMyMarkerIdentity(stableId: null, fallbackObject: Object())),
+      );
+    });
+  });
+
+  group('groupFindMyMarkersForZoom', () {
+    Marker marker(String id, LatLng point) =>
+        Marker(key: ValueKey(id), point: point, width: 30, height: 35, child: const SizedBox());
+    MapCamera camera(double zoom) => MapCamera(
+      crs: const Epsg3857(),
+      center: dallas,
+      zoom: zoom,
+      rotation: 0,
+      nonRotatedSize: const Size(1080, 1200),
+    );
+
+    test('groups colliding products while zoomed out regardless of owner', () {
+      final groups = groupFindMyMarkersForZoom([
+        marker('mine', dallas),
+        marker('family', const LatLng(32.77675, -96.79705)),
+        marker('away', plano),
+      ], camera(13));
+      expect(groups.map((group) => group.map((e) => (e.key as ValueKey).value).toList()), [
+        ['mine', 'family'],
         ['away'],
       ]);
     });
 
-    test('does not merge records with an unknown owner', () {
-      final groups = groupFindMyProductsByOwnerAndPlace([
-        point('unknown-a', null, dallas, 100),
-        point('unknown-b', null, dallas, 100),
-      ]);
-      expect(groups.map((group) => group.map((e) => e.id).toList()), [
-        ['unknown-a'],
-        ['unknown-b'],
-      ]);
+    test('keeps every product individual at detail zoom even when coordinates overlap', () {
+      final groups = groupFindMyMarkersForZoom([
+        marker('mine', dallas),
+        marker('family', dallas),
+      ], camera(findMyDetailZoom));
+      expect(groups.map((group) => group.length), [1, 1]);
     });
   });
 }

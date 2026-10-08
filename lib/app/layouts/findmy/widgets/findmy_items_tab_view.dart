@@ -109,6 +109,31 @@ List<FindMyDevice> collapseFindMyAccessoryComponents(List<FindMyDevice> items) {
   return output;
 }
 
+bool isFindMyAudioProduct(FindMyDevice item) {
+  if (item.isAppleAudioAccessory) return true;
+  final identity = [
+    item.modelDisplayName,
+    item.deviceDisplayName,
+    item.deviceModel,
+    item.name,
+  ].whereType<String>().join(' ').toLowerCase();
+  return identity.contains('airpods');
+}
+
+/// Logical products Apple presents under Devices. AirPods component records
+/// are collapsed first, then moved here rather than being treated as Items.
+List<FindMyDevice> findMyDeviceProducts(List<FindMyDevice> all) {
+  final ordinaryDevices = all.where((item) => !item.isConsideredAccessory);
+  final accessories = collapseFindMyAccessoryComponents(all.where((item) => item.isConsideredAccessory).toList());
+  return [...ordinaryDevices, ...accessories.where(isFindMyAudioProduct)];
+}
+
+/// Logical Find My network items (AirTags, wallets, luggage and compatible
+/// third-party trackers), excluding AirPods.
+List<FindMyDevice> findMyItemProducts(List<FindMyDevice> all) => collapseFindMyAccessoryComponents(
+  all.where((item) => item.isConsideredAccessory).toList(),
+).where((item) => !isFindMyAudioProduct(item)).toList();
+
 class FindMyItemsTabView extends StatelessWidget {
   final FindMyController controller;
 
@@ -117,9 +142,8 @@ class FindMyItemsTabView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Obx(() {
-      final allItems = controller.devices.where((item) => item.isConsideredAccessory).toList();
-
-      final items = collapseFindMyAccessoryComponents(allItems);
+      final items = findMyItemProducts(controller.devices);
+      final allItems = items;
       final itemsWithLocation = items.where(_hasDisplayLocation).toList();
       final itemsWithoutLocation = items.where((item) => !_hasDisplayLocation(item)).toList();
 

@@ -1,3 +1,4 @@
+import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 const Distance _distance = Distance();
@@ -104,58 +105,43 @@ class FindMyGroupSummary<T> {
 FindMyGroupSummary<T> summarizeFindMyGroup<T>(List<T> members) =>
     FindMyGroupSummary(visible: members.take(2).toList(), remaining: (members.length - 2).clamp(0, members.length));
 
-/// A logical Find My product to group by owner and physical place.
-class FindMyProductPoint {
-  const FindMyProductPoint({
-    required this.id,
-    required this.ownerId,
-    required this.location,
-    required this.accuracyMeters,
-  });
+const double findMyDetailZoom = 16;
 
-  final String id;
-  final String? ownerId;
-  final LatLng location;
-  final double accuracyMeters;
+/// Returns the provider's stable identity when present. Records without an
+/// identifier retain a process-local identity for as long as that model object
+/// is alive, so rebuilds cannot create duplicate markers and equal names do not
+/// collapse distinct records.
+String findMyMarkerIdentity({required String? stableId, required Object fallbackObject}) {
+  final providerId = stableId?.trim();
+  if (providerId != null && providerId.isNotEmpty) return providerId;
+  return 'anonymous-${identityHashCode(fallbackObject)}';
 }
 
-/// Groups devices or items only when Apple says they have the same owner and
-/// their reported accuracy areas describe the same physical place.
-///
-/// The 50 m floor absorbs normal GPS/Wi-Fi disagreement at one home. The
-/// 150 m ceiling prevents a very rough fix from swallowing a neighborhood.
-/// Unknown owners stay separate because combining them could mix people.
-List<List<FindMyProductPoint>> groupFindMyProductsByOwnerAndPlace(List<FindMyProductPoint> points) {
-  final groups = <List<FindMyProductPoint>>[
-    for (final point in points) [point],
-  ];
-
-  bool samePlace(FindMyProductPoint a, FindMyProductPoint b) {
-    if (a.ownerId == null || b.ownerId == null || a.ownerId != b.ownerId) return false;
-    final threshold = (a.accuracyMeters + b.accuracyMeters).clamp(50.0, 150.0);
-    return _distance.as(LengthUnit.Meter, a.location, b.location) <= threshold;
+/// Groups screen-colliding Device/Item markers while zoomed out. Friends never
+/// call this function. At detail zoom all logical products remain individual,
+/// even when they share an exact coordinate, so selection can control stacking.
+List<List<Marker>> groupFindMyMarkersForZoom(List<Marker> markers, MapCamera camera) {
+  if (camera.zoom >= findMyDetailZoom) {
+    return [
+      for (final marker in markers) [marker],
+    ];
   }
+  final root = List<int>.generate(markers.length, (i) => i);
+  int find(int i) => root[i] == i ? i : root[i] = find(root[i]);
 
-  while (true) {
-    var bestA = -1;
-    var bestB = -1;
-    var bestDistance = double.infinity;
-    for (var a = 0; a < groups.length; a++) {
-      for (var b = a + 1; b < groups.length; b++) {
-        // Complete-link merging avoids a chain of marginal fixes stretching a
-        // single "place" across a neighborhood.
-        if (!groups[a].every((left) => groups[b].every((right) => samePlace(left, right)))) continue;
-        final distance = _distance.as(LengthUnit.Meter, groups[a].first.location, groups[b].first.location);
-        if (distance < bestDistance) {
-          bestA = a;
-          bestB = b;
-          bestDistance = distance;
-        }
-      }
+  for (var a = 0; a < markers.length; a++) {
+    final aPoint = camera.projectAtZoom(markers[a].point, camera.zoom);
+    for (var b = a + 1; b < markers.length; b++) {
+      final bPoint = camera.projectAtZoom(markers[b].point, camera.zoom);
+      final overlapsX = (aPoint.dx - bPoint.dx).abs() <= (markers[a].width + markers[b].width) / 2 + 8;
+      final overlapsY = (aPoint.dy - bPoint.dy).abs() <= (markers[a].height + markers[b].height) / 2 + 8;
+      if (overlapsX && overlapsY) root[find(b)] = find(a);
     }
-    if (bestA == -1) break;
-    groups[bestA].addAll(groups.removeAt(bestB));
   }
 
-  return groups;
+  final groups = <int, List<Marker>>{};
+  for (var i = 0; i < markers.length; i++) {
+    groups.putIfAbsent(find(i), () => []).add(markers[i]);
+  }
+  return groups.values.toList();
 }

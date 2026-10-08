@@ -224,6 +224,9 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
   Widget _buildDesktopTabBar() {
     return TabBar(
       controller: controller.tabController,
+      onTap: (index) {
+        if (controller.tabIndex.value == index) controller.resetMapToTab();
+      },
       dividerColor: context.theme.dividerColor.withValues(alpha: 0.2),
       tabs: [
         Container(
