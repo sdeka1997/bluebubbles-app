@@ -40,29 +40,29 @@ class FindMyCachedLocation {
   }
 
   Map<String, dynamic> toJson() => {
-        'lat': latitude,
-        'lon': longitude,
-        'ts': timestamp,
-        if (label != null) 'label': label,
-        if (fullAddress != null) 'address': fullAddress,
-      };
+    'lat': latitude,
+    'lon': longitude,
+    'ts': timestamp,
+    if (label != null) 'label': label,
+    if (fullAddress != null) 'address': fullAddress,
+  };
 }
 
 /// Returns [friend] showing [cached] in place of its missing location.
 FindMyFriend friendWithCachedLocation(FindMyFriend friend, FindMyCachedLocation cached) => FindMyFriend(
-      latitude: cached.latitude,
-      longitude: cached.longitude,
-      longAddress: cached.fullAddress,
-      shortAddress: cached.label,
-      title: friend.title,
-      subtitle: friend.subtitle,
-      handle: friend.handle,
-      handleAddress: friend.handleAddress,
-      lastUpdated: cached.updatedAt,
-      status: null,
-      locatingInProgress: false,
-      favoriteOrder: friend.favoriteOrder,
-    );
+  latitude: cached.latitude,
+  longitude: cached.longitude,
+  longAddress: cached.fullAddress,
+  shortAddress: cached.label,
+  title: friend.title,
+  subtitle: friend.subtitle,
+  handle: friend.handle,
+  handleAddress: friend.handleAddress,
+  lastUpdated: cached.updatedAt,
+  status: null,
+  locatingInProgress: false,
+  favoriteOrder: friend.favoriteOrder,
+);
 
 /// Points [device] at [cached] in place of its missing location.
 void applyCachedDeviceLocation(FindMyDevice device, FindMyCachedLocation cached) {
@@ -104,7 +104,7 @@ void applyCachedDeviceLocation(FindMyDevice device, FindMyCachedLocation cached)
 /// account's locations never show up under another.
 class FindMyLocationCache {
   FindMyLocationCache(this.server, this.account, [Map<String, FindMyCachedLocation>? entries])
-      : _entries = entries ?? {};
+    : _entries = entries ?? {};
 
   final String server;
   final String account;
@@ -148,10 +148,12 @@ class FindMyLocationCache {
   Future<void> save() async {
     if (!_dirty) return;
     _dirty = false;
-    await PrefsSvc.findMy.setLocationCache(jsonEncode({
-      'server': server,
-      'account': account,
-      'entries': _entries.map((key, value) => MapEntry(key, value.toJson())),
-    }));
+    await PrefsSvc.findMy.setLocationCache(
+      jsonEncode({
+        'server': server,
+        'account': account,
+        'entries': _entries.map((key, value) => MapEntry(key, value.toJson())),
+      }),
+    );
   }
 }

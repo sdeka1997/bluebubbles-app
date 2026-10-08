@@ -1,3 +1,4 @@
+import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_items_tab_view.dart';
@@ -17,47 +18,50 @@ class FindMyMapWidget extends StatelessWidget {
 
   const FindMyMapWidget({super.key, required this.controller});
 
+  /// Member marker keys of each group marker currently on the map.
+  static final Map<String, List<String>> _groupMembers = {};
+
   @override
   Widget build(BuildContext context) {
-    return TrackpadBugWrapper(builder: (context, bugDetected) {
-      return Obx(() {
-        final visibleItems = controller.tabIndex.value == 2
-            ? collapseFindMyAccessoryComponents(
-                controller.devices.where((item) => item.isConsideredAccessory).toList(),
-              )
-            : const <FindMyDevice>[];
-        final visibleMarkers = controller.visibleMarkers.where((marker) {
-          if (controller.tabIndex.value != 2) return true;
-          final key = (marker.key as ValueKey?)?.value as String? ?? '';
-          if (key == 'current' || !key.startsWith('device-')) return true;
-          final deviceId = key.substring('device-'.length);
-          final device = controller.devices.firstWhereOrNull((item) => item.id == deviceId);
-          return device == null || visibleItems.contains(device);
-        }).toList();
-        final currentLocation = controller.location.value;
-        final currentCenter = isUsableFindMyCoordinate(currentLocation?.latitude, currentLocation?.longitude)
-            ? LatLng(currentLocation!.latitude, currentLocation.longitude)
-            : null;
-        LatLng? markerCenter;
-        for (final marker in visibleMarkers) {
-          if (isUsableFindMyCoordinate(marker.point.latitude, marker.point.longitude)) {
-            markerCenter = marker.point;
-            break;
+    return TrackpadBugWrapper(
+      builder: (context, bugDetected) {
+        return Obx(() {
+          final visibleItems = controller.tabIndex.value == 2
+              ? collapseFindMyAccessoryComponents(
+                  controller.devices.where((item) => item.isConsideredAccessory).toList(),
+                )
+              : const <FindMyDevice>[];
+          final visibleMarkers = controller.visibleMarkers.where((marker) {
+            if (controller.tabIndex.value != 2) return true;
+            final key = (marker.key as ValueKey?)?.value as String? ?? '';
+            if (key == 'current' || !key.startsWith('device-')) return true;
+            final deviceId = key.substring('device-'.length);
+            final device = controller.devices.firstWhereOrNull((item) => item.id == deviceId);
+            return device == null || visibleItems.contains(device);
+          }).toList();
+          final currentLocation = controller.location.value;
+          final currentCenter = isUsableFindMyCoordinate(currentLocation?.latitude, currentLocation?.longitude)
+              ? LatLng(currentLocation!.latitude, currentLocation.longitude)
+              : null;
+          LatLng? markerCenter;
+          for (final marker in visibleMarkers) {
+            if (isUsableFindMyCoordinate(marker.point.latitude, marker.point.longitude)) {
+              markerCenter = marker.point;
+              break;
+            }
           }
-        }
-        // Wait for GPS before falling back to a marker, so the map doesn't open elsewhere and then jump.
-        final initialCenter = currentCenter ?? (controller.resolvingCurrentLocation.value ? null : markerCenter);
+          // Wait for GPS before falling back to a marker, so the map doesn't open elsewhere and then jump.
+          final initialCenter = currentCenter ?? (controller.resolvingCurrentLocation.value ? null : markerCenter);
 
-        if (initialCenter == null) {
-          final isLoading = controller.resolvingCurrentLocation.value ||
-              controller.fetching.value == true ||
-              controller.fetching2.value == true;
-          return Center(
-            child: isLoading ? const CircularProgressIndicator() : const Text("Location unavailable"),
-          );
-        }
+          if (initialCenter == null) {
+            final isLoading =
+                controller.resolvingCurrentLocation.value ||
+                controller.fetching.value == true ||
+                controller.fetching2.value == true;
+            return Center(child: isLoading ? const CircularProgressIndicator() : const Text("Location unavailable"));
+          }
 
-        return FlutterMap(
+          return FlutterMap(
             mapController: controller.mapController,
             options: MapOptions(
               initialZoom: currentCenter != null ? 10.0 : 5.0,
@@ -85,14 +89,22 @@ class FindMyMapWidget extends StatelessWidget {
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.bluebubbles.app',
               ),
-              PopupMarkerLayer(
-                options: PopupMarkerLayerOptions(
-                  popupController: controller.popupController,
-                  markers: visibleMarkers,
-                  popupDisplayOptions: PopupDisplayOptions(
-                    builder: (context, marker) => _buildMarkerPopup(context, marker),
-                  ),
-                ),
+              Builder(
+                builder: (context) {
+                  // Rebuilds as the map moves, so markers regroup at every zoom level.
+                  final grouped = groupOverlappingFindMyMarkers(visibleMarkers, MapCamera.of(context));
+                  return PopupMarkerLayer(
+                    options: PopupMarkerLayerOptions(
+                      popupController: controller.popupController,
+                      markers: grouped
+                          .map((group) => group.length == 1 ? group.single : _buildGroupMarker(context, group))
+                          .toList(),
+                      popupDisplayOptions: PopupDisplayOptions(
+                        builder: (context, marker) => _buildMarkerPopup(context, marker),
+                      ),
+                    ),
+                  );
+                },
               ),
               RichAttributionWidget(
                 attributions: [
@@ -104,7 +116,106 @@ class FindMyMapWidget extends StatelessWidget {
               ),
             ],
           );
-      });
+        });
+      },
+    );
+  }
+
+  /// One marker standing in for several that would overlap on screen, drawn
+  /// as the top marker with a count badge, as Find My does.
+  Marker _buildGroupMarker(BuildContext context, List<Marker> group) {
+    final memberKeys = group.map(_markerKey).toList();
+    _groupMembers[memberKeys.join('|')] = memberKeys;
+    final top = group.first;
+    return Marker(
+      key: ValueKey('group:${memberKeys.join('|')}'),
+      point: top.point,
+      width: top.width + 14,
+      height: top.height + 14,
+      alignment: top.alignment,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(left: 0, bottom: 0, width: top.width, height: top.height, child: top.child),
+          Positioned(
+            right: 0,
+            top: 0,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              decoration: BoxDecoration(
+                color: context.theme.colorScheme.primary,
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                '${group.length}',
+                style: context.theme.textTheme.labelSmall!.copyWith(
+                  color: context.theme.colorScheme.onPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _markerKey(Marker marker) => (marker.key as ValueKey?)?.value as String? ?? '';
+
+  Widget _buildGroupPopup(BuildContext context, List<String> memberKeys) {
+    return Obx(() {
+      final hideContactInfo = shouldRedactFindMyContactInfo();
+      final rows = <Widget>[];
+      for (final keyStr in memberKeys) {
+        String? title;
+        String? subtitle;
+        if (keyStr.startsWith("device-")) {
+          final item = controller.devices.firstWhereOrNull((e) => (e.id ?? '') == keyStr.substring("device-".length));
+          if (item == null) continue;
+          title = hideContactInfo ? "Device" : (item.displayName ?? "Unknown Device");
+          subtitle = hideContactInfo ? null : (item.address?.label ?? item.address?.mapItemFullAddress);
+        } else if (keyStr.startsWith("friend-")) {
+          final item = controller.friends.firstWhereOrNull((e) => e.stableId == keyStr.substring("friend-".length));
+          if (item == null) continue;
+          final handleState = item.handle != null ? HandleSvc.getOrCreateHandleState(item.handle!) : null;
+          title = hideContactInfo
+              ? (handleState?.fakeName ?? 'Contact')
+              : (item.handle?.displayName ?? item.title ?? "Unknown Friend");
+          subtitle = hideContactInfo ? null : item.shortAddress;
+        } else {
+          continue;
+        }
+        rows.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: context.theme.textTheme.labelLarge),
+                if (subtitle != null) Text(subtitle, style: context.theme.textTheme.bodySmall),
+              ],
+            ),
+          ),
+        );
+      }
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 5.0),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 260, maxHeight: 280),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            color: context.theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.9),
+          ),
+          padding: const EdgeInsets.all(10),
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: rows),
+          ),
+        ),
+      );
     });
   }
 
@@ -112,6 +223,11 @@ class FindMyMapWidget extends StatelessWidget {
     final ValueKey? key = marker.key as ValueKey?;
     final keyStr = key?.value as String? ?? '';
     if (keyStr == "current") return const SizedBox();
+
+    if (keyStr.startsWith("group:")) {
+      final members = _groupMembers[keyStr.substring("group:".length)];
+      return members == null ? const SizedBox() : _buildGroupPopup(context, members);
+    }
 
     if (keyStr.startsWith("device-")) {
       final deviceId = keyStr.substring("device-".length);
@@ -143,13 +259,16 @@ class FindMyMapWidget extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(hideContactInfo ? "Device" : (item.displayName ?? "Unknown Device"),
-                  style: context.theme.textTheme.labelLarge),
               Text(
-                  hideContactInfo
-                      ? "Location"
-                      : (item.address?.label ?? item.address?.mapItemFullAddress ?? "No location found"),
-                  style: context.theme.textTheme.bodySmall),
+                hideContactInfo ? "Device" : (item.displayName ?? "Unknown Device"),
+                style: context.theme.textTheme.labelLarge,
+              ),
+              Text(
+                hideContactInfo
+                    ? "Location"
+                    : (item.address?.label ?? item.address?.mapItemFullAddress ?? "No location found"),
+                style: context.theme.textTheme.bodySmall,
+              ),
             ],
           ),
         ),
@@ -178,8 +297,10 @@ class FindMyMapWidget extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(displayName, style: context.theme.textTheme.labelLarge),
-              Text(hideContactInfo ? "Location" : (item.longAddress ?? "No location found"),
-                  style: context.theme.textTheme.bodySmall),
+              Text(
+                hideContactInfo ? "Location" : (item.longAddress ?? "No location found"),
+                style: context.theme.textTheme.bodySmall,
+              ),
               if (item.lastUpdated != null && item.status != LocationStatus.live)
                 Text("Last updated ${buildDate(item.lastUpdated)}", style: context.theme.textTheme.bodySmall),
               if (item.status != null)

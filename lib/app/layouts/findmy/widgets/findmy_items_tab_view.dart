@@ -87,17 +87,20 @@ List<FindMyDevice> collapseFindMyAccessoryComponents(List<FindMyDevice> items) {
     final role = _audioPartRole(item);
     final suffix = _serialSuffix(item);
     final product = item.productIdentifier?.trim();
-    final isWeakOrphan = role != null &&
+    final isWeakOrphan =
+        role != null &&
         (item.groupIdentifier?.isNotEmpty ?? false) &&
         !(item.groupName?.isNotEmpty ?? false) &&
         _locationQuality(item) == 0 &&
         suffix != null &&
         (product?.isNotEmpty ?? false);
     if (isWeakOrphan) {
-      final matches = activeComponents.where((candidate) =>
-          _audioPartRole(candidate) == role &&
-          candidate.productIdentifier?.trim() == product &&
-          _serialSuffix(candidate) == suffix);
+      final matches = activeComponents.where(
+        (candidate) =>
+            _audioPartRole(candidate) == role &&
+            candidate.productIdentifier?.trim() == product &&
+            _serialSuffix(candidate) == suffix,
+      );
       if (matches.length == 1) continue;
     }
 
@@ -147,11 +150,8 @@ class FindMyItemsTabView extends StatelessWidget {
                     physics: const NeverScrollableScrollPhysics(),
                     shrinkWrap: true,
                     padding: EdgeInsets.zero,
-                    itemBuilder: (context, i) => FindMyDeviceListTile(
-                      item: itemsWithLocation[i],
-                      controller: controller,
-                      isItem: true,
-                    ),
+                    itemBuilder: (context, i) =>
+                        FindMyDeviceListTile(item: itemsWithLocation[i], controller: controller, isItem: true),
                     itemCount: itemsWithLocation.length,
                   ),
                 ),
@@ -159,7 +159,10 @@ class FindMyItemsTabView extends StatelessWidget {
             ),
           if (itemsWithoutLocation.isNotEmpty)
             SettingsHeader(
-                iosSubtitle: iosSubtitle, materialSubtitle: materialSubtitle, text: "Items without locations"),
+              iosSubtitle: iosSubtitle,
+              materialSubtitle: materialSubtitle,
+              text: "Items without locations",
+            ),
           if (itemsWithoutLocation.isNotEmpty)
             SettingsSection(
               backgroundColor: context.tileColor,
@@ -170,11 +173,8 @@ class FindMyItemsTabView extends StatelessWidget {
                     physics: const NeverScrollableScrollPhysics(),
                     shrinkWrap: true,
                     padding: EdgeInsets.zero,
-                    itemBuilder: (context, i) => FindMyDeviceListTile(
-                      item: itemsWithoutLocation[i],
-                      controller: controller,
-                      isItem: true,
-                    ),
+                    itemBuilder: (context, i) =>
+                        FindMyDeviceListTile(item: itemsWithoutLocation[i], controller: controller, isItem: true),
                     itemCount: itemsWithoutLocation.length,
                   ),
                 ),
@@ -197,8 +197,8 @@ class FindMyItemsTabView extends StatelessWidget {
                 controller.fetching.value == null
                     ? "Something went wrong!"
                     : controller.fetching.value == false
-                        ? "You have no accessories."
-                        : "Getting FindMy data...",
+                    ? "You have no accessories."
+                    : "Getting FindMy data...",
                 style: context.theme.textTheme.labelLarge,
               ),
             ),

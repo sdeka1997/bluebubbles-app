@@ -1,3 +1,5 @@
+import 'package:flutter/widgets.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 const Distance _distance = Distance();
@@ -23,7 +25,11 @@ const double _clusterGapRatio = 4;
 /// both judged against their own spacing rather than a fixed radius.
 List<List<int>> clusterFindMyPoints(List<LatLng> points) {
   final n = points.length;
-  if (n < 2) return [for (var i = 0; i < n; i++) [i]];
+  if (n < 2) {
+    return [
+      for (var i = 0; i < n; i++) [i],
+    ];
+  }
 
   // Prim's algorithm; Find My never has more than a few dozen points.
   final inTree = List<bool>.filled(n, false);
@@ -86,4 +92,37 @@ List<LatLng> selectFindMyCameraFocus(List<LatLng> points, {LatLng? anchor}) {
   final largest = clusters.reduce((a, b) => b.length > a.length ? b : a);
   if (largest.length * 2 > all.length) return [for (final i in largest) all[i]];
   return all;
+}
+
+/// Markers closer than this on screen, in logical pixels, are drawn as one.
+const double _overlapDistance = 30;
+
+/// Groups [markers] that would overlap at the [camera]'s current zoom.
+///
+/// Each group keeps the order of [markers], so the first marker in a group is
+/// the one drawn on top. The user's own location is never grouped.
+List<List<Marker>> groupOverlappingFindMyMarkers(List<Marker> markers, MapCamera camera) {
+  final groups = <List<Marker>>[];
+  final anchors = <Offset>[];
+  for (final marker in markers) {
+    final key = (marker.key as ValueKey?)?.value;
+    final position = camera.projectAtZoom(marker.point, camera.zoom);
+    if (key != 'current') {
+      var index = -1;
+      for (var i = 0; i < groups.length; i++) {
+        final groupKey = (groups[i].first.key as ValueKey?)?.value;
+        if (groupKey != 'current' && (anchors[i] - position).distance < _overlapDistance) {
+          index = i;
+          break;
+        }
+      }
+      if (index != -1) {
+        groups[index].add(marker);
+        continue;
+      }
+    }
+    groups.add([marker]);
+    anchors.add(position);
+  }
+  return groups;
 }

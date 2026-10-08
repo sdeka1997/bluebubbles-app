@@ -24,9 +24,9 @@ class FindMyDevicesTabView extends StatelessWidget {
       }
 
       List<FindMyDevice> withUnavailableLast(Iterable<FindMyDevice> devices) => [
-            ...devices.where(hasUsableLocation),
-            ...devices.where((item) => !hasUsableLocation(item)),
-          ];
+        ...devices.where(hasUsableLocation),
+        ...devices.where((item) => !hasUsableLocation(item)),
+      ];
 
       final ownPrsIds = allDevices
           .where((item) => item.thisDevice == true)
@@ -66,10 +66,7 @@ class FindMyDevicesTabView extends StatelessWidget {
                     physics: const NeverScrollableScrollPhysics(),
                     shrinkWrap: true,
                     padding: EdgeInsets.zero,
-                    itemBuilder: (context, i) => FindMyDeviceListTile(
-                      item: myDevices[i],
-                      controller: controller,
-                    ),
+                    itemBuilder: (context, i) => FindMyDeviceListTile(item: myDevices[i], controller: controller),
                     itemCount: myDevices.length,
                   ),
                 ),
@@ -87,10 +84,7 @@ class FindMyDevicesTabView extends StatelessWidget {
                     physics: const NeverScrollableScrollPhysics(),
                     shrinkWrap: true,
                     padding: EdgeInsets.zero,
-                    itemBuilder: (context, i) => FindMyDeviceListTile(
-                      item: otherDevices[i],
-                      controller: controller,
-                    ),
+                    itemBuilder: (context, i) => FindMyDeviceListTile(item: otherDevices[i], controller: controller),
                     itemCount: otherDevices.length,
                   ),
                 ),
@@ -113,8 +107,8 @@ class FindMyDevicesTabView extends StatelessWidget {
                 controller.fetching.value == null
                     ? "Something went wrong!"
                     : controller.fetching.value == false
-                        ? "You have no devices."
-                        : "Getting FindMy data...",
+                    ? "You have no devices."
+                    : "Getting FindMy data...",
                 style: context.theme.textTheme.labelLarge,
               ),
             ),

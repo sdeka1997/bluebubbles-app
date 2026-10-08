@@ -12,28 +12,23 @@ class FindMyDeviceListTile extends StatelessWidget {
   final FindMyController controller;
   final bool isItem;
 
-  const FindMyDeviceListTile({
-    super.key,
-    required this.item,
-    required this.controller,
-    this.isItem = false,
-  });
+  const FindMyDeviceListTile({super.key, required this.item, required this.controller, this.isItem = false});
 
   @override
   Widget build(BuildContext context) {
     return Obx(() {
       final hideContactInfo = shouldRedactFindMyContactInfo();
 
-      final displayName =
-          hideContactInfo ? (isItem ? "Item" : "Device") : (item.displayName ?? (isItem ? "Unknown Item" : "Unknown Device"));
+      final displayName = hideContactInfo
+          ? (isItem ? "Item" : "Device")
+          : (item.displayName ?? (isItem ? "Unknown Item" : "Unknown Device"));
 
-      final hasUsableCoordinates =
-          isUsableFindMyCoordinate(item.location?.latitude, item.location?.longitude);
+      final hasUsableCoordinates = isUsableFindMyCoordinate(item.location?.latitude, item.location?.longitude);
       final displayLocation = hideContactInfo
           ? "Location"
           : (item.address?.label ??
-              item.address?.mapItemFullAddress ??
-              (hasUsableCoordinates ? "Locating…" : "No location found"));
+                item.address?.mapItemFullAddress ??
+                (hasUsableCoordinates ? "Locating…" : "No location found"));
       final lastKnownAt = item.lastKnownLocationAt;
       final subtitle = hideContactInfo || lastKnownAt == null
           ? displayLocation

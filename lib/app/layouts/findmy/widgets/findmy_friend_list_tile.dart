@@ -14,12 +14,7 @@ class FindMyFriendListTile extends StatelessWidget {
   final FindMyController controller;
   final bool withLocation;
 
-  const FindMyFriendListTile({
-    super.key,
-    required this.item,
-    required this.controller,
-    this.withLocation = true,
-  });
+  const FindMyFriendListTile({super.key, required this.item, required this.controller, this.withLocation = true});
 
   @override
   Widget build(BuildContext context) {
@@ -31,8 +26,8 @@ class FindMyFriendListTile extends StatelessWidget {
       final displayLocation = hideContactInfo
           ? (withLocation ? "Location$lastUpdatedSuffix" : "Location")
           : withLocation
-              ? ("${item.shortAddress ?? "No location found"}$lastUpdatedSuffix")
-              : (item.longAddress ?? "No location found");
+          ? ("${item.shortAddress ?? "No location found"}$lastUpdatedSuffix")
+          : (item.longAddress ?? "No location found");
 
       final handleState = item.handle != null ? HandleSvc.getOrCreateHandleState(item.handle!) : null;
       final displayName = hideContactInfo

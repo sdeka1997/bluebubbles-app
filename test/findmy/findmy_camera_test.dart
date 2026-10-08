@@ -1,4 +1,6 @@
 import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -65,5 +67,32 @@ void main() {
   test('clusterFindMyPoints keeps a metro area together', () {
     final clusters = clusterFindMyPoints([dallas, plano, frisco, arlington]);
     expect(clusters, hasLength(1));
+  });
+
+  group('groupOverlappingFindMyMarkers', () {
+    Marker marker(String key, LatLng point) => Marker(key: ValueKey(key), point: point, child: const SizedBox());
+    final camera = MapCamera(
+      crs: const Epsg3857(),
+      center: dallas,
+      zoom: 13,
+      rotation: 0,
+      nonRotatedSize: const Size(400, 800),
+    );
+
+    test('stacks co-located devices even when the user is in the same spot', () {
+      final groups = groupOverlappingFindMyMarkers([
+        marker('current', dallas),
+        marker('device-a', dallas),
+        marker('device-b', dallas),
+        marker('device-c', const LatLng(32.7768, -96.7971)),
+        marker('device-d', plano),
+      ], camera);
+      final keys = groups.map((g) => g.map((m) => (m.key as ValueKey).value).toList()).toList();
+      expect(keys, [
+        ['current'],
+        ['device-a', 'device-b', 'device-c'],
+        ['device-d'],
+      ]);
+    });
   });
 }

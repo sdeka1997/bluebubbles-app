@@ -114,24 +114,23 @@ class FindMyController extends GetxController {
     for (final friend in friends.where(hasUsableFindMyLocation)) {
       buildFriendMarker(friend);
     }
-    for (final device in devices.where((e) =>
-        isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))) {
+    for (final device in devices.where((e) => isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))) {
       buildDeviceMarker(device);
     }
     markers.refresh();
   }
 
   LatLng markerPointForFriend(FindMyFriend friend) => resolveFindMyMarkerPoint(
-        stableKey: friend.stableId ?? friend.title ?? 'friend',
-        latitude: friend.latitude!,
-        longitude: friend.longitude!,
-      );
+    stableKey: friend.stableId ?? friend.title ?? 'friend',
+    latitude: friend.latitude!,
+    longitude: friend.longitude!,
+  );
 
   LatLng markerPointForDevice(FindMyDevice device) => resolveFindMyMarkerPoint(
-        stableKey: device.id ?? device.name ?? 'device',
-        latitude: device.location!.latitude!,
-        longitude: device.location!.longitude!,
-      );
+    stableKey: device.id ?? device.name ?? 'device',
+    latitude: device.location!.latitude!,
+    longitude: device.location!.longitude!,
+  );
 
   /// The locations the current tab's opening camera should frame.
   List<LatLng> _cameraPointsForTab() {
@@ -140,7 +139,9 @@ class FindMyController extends GetxController {
         return friendsWithLocation.map(markerPointForFriend).toList();
       case 1:
         return devices
-            .where((e) => !e.isConsideredAccessory && isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))
+            .where(
+              (e) => !e.isConsideredAccessory && isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude),
+            )
             .map(markerPointForDevice)
             .toList();
       default:
@@ -158,7 +159,8 @@ class FindMyController extends GetxController {
   void fitCameraToTab() {
     if (!_isAlive || !completer.isCompleted || _cameraMovedByUser) return;
     final current = location.value;
-    final anchor = tabIndex.value == 0 && current != null && isUsableFindMyCoordinate(current.latitude, current.longitude)
+    final anchor =
+        tabIndex.value == 0 && current != null && isUsableFindMyCoordinate(current.latitude, current.longitude)
         ? LatLng(current.latitude, current.longitude)
         : null;
     final focus = selectFindMyCameraFocus(_cameraPointsForTab(), anchor: anchor);
@@ -241,7 +243,8 @@ class FindMyController extends GetxController {
       final existingFriendIndex = friends.indexWhere((e) => e.stableId != null && e.stableId == friend.stableId);
       final existingFriend = existingFriendIndex == -1 ? null : friends[existingFriendIndex];
 
-      final shouldUpdate = existingFriend == null ||
+      final shouldUpdate =
+          existingFriend == null ||
           existingFriend.status == null ||
           friend.locatingInProgress ||
           LocationStatus.values.indexOf(existingFriend.status!) <=
@@ -284,29 +287,31 @@ class FindMyController extends GetxController {
       if (granted == LocationPermission.whileInUse || granted == LocationPermission.always) {
         Geolocator.getCurrentPosition(locationSettings: const LocationSettings(timeLimit: Duration(seconds: 10)))
             .then((loc) {
-          if (!_isAlive) return;
-          location.value = loc;
-          _updateFriendLists();
-          buildLocationMarker(location.value!);
-          fitCameraToTab();
-          if (!kIsDesktop && locationSub == null) {
-            locationSub = Geolocator.getPositionStream().listen((event) async {
               if (!_isAlive) return;
-              location.value = event;
+              location.value = loc;
               _updateFriendLists();
-              buildLocationMarker(event);
+              buildLocationMarker(location.value!);
+              fitCameraToTab();
+              if (!kIsDesktop && locationSub == null) {
+                locationSub = Geolocator.getPositionStream().listen((event) async {
+                  if (!_isAlive) return;
+                  location.value = event;
+                  _updateFriendLists();
+                  buildLocationMarker(event);
 
-              if (!hasMovedToCurrentLocation.value) {
-                if (!completer.isCompleted) await completer.future;
-                if (!_isAlive) return;
-                fitCameraToTab();
-                hasMovedToCurrentLocation.value = true;
+                  if (!hasMovedToCurrentLocation.value) {
+                    if (!completer.isCompleted) await completer.future;
+                    if (!_isAlive) return;
+                    fitCameraToTab();
+                    hasMovedToCurrentLocation.value = true;
+                  }
+                });
               }
-            });
-          }
-        }).catchError((e) {
-          Logger.warn("Failed to get current location", error: e, tag: 'FindMyController');
-        }).whenComplete(() => resolvingCurrentLocation.value = false);
+            })
+            .catchError((e) {
+              Logger.warn("Failed to get current location", error: e, tag: 'FindMyController');
+            })
+            .whenComplete(() => resolvingCurrentLocation.value = false);
       } else {
         resolvingCurrentLocation.value = false;
       }
@@ -332,7 +337,8 @@ class FindMyController extends GetxController {
     if (response2.statusCode == 200 && response2.data['data'] != null) {
       try {
         friends.value = _withCachedFriendLocations(
-            (response2.data['data'] as List).map((e) => FindMyFriend.fromJson(e)).toList().cast<FindMyFriend>());
+          (response2.data['data'] as List).map((e) => FindMyFriend.fromJson(e)).toList().cast<FindMyFriend>(),
+        );
         _locationCache.save();
 
         _updateFriendLists();
@@ -372,8 +378,10 @@ class FindMyController extends GetxController {
 
     if (response.statusCode == 200 && response.data['data'] != null) {
       try {
-        devices.value =
-            (response.data['data'] as List).map((e) => FindMyDevice.fromJson(e)).toList().cast<FindMyDevice>();
+        devices.value = (response.data['data'] as List)
+            .map((e) => FindMyDevice.fromJson(e))
+            .toList()
+            .cast<FindMyDevice>();
 
         // Apply safe location name as the display label once, here rather than during build.
         for (final device in devices) {
@@ -385,8 +393,9 @@ class FindMyController extends GetxController {
         _locationCache.save();
 
         _clearDeviceMarkers();
-        for (FindMyDevice e in devices.where((e) =>
-            isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))) {
+        for (FindMyDevice e in devices.where(
+          (e) => isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude),
+        )) {
           buildDeviceMarker(e);
         }
         fitCameraToTab();
@@ -431,13 +440,11 @@ class FindMyController extends GetxController {
             originLatitude: currentLocation.latitude,
             originLongitude: currentLocation.longitude,
           );
-    final favoriteWithLocation = friends
-        .where((friend) => friend.favoriteOrder != null && hasUsableFindMyLocation(friend))
-        .toList()
-      ..sort((a, b) => a.favoriteOrder!.compareTo(b.favoriteOrder!));
+    final favoriteWithLocation =
+        friends.where((friend) => friend.favoriteOrder != null && hasUsableFindMyLocation(friend)).toList()
+          ..sort((a, b) => a.favoriteOrder!.compareTo(b.favoriteOrder!));
     friendsWithLocation.value = [...favoriteWithLocation, ...sortedRegular];
-    friendsWithoutLocation.value =
-        favoritesFirst(friends.where((friend) => !hasUsableFindMyLocation(friend)));
+    friendsWithoutLocation.value = favoritesFirst(friends.where((friend) => !hasUsableFindMyLocation(friend)));
   }
 
   List<Marker> get visibleMarkers {
@@ -464,24 +471,23 @@ class FindMyController extends GetxController {
       height: 35,
       child: ClipShadowPath(
         clipper: const FindMyPinClipper(),
-        shadow: const BoxShadow(
-          color: Colors.black,
-          blurRadius: 2,
-        ),
+        shadow: const BoxShadow(color: Colors.black, blurRadius: 2),
         child: Container(
           color: Colors.white,
           child: Center(
             child: Padding(
               padding: const EdgeInsets.only(bottom: 5.0),
               child: e.role?['emoji'] != null
-                  ? Text(e.role!['emoji'],
-                      style: Get.context!.theme.textTheme.bodyLarge!.copyWith(fontFamily: 'Apple Color Emoji'))
+                  ? Text(
+                      e.role!['emoji'],
+                      style: Get.context!.theme.textTheme.bodyLarge!.copyWith(fontFamily: 'Apple Color Emoji'),
+                    )
                   : Icon(
                       (e.isMac ?? false)
                           ? Icons.computer
                           : e.isConsideredAccessory
-                              ? Icons.headphones
-                              : Icons.phone_iphone,
+                          ? Icons.headphones
+                          : Icons.phone_iphone,
                       color: Colors.black,
                       size: 20,
                     ),
@@ -507,7 +513,9 @@ class FindMyController extends GetxController {
           child: Padding(
             padding: const EdgeInsets.all(3),
             child: ContactAvatarWidget(
-                editable: false, handle: friend.handle ?? Handle(address: friend.title ?? "Unknown")),
+              editable: false,
+              handle: friend.handle ?? Handle(address: friend.title ?? "Unknown"),
+            ),
           ),
         ),
       ),
@@ -536,46 +544,43 @@ class FindMyController extends GetxController {
       point: LatLng(pos.latitude, pos.longitude),
       width: 25,
       height: 55,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          if (pos.heading.isFinite)
-            Transform.rotate(
-              angle: pos.heading,
-              child: ClipPath(
-                clipper: const FindMyLocationClipper(),
-                child: Container(
-                  width: 25,
-                  height: 55,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: AlignmentDirectional.center,
-                      end: Alignment.topCenter,
-                      colors: [
-                        Get.context!.theme.colorScheme.primary,
-                        Get.context!.theme.colorScheme.primary.withAlpha(50)
-                      ],
+      // Taps pass through to anything underneath, such as a group of devices at home.
+      child: IgnorePointer(
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            if (pos.heading.isFinite)
+              Transform.rotate(
+                angle: pos.heading,
+                child: ClipPath(
+                  clipper: const FindMyLocationClipper(),
+                  child: Container(
+                    width: 25,
+                    height: 55,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: AlignmentDirectional.center,
+                        end: Alignment.topCenter,
+                        colors: [
+                          Get.context!.theme.colorScheme.primary,
+                          Get.context!.theme.colorScheme.primary.withAlpha(50),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          Container(
-            width: 25,
-            height: 25,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white,
-            ),
-            padding: const EdgeInsets.all(5),
-            child: Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Get.context!.theme.colorScheme.primary,
+            Container(
+              width: 25,
+              height: 25,
+              decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+              padding: const EdgeInsets.all(5),
+              child: Container(
+                decoration: BoxDecoration(shape: BoxShape.circle, color: Get.context!.theme.colorScheme.primary),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       alignment: Alignment.topCenter,
     );
