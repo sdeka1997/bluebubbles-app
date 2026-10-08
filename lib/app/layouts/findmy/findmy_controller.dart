@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
-import 'package:collection/collection.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -51,7 +50,6 @@ class FindMyController extends GetxController {
   final RxnString selectedMarkerKey = RxnString();
   final Map<String, GlobalKey> _rowKeys = <String, GlobalKey>{};
   final Map<String, Future<ContactV2?>> _contactLookups = <String, Future<ContactV2?>>{};
-  Future<List<ContactV2>>? _nativeContacts;
   final Set<String> _friendMarkerKeys = <String>{};
   final Set<String> _deviceMarkerKeys = <String>{};
   final Set<String> _itemMarkerKeys = <String>{};
@@ -193,12 +191,8 @@ class FindMyController extends GetxController {
     final address = findMyContactLookupAddress(friend);
     if (address == null) return Future.value(null);
     return _contactLookups.putIfAbsent(friend.stableId ?? address, () async {
-      final exact = await ContactsSvcV2.getContact(address);
-      if (exact?.isNative == true) return exact;
-      final contacts = await (_nativeContacts ??= ContactsSvcV2.getAllContacts());
-      return contacts.where((contact) => contact.isNative).firstWhereOrNull(
-        (contact) => findMyContactMatchesAddress(contact, address),
-      );
+      final contact = await ContactsSvcV2.getContact(address);
+      return contact?.isNative == true ? contact : null;
     });
   }
 
