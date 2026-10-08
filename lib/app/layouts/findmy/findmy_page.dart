@@ -280,7 +280,7 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
               maxHeight: maxPanelHeight,
               snapPoint: 0.5,
               disableDraggableOnScrolling: true,
-              backdropEnabled: true,
+              backdropEnabled: false,
               parallaxEnabled: true,
               panelSnapping: true,
               onPanelSlide: (position) => _panelPosition.value = position,
@@ -335,7 +335,22 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
                   );
                 },
               ),
-              body: FindMyMapWidget(controller: controller),
+              body: ValueListenableBuilder<double>(
+                valueListenable: _panelPosition,
+                builder: (context, position, _) {
+                  final panelHeight = minPanelHeight + position * (maxPanelHeight - minPanelHeight);
+                  return Padding(
+                    padding: EdgeInsets.only(bottom: panelHeight),
+                    child: Listener(
+                      behavior: HitTestBehavior.translucent,
+                      onPointerDown: (_) {
+                        if (_panelPosition.value > 0.01) controller.panelController.close();
+                      },
+                      child: FindMyMapWidget(controller: controller),
+                    ),
+                  );
+                },
+              ),
             ),
             if (!context.samsung)
               Positioned(
