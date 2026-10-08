@@ -6,13 +6,13 @@ This branch is the reproducible source for the separately installed Android dail
 
 - Package: `com.bluebubbles.messaging.alpha`
 - App label: `BlueBubbles+`
-- Version: `2.1.1-daily.15`
-- Installed version code: `60006106`
-- Build-number argument: `40004106`
-- APK SHA-256: `91c853151fa01fe9451317b4ae9c508c3ec5444ef1f5d3f34090a052711fdc7d`
+- Version: `2.1.1-daily.16`
+- Installed version code: `60006107`
+- Build-number argument: `40004107`
+- APK SHA-256: `bf66acbfeb1457f5e9043b84eaae1fb06eed53ff951aed6ab75782ea782de71c`
 - Signing keystore: `~/.android/debug.keystore`
 - Keystore SHA-256: `c831e6df330d6be1eaf6960f18de754b0b86d0f5cda02b8a055a9862dc2cc86c`
-- Archived APK: `~/BlueBubbles-Alpha-Build/artifacts/daily.15/BlueBubbles-alpha-2.1.1-daily.15.apk`
+- Archived APK: `~/BlueBubbles-Alpha-Build/artifacts/daily.16/BlueBubbles-alpha-2.1.1-daily.16.apk`
 
 ## Functional source
 
@@ -34,10 +34,10 @@ export JAVA_HOME="$HOME/BlueBubbles-Alpha-Build/toolchain/jdk21/Contents/Home"
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 cd "$HOME/BlueBubbles-Alpha-Build/daily"
-flutter build apk --flavor alpha --release --build-name=2.1.1-daily.15 --build-number=40004106
+flutter build apk --flavor alpha --release --build-name=2.1.1-daily.16 --build-number=40004107
 ```
 
-For a later build, increase the build-number argument until the resulting installed version code is greater than `60006106`. Verify the APK's package, version, signer, and SHA-256 before installation; do not infer them from the command.
+For a later build, increase the build-number argument until the resulting installed version code is greater than `60006107`. Verify the APK's package, version, signer, and SHA-256 before installation; do not infer them from the command.
 
 ## Install without losing app data
 

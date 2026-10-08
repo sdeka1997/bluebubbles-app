@@ -152,7 +152,7 @@ class FindMyDevice {
         locationEnabled: json["locationEnabled"],
         isConsideredAccessory: json["isConsideredAccessory"] ?? false,
         address: json["address"] == null ? null : Address.fromJson(json["address"]),
-        location: json["location"] == null ? null : Location.fromJson(json["location"]),
+        location: _newestLocation(json["location"], json["crowdSourcedLocation"]),
         modelDisplayName: json["modelDisplayName"],
         deviceColor: json["deviceColor"],
         activationLocked: json["activationLocked"],
@@ -316,6 +316,27 @@ class Address {
         "locality": locality,
         "country": country,
       };
+}
+
+/// Apple sometimes leaves [location] empty and reports the device's only fix
+/// as a crowd-sourced location (e.g. a Wi-Fi iPad found through nearby Apple
+/// devices). Find My shows whichever fix is newest, so prefer that one.
+Location? _newestLocation(dynamic primary, dynamic crowdSourced) {
+  Location? usable(dynamic json) {
+    if (json is! Map<String, dynamic>) return null;
+    final location = Location.fromJson(json);
+    final latitude = location.latitude;
+    final longitude = location.longitude;
+    if (latitude == null || longitude == null || !latitude.isFinite || !longitude.isFinite) return null;
+    if (latitude.abs() > 90 || longitude.abs() > 180 || (latitude == 0 && longitude == 0)) return null;
+    return location;
+  }
+
+  final main = usable(primary);
+  final crowd = usable(crowdSourced);
+  if (crowd == null) return main ?? (primary is Map<String, dynamic> ? Location.fromJson(primary) : null);
+  if (main == null) return crowd;
+  return (crowd.timeStamp ?? 0) > (main.timeStamp ?? 0) ? crowd : main;
 }
 
 class Location {

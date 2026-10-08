@@ -16,6 +16,7 @@ import 'package:flutter/foundation.dart';
 import 'package:bluebubbles/app/components/avatars/contact_avatar_widget.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_format.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_cache.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_items_tab_view.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_clipper.dart';
@@ -179,6 +180,17 @@ class FindMyController extends GetxController {
     }
   }
 
+  /// Distance from the user's own location to [point] in Find My's format,
+  /// or null when the user's location is unknown or contact info is hidden.
+  String? distanceLabelTo(LatLng point) {
+    final current = location.value;
+    if (current == null || !isUsableFindMyCoordinate(current.latitude, current.longitude)) return null;
+    if (shouldRedactFindMyContactInfo()) return null;
+    final meters = Geolocator.distanceBetween(current.latitude, current.longitude, point.latitude, point.longitude);
+    final countryCode = WidgetsBinding.instance.platformDispatcher.locale.countryCode;
+    return formatFindMyDistance(meters, useMiles: findMyUsesMiles(countryCode));
+  }
+
   GlobalKey rowKeyFor(String markerKey) => _rowKeys.putIfAbsent(markerKey, GlobalKey.new);
 
   bool isSelected(String markerKey) => selectedMarkerKey.value == markerKey;
@@ -206,7 +218,7 @@ class FindMyController extends GetxController {
       if (!selectionIsCurrent()) return;
       final rowContext = _rowKeys[markerKey]?.currentContext;
       if (rowContext != null) {
-        Scrollable.ensureVisible(rowContext, duration: const Duration(milliseconds: 250), alignment: 0.15);
+        Scrollable.ensureVisible(rowContext, duration: const Duration(milliseconds: 250));
       }
     });
   }
