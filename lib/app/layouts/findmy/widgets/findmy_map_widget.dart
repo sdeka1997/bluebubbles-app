@@ -142,45 +142,74 @@ class FindMyMapWidget extends StatelessWidget {
         .toList();
   }
 
-  /// One marker standing in for multiple products owned by one person at one
-  /// physical place, drawn as the first product with a total-count badge.
+  /// One owner/place marker: show up to two member icons, then `+N` for the
+  /// additional products hidden in the group.
   Marker _buildGroupMarker(BuildContext context, List<Marker> group) {
     final memberKeys = group.map(_markerKey).toList();
-    _groupMembers[memberKeys.join('|')] = memberKeys;
-    final top = group.first;
+    final groupKey = memberKeys.join('|');
+    _groupMembers[groupKey] = memberKeys;
+    final summary = summarizeFindMyGroup(memberKeys);
+    final width = 12.0 + summary.visible.length * 34 + (summary.remaining > 0 ? 42 : 0);
     return Marker(
-      key: ValueKey('group:${memberKeys.join('|')}'),
-      point: top.point,
-      width: top.width + 14,
-      height: top.height + 14,
-      alignment: top.alignment,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned(left: 0, bottom: 0, width: top.width, height: top.height, child: top.child),
-          Positioned(
-            right: 0,
-            top: 0,
-            child: Container(
-              constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
-              padding: const EdgeInsets.symmetric(horizontal: 5),
-              decoration: BoxDecoration(
-                color: context.theme.colorScheme.primary,
-                borderRadius: BorderRadius.circular(11),
-                border: Border.all(color: Colors.white, width: 2),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                '${group.length}',
-                style: context.theme.textTheme.labelSmall!.copyWith(
-                  color: context.theme.colorScheme.onPrimary,
-                  fontWeight: FontWeight.bold,
+      key: ValueKey('group:$groupKey'),
+      point: group.first.point,
+      width: width,
+      height: 46,
+      alignment: Alignment.center,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(23),
+          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 5, offset: Offset(0, 2))],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final key in summary.visible)
+              SizedBox(width: 34, height: 34, child: Center(child: _buildProductGlyph(context, key))),
+            if (summary.remaining > 0)
+              Container(
+                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                padding: const EdgeInsets.symmetric(horizontal: 5),
+                decoration: BoxDecoration(
+                  color: context.theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(17),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '+${summary.remaining}',
+                  style: context.theme.textTheme.labelMedium!.copyWith(
+                    color: context.theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildProductGlyph(BuildContext context, String markerKey) {
+    if (!markerKey.startsWith('device-')) return const Icon(Icons.devices, color: Colors.black, size: 22);
+    final id = markerKey.substring('device-'.length);
+    final item = controller.devices.firstWhereOrNull((device) => device.id == id);
+    if (item == null) return const Icon(Icons.devices, color: Colors.black, size: 22);
+    final isAirPods = item.isAppleAudioAccessory || (item.modelDisplayName?.toLowerCase().contains('airpods') ?? false);
+    if (isAirPods) return const Icon(Icons.headphones, color: Colors.black, size: 22);
+    final emoji = item.role?['emoji'] as String?;
+    if (emoji != null) {
+      return Text(emoji, style: context.theme.textTheme.titleMedium!.copyWith(fontFamily: 'Apple Color Emoji'));
+    }
+    return Icon(
+      (item.isMac ?? false)
+          ? Icons.computer
+          : item.isConsideredAccessory
+          ? Icons.headphones
+          : Icons.phone_iphone,
+      color: Colors.black,
+      size: 22,
     );
   }
 

@@ -92,6 +92,18 @@ List<LatLng> selectFindMyCameraFocus(List<LatLng> points, {LatLng? anchor}) {
   return all;
 }
 
+class FindMyGroupSummary<T> {
+  const FindMyGroupSummary({required this.visible, required this.remaining});
+
+  final List<T> visible;
+  final int remaining;
+}
+
+/// Shows the first two members and reports how many additional members are
+/// hidden, matching Find My's `icon icon +N` group marker.
+FindMyGroupSummary<T> summarizeFindMyGroup<T>(List<T> members) =>
+    FindMyGroupSummary(visible: members.take(2).toList(), remaining: (members.length - 2).clamp(0, members.length));
+
 /// A logical Find My product to group by owner and physical place.
 class FindMyProductPoint {
   const FindMyProductPoint({

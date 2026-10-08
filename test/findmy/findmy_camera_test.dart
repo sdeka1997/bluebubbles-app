@@ -67,6 +67,20 @@ void main() {
     expect(clusters, hasLength(1));
   });
 
+  group('summarizeFindMyGroup', () {
+    test('shows both members of a two-product group without a remainder', () {
+      final summary = summarizeFindMyGroup(['phone', 'laptop']);
+      expect(summary.visible, ['phone', 'laptop']);
+      expect(summary.remaining, 0);
+    });
+
+    test('shows two members and counts only the hidden remainder', () {
+      final summary = summarizeFindMyGroup(['phone', 'laptop', 'watch', 'tablet', 'headphones', 'wallet']);
+      expect(summary.visible, ['phone', 'laptop']);
+      expect(summary.remaining, 4);
+    });
+  });
+
   group('groupFindMyProductsByOwnerAndPlace', () {
     FindMyProductPoint point(String id, String? owner, LatLng location, double accuracy) =>
         FindMyProductPoint(id: id, ownerId: owner, location: location, accuracyMeters: accuracy);
