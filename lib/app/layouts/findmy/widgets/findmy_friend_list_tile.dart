@@ -44,7 +44,30 @@ class FindMyFriendListTile extends StatelessWidget {
 
       return ListTile(
         mouseCursor: MouseCursor.defer,
-        leading: ContactAvatarWidget(handle: item.handle),
+        leading: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            ContactAvatarWidget(handle: item.handle),
+            if (item.favoriteOrder != null)
+              Positioned(
+                right: -3,
+                bottom: -2,
+                child: Semantics(
+                  label: "Favorite",
+                  child: Container(
+                    width: 19,
+                    height: 19,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: context.theme.colorScheme.primary,
+                      border: Border.all(color: context.theme.colorScheme.surface, width: 2),
+                    ),
+                    child: Icon(Icons.star, size: 11, color: context.theme.colorScheme.onPrimary),
+                  ),
+                ),
+              ),
+          ],
+        ),
         title: Text(displayName),
         subtitle: Text(displayLocation),
         trailing: withLocation && hasLocation

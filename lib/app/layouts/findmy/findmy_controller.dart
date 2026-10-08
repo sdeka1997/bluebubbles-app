@@ -42,6 +42,8 @@ class FindMyController extends GetxController {
   final RxList<FindMyFriend> friendsWithoutLocation = <FindMyFriend>[].obs;
   final RxMap<String, Marker> markers = <String, Marker>{}.obs;
   final Set<String> _friendMarkerKeys = <String>{};
+  final Set<String> _deviceMarkerKeys = <String>{};
+  final Set<String> _itemMarkerKeys = <String>{};
   final Rxn<Position> location = Rxn<Position>();
   final Rxn<bool> fetching = Rxn<bool>(true);
   final RxBool refreshing = false.obs;
@@ -263,6 +265,7 @@ class FindMyController extends GetxController {
           }
         }
 
+        _clearDeviceMarkers();
         for (FindMyDevice e in devices.where((e) =>
             isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))) {
           buildDeviceMarker(e);
@@ -317,9 +320,25 @@ class FindMyController extends GetxController {
         favoritesFirst(friends.where((friend) => !hasUsableFindMyLocation(friend)));
   }
 
+  List<Marker> get visibleMarkers {
+    final visibleKeys = switch (tabIndex.value) {
+      0 => _friendMarkerKeys,
+      1 => _deviceMarkerKeys,
+      _ => _itemMarkerKeys,
+    };
+    return markers.entries
+        .where((entry) => entry.key == 'current' || visibleKeys.contains(entry.key))
+        .map((entry) => entry.value)
+        .toList();
+  }
+
   void buildDeviceMarker(FindMyDevice e) {
-    markers[e.id ?? randomString(6)] = Marker(
-      key: ValueKey('device-${e.id ?? randomString(6)}'),
+    final markerKey = e.id ?? randomString(6);
+    _deviceMarkerKeys.remove(markerKey);
+    _itemMarkerKeys.remove(markerKey);
+    (e.isConsideredAccessory ? _itemMarkerKeys : _deviceMarkerKeys).add(markerKey);
+    markers[markerKey] = Marker(
+      key: ValueKey('device-$markerKey'),
       point: markerPointForDevice(e),
       width: 30,
       height: 35,
@@ -381,6 +400,14 @@ class FindMyController extends GetxController {
       markers.remove(markerKey);
     }
     _friendMarkerKeys.clear();
+  }
+
+  void _clearDeviceMarkers() {
+    for (final markerKey in {..._deviceMarkerKeys, ..._itemMarkerKeys}) {
+      markers.remove(markerKey);
+    }
+    _deviceMarkerKeys.clear();
+    _itemMarkerKeys.clear();
   }
 
   void buildLocationMarker(Position pos) {

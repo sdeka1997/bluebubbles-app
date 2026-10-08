@@ -49,7 +49,7 @@ String? _serialSuffix(FindMyDevice item) {
 /// Presents one top-level row per Apple audio-accessory group. Weak orphan
 /// records are hidden only when they uniquely match a current grouped part;
 /// ambiguous records remain visible rather than losing locator data.
-List<FindMyDevice> _collapseAccessoryComponents(List<FindMyDevice> items) {
+List<FindMyDevice> collapseFindMyAccessoryComponents(List<FindMyDevice> items) {
   final componentsByGroup = <String, List<FindMyDevice>>{};
   for (final item in items) {
     final groupId = _componentGroupId(item);
@@ -116,7 +116,7 @@ class FindMyItemsTabView extends StatelessWidget {
     return Obx(() {
       final allItems = controller.devices.where((item) => item.isConsideredAccessory).toList();
 
-      final items = _collapseAccessoryComponents(allItems);
+      final items = collapseFindMyAccessoryComponents(allItems);
       final itemsWithLocation = items.where(_hasDisplayLocation).toList();
       final itemsWithoutLocation = items.where((item) => !_hasDisplayLocation(item)).toList();
 

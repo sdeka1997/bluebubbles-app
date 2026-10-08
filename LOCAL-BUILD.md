@@ -6,19 +6,20 @@ This branch is the reproducible source for the separately installed Android dail
 
 - Package: `com.bluebubbles.messaging.alpha`
 - App label: `BlueBubbles+`
-- Version: `2.1.1-daily.8`
-- Installed version code: `60006099`
-- Build-number argument: `40004099`
-- APK SHA-256: `432549aec17e67f3efbf9cb95ef19b706f82b10df2c78460917effe3b21f63a2`
+- Version: `2.1.1-daily.9`
+- Installed version code: `60006100`
+- Build-number argument: `40004100`
+- APK SHA-256: `1c00bb4955bf34a387936c7d58709874a0e9579c408011ee0ea63ac2a972724f`
 - Signing keystore: `~/.android/debug.keystore`
 - Keystore SHA-256: `c831e6df330d6be1eaf6960f18de754b0b86d0f5cda02b8a055a9862dc2cc86c`
-- Archived APK: `~/BlueBubbles-Alpha-Build/artifacts/daily.8/BlueBubbles-alpha-2.1.1-daily.8.apk`
+- Archived APK: `~/BlueBubbles-Alpha-Build/artifacts/daily.9/BlueBubbles-alpha-2.1.1-daily.9.apk`
 
 ## Functional source
 
 - Find My UI behavior from app PR #3306, head `3ceb10c0cf80745d7211fc31d2c2438b4be3ec74`.
 - Apple read/delete synchronization from app PR #3309, head `daa3af5d7cde0373e220047c0f08738bdc575a19`.
 - Find My reconciliation: Apple favorites first in the normal list, exact accessory-group collapsing, conservative stale-component suppression, and `Locating…` while reverse geocoding catches up.
+- Find My parity follow-up: visible favorite-star badges, markers scoped to the active Friends/Devices/Items tab, and collapsed/half/open panel states with scrollable midpoint content.
 - Local-only packaging: Alpha application ID/signing plus the `BlueBubbles+` label. Never include this branding in an upstream PR.
 - Server dependency: custom server v8.12.7; active ASAR `85026341a6a8f93f64005444d983b0de63563a94b156086666b6dce1cfb72bcd`.
 
@@ -30,10 +31,10 @@ export JAVA_HOME="$HOME/BlueBubbles-Alpha-Build/toolchain/jdk21/Contents/Home"
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 cd "$HOME/BlueBubbles-Alpha-Build/daily"
-flutter build apk --flavor alpha --release --build-name=2.1.1-daily.8 --build-number=40004099
+flutter build apk --flavor alpha --release --build-name=2.1.1-daily.9 --build-number=40004100
 ```
 
-For a later build, increase the build-number argument until the resulting installed version code is greater than `60006099`. Verify the APK's package, version, signer, and SHA-256 before installation; do not infer them from the command.
+For a later build, increase the build-number argument until the resulting installed version code is greater than `60006100`. Verify the APK's package, version, signer, and SHA-256 before installation; do not infer them from the command.
 
 ## Install without losing app data
 

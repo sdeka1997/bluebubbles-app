@@ -1,5 +1,6 @@
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
+import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_items_tab_view.dart';
 import 'package:bluebubbles/app/wrappers/trackpad_bug_wrapper.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
@@ -20,12 +21,25 @@ class FindMyMapWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return TrackpadBugWrapper(builder: (context, bugDetected) {
       return Obx(() {
+        final visibleItems = controller.tabIndex.value == 2
+            ? collapseFindMyAccessoryComponents(
+                controller.devices.where((item) => item.isConsideredAccessory).toList(),
+              )
+            : const <FindMyDevice>[];
+        final visibleMarkers = controller.visibleMarkers.where((marker) {
+          if (controller.tabIndex.value != 2) return true;
+          final key = (marker.key as ValueKey?)?.value as String? ?? '';
+          if (key == 'current' || !key.startsWith('device-')) return true;
+          final deviceId = key.substring('device-'.length);
+          final device = controller.devices.firstWhereOrNull((item) => item.id == deviceId);
+          return device == null || visibleItems.contains(device);
+        }).toList();
         final currentLocation = controller.location.value;
         final currentCenter = isUsableFindMyCoordinate(currentLocation?.latitude, currentLocation?.longitude)
             ? LatLng(currentLocation!.latitude, currentLocation.longitude)
             : null;
         LatLng? markerCenter;
-        for (final marker in controller.markers.values) {
+        for (final marker in visibleMarkers) {
           if (isUsableFindMyCoordinate(marker.point.latitude, marker.point.longitude)) {
             markerCenter = marker.point;
             break;
@@ -70,7 +84,7 @@ class FindMyMapWidget extends StatelessWidget {
               PopupMarkerLayer(
                 options: PopupMarkerLayerOptions(
                   popupController: controller.popupController,
-                  markers: controller.markers.values.toList(),
+                  markers: visibleMarkers,
                   popupDisplayOptions: PopupDisplayOptions(
                     builder: (context, marker) => _buildMarkerPopup(context, marker),
                   ),

@@ -27,16 +27,25 @@ class FindMyPage extends StatefulWidget {
 
 class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateMixin {
   late final FindMyController controller;
+  final ValueNotifier<double> _panelPosition = ValueNotifier<double>(0);
 
   @override
   void initState() {
     super.initState();
     controller = Get.put(FindMyController());
-    controller.tabController = TabController(vsync: this, length: 3);
+    controller.tabController = TabController(vsync: this, length: 3)
+      ..addListener(() {
+        final index = controller.tabController!.index;
+        if (controller.tabIndex.value == index) return;
+        controller.popupController.hideAllPopups();
+        controller.tabIndex.value = index;
+      });
   }
 
   @override
   void dispose() {
+    _panelPosition.dispose();
+    controller.tabController?.dispose();
     Get.delete<FindMyController>();
     super.dispose();
   }
@@ -250,6 +259,8 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
   }
 
   Widget _buildNormalLayout(BuildContext context) {
+    const minPanelHeight = 50.0;
+    final maxPanelHeight = MediaQuery.of(context).size.height * 0.75;
     return Obx(
       () => BBScaffold(
         backgroundColor: context.material ? context.tileColor : context.headerColor,
@@ -265,16 +276,14 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
                 topLeft: Radius.circular(25.0),
                 topRight: Radius.circular(25.0),
               ),
-              minHeight: 50,
-              maxHeight: MediaQuery.of(context).size.height * 0.75,
+              minHeight: minPanelHeight,
+              maxHeight: maxPanelHeight,
+              snapPoint: 0.5,
               disableDraggableOnScrolling: true,
               backdropEnabled: true,
               parallaxEnabled: true,
-              // Snap to collapsed or fully open. The panel lays its content out at
-              // maxHeight regardless of how far open it is, so a half-open panel
-              // leaves the end of the list outside the visible area, unreachable by
-              // scrolling. Snapping keeps the panel out of that state.
               panelSnapping: true,
+              onPanelSlide: (position) => _panelPosition.value = position,
               header: ForceDraggableWidget(
                 child: SizedBox(
                   width: MediaQuery.of(context).size.width,
@@ -294,23 +303,37 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
                   ),
                 ),
               ),
-              panelBuilder: () => TabBarView(
-                physics: const NeverScrollableScrollPhysics(),
-                controller: controller.tabController,
-                children: <Widget>[
-                  _buildScrollNotificationWrapper(
-                    controller.friendsController,
-                    _buildFriendsTab(context, false),
-                  ),
-                  _buildScrollNotificationWrapper(
-                    controller.devicesController,
-                    _buildDevicesTab(context, false),
-                  ),
-                  _buildScrollNotificationWrapper(
-                    controller.itemsController,
-                    _buildItemsTab(context, false),
-                  ),
-                ],
+              panelBuilder: () => ValueListenableBuilder<double>(
+                valueListenable: _panelPosition,
+                child: TabBarView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  controller: controller.tabController,
+                  children: <Widget>[
+                    _buildScrollNotificationWrapper(
+                      controller.friendsController,
+                      _buildFriendsTab(context, false),
+                    ),
+                    _buildScrollNotificationWrapper(
+                      controller.devicesController,
+                      _buildDevicesTab(context, false),
+                    ),
+                    _buildScrollNotificationWrapper(
+                      controller.itemsController,
+                      _buildItemsTab(context, false),
+                    ),
+                  ],
+                ),
+                builder: (context, position, child) {
+                  final hiddenHeight = (1 - position) * (maxPanelHeight - minPanelHeight);
+                  final isCollapsed = position <= 0.01;
+                  return Padding(
+                    padding: EdgeInsets.only(bottom: hiddenHeight),
+                    child: IgnorePointer(
+                      ignoring: isCollapsed,
+                      child: Opacity(opacity: isCollapsed ? 0 : 1, child: child!),
+                    ),
+                  );
+                },
               ),
               body: FindMyMapWidget(controller: controller),
             ),
@@ -376,18 +399,20 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
           ),
         ],
         onDestinationSelected: (page) {
-          bool wasOpen = controller.panelController.isPanelOpen;
-          int oldIndex = controller.tabIndex.value;
+          final oldIndex = controller.tabIndex.value;
+          final panelPosition = controller.panelController.panelPosition;
+          controller.popupController.hideAllPopups();
           controller.tabIndex.value = page;
           controller.tabController!.animateTo(page);
 
-          if (oldIndex == page && !controller.panelController.isPanelOpen) {
+          // Switching tabs preserves the drawer height. Re-tapping the active tab
+          // advances collapsed → half → open, then returns to collapsed.
+          if (oldIndex != page) return;
+          if (panelPosition <= 0.01) {
+            controller.panelController.animatePanelToSnapPoint();
+          } else if (panelPosition < 0.99) {
             controller.panelController.open();
-          } else if (oldIndex == page) {
-            controller.panelController.close();
-          } else if (!controller.panelController.isPanelOpen) {
-            controller.panelController.open();
-          } else if (!wasOpen && controller.panelController.isPanelOpen) {
+          } else {
             controller.panelController.close();
           }
         },
