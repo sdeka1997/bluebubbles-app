@@ -6,15 +6,17 @@ This branch is the reproducible source for the separately installed Android dail
 
 - Package: `com.bluebubbles.messaging.alpha`
 - App label: `BlueBubbles+`
-- Version: `2.1.1-daily.21`
-- Installed version code: `60006112`
-- Build-number argument: `40004112`
-- APK SHA-256: `e7e38803eb9e9ba5fb080c8747afb547636e4461ee07700ff11509b0eae9984a`
+- Version: `2.1.1-daily.23`
+- Installed version code: `60006114`
+- Build-number argument: `40004114`
+- APK SHA-256: `df52ee94cf0ee9b6436cf99206547d238581b8db8b7097dbf65bb475892e73ca`
 - Signing keystore: `~/.android/debug.keystore`
 - Keystore SHA-256: `c831e6df330d6be1eaf6960f18de754b0b86d0f5cda02b8a055a9862dc2cc86c`
-- Archived APK: `~/BlueBubbles-Alpha-Build/artifacts/daily.21/BlueBubbles-alpha-2.1.1-daily.21.apk`
+- Archived APK: `~/BlueBubbles-Alpha-Build/artifacts/daily.23/BlueBubbles-alpha-2.1.1-daily.23.apk`
 
 ## Functional source
+
+- Rollback build: functionally identical to daily.21; higher version code only because Android blocks in-place downgrades without erasing app data.
 
 - Find My UI behavior from app PR #3306, head `3ceb10c0cf80745d7211fc31d2c2438b4be3ec74`.
 - Apple read/delete synchronization from app PR #3309, head `daa3af5d7cde0373e220047c0f08738bdc575a19`.
@@ -34,10 +36,10 @@ export JAVA_HOME="$HOME/BlueBubbles-Alpha-Build/toolchain/jdk21/Contents/Home"
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 cd "$HOME/BlueBubbles-Alpha-Build/daily"
-flutter build apk --flavor alpha --release --build-name=2.1.1-daily.21 --build-number=40004112
+flutter build apk --flavor alpha --release --build-name=2.1.1-daily.23 --build-number=40004114
 ```
 
-For a later build, increase the build-number argument until the resulting installed version code is greater than `60006112`. Verify the APK's package, version, signer, and SHA-256 before installation; do not infer them from the command.
+For a later build, increase the build-number argument until the resulting installed version code is greater than `60006114`. Verify the APK's package, version, signer, and SHA-256 before installation; do not infer them from the command.
 
 ## Install without losing app data
 
