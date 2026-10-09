@@ -1076,6 +1076,28 @@ class ChatsService {
     return Database.chats.count();
   }
 
+  /// Deletes the conversation on the server Mac (and through iCloud on the
+  /// user's Apple devices), then removes it locally.
+  Future<bool> deleteChatOnApple(Chat chat) async {
+    if (kIsWeb) return false;
+    return deleteRemoteThenLocal(
+      remoteDelete: () => HttpSvc.chat.delete(chat.guid),
+      // The live chat-deleted event may already have removed the tile.
+      localDelete: () async {
+        if (_sortedChats.any((item) => item.guid == chat.guid)) await softDeleteChat(chat);
+      },
+      onError: (error, trace) {
+        Logger.error('Failed to delete chat on Apple', error: error, trace: trace, tag: 'ChatsService');
+        showSnackbar(
+          'Conversation not deleted',
+          'The server did not confirm the deletion. The conversation is still on this device.',
+          type: SnackbarType.error,
+          durationMs: 4000,
+        );
+      },
+    );
+  }
+
   /// Delete a chat with full UI cleanup and service state management.
   /// Set [deleteHandles] to true to also remove the chat's participant handles.
   Future<void> deleteChat(Chat chat, {bool deleteHandles = false}) async {
@@ -1727,4 +1749,21 @@ class ChatsService {
       initDbWatchers();
     }
   }
+}
+
+/// Deletes on the server first and only removes the local chat once the server
+/// confirms, so a failed request never hides a conversation that still exists.
+Future<bool> deleteRemoteThenLocal({
+  required Future<void> Function() remoteDelete,
+  required Future<void> Function() localDelete,
+  required void Function(Object error, StackTrace trace) onError,
+}) async {
+  try {
+    await remoteDelete();
+  } catch (error, trace) {
+    onError(error, trace);
+    return false;
+  }
+  await localDelete();
+  return true;
 }
