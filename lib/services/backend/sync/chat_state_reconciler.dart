@@ -329,8 +329,34 @@ class ChatStateReconciler {
     final remainingDeferredDeletionGuids = <String>{};
     final deletionCandidates = {...transition.deletedGuids, ...confirmedQueuedDeletionGuids};
 
+    final localChatsByGuid = {for (final chat in localChats) chat.guid: chat};
+    final journaledGuids = await ChatsSvc.recoverableDeleteCoordinator.resolveSnapshot(
+      messageCounts: entries.map((guid, entry) => MapEntry(guid, entry.messageCount)),
+      now: DateTime.now().toUtc(),
+      hasLocalWork: (guid) {
+        if (ChatsSvc.hasLocalWorkForChat(guid)) return true;
+        final chat = localChatsByGuid[guid];
+        return (chat?.textFieldText?.isNotEmpty ?? false) || (chat?.textFieldAttachments.isNotEmpty ?? false);
+      },
+      softDelete: (guid) async {
+        final chat = localChatsByGuid[guid];
+        if (chat != null) {
+          await ChatsSvc.softDeleteChatLocalOnly(chat);
+          deleted++;
+        }
+      },
+      deferDeletion: (guid) async {
+        remainingDeferredDeletionGuids.add(guid);
+        // Persist the hand-off before the recoverable-delete journal is
+        // cleared, so a crash cannot strand a protected draft between queues.
+        await _saveDeferredDeletionGuids(serverAddress, {...queuedDeletionGuids, ...remainingDeferredDeletionGuids});
+      },
+      restore: ChatsSvc.restoreRecoverableDeleteChat,
+    );
+
     for (final chat in localChats) {
       if (chat.dateDeleted != null || !_isServerBacked(chat)) continue;
+      if (journaledGuids.contains(chat.guid)) continue;
       final entry = entries[chat.guid];
 
       if (deletionCandidates.contains(chat.guid)) {

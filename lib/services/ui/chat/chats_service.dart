@@ -11,6 +11,7 @@ import 'package:bluebubbles/helpers/backend/startup_tasks.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
+import 'package:bluebubbles/services/backend/sync/recoverable_delete_journal.dart';
 import 'package:bluebubbles/services/backend/notifications/desktop_notification.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -53,6 +54,28 @@ class ChatsService {
   /// Guids with a recoverable delete in flight. Tiles dim and ignore taps while
   /// their guid is here, and a repeat request for the same chat is dropped.
   final RxSet<String> pendingDeletes = <String>{}.obs;
+
+  RecoverableDeleteCoordinator? _recoverableDeleteCoordinator;
+
+  RecoverableDeleteCoordinator get recoverableDeleteCoordinator {
+    final serverAddress = SettingsSvc.settings.serverAddress.value;
+    if (_recoverableDeleteCoordinator?.journal.serverAddress != serverAddress) {
+      _recoverableDeleteCoordinator = RecoverableDeleteCoordinator(
+        RecoverableDeleteJournal(
+          serverAddress: serverAddress,
+          readRaw: PrefsSvc.database.getRecoverableDeleteJournal,
+          writeRaw: PrefsSvc.database.setRecoverableDeleteJournal,
+          onMalformed: (error, trace) => Logger.warn(
+            'Recoverable-delete journal was malformed; clearing it so chats remain visible',
+            error: error,
+            trace: trace,
+            tag: 'ChatsService',
+          ),
+        ),
+      );
+    }
+    return _recoverableDeleteCoordinator!;
+  }
 
   ChatState? _activeChat;
   ChatState? get activeChat => _activeChat;
@@ -318,6 +341,16 @@ class ChatsService {
 
     reset();
 
+    // Hydrate before reading the first ObjectBox batch. A recoverable delete
+    // accepted just before process death must never flash back into the list.
+    _recoverableDeleteCoordinator = null;
+    await recoverableDeleteCoordinator.hydrate(
+      finishAccepted: (guid) async {
+        final chat = _findActiveDatabaseChat(guid);
+        if (chat != null) await softDeleteChatLocalOnly(chat);
+      },
+    );
+
     // Preload the saved default filter selection (if any) — independent of
     // chat count, so set this up unconditionally.
     _loadDefaultChatListFilters();
@@ -358,6 +391,7 @@ class ChatsService {
       // Insert each chat at the correct position using binary search
       // This maintains proper ordering including pinIndex which DB queries cannot handle
       for (Chat c in chatBatch) {
+        if (!recoverableDeleteCoordinator.shouldAddChat(c.guid)) continue;
         // Create ChatState and add to map
         final state = chatStates[c.guid] = ChatState(c);
         _setupChatStateListeners(state);
@@ -783,6 +817,7 @@ class ChatsService {
 
   Future<void> addChat(Chat toAdd, {bool immediate = false}) async {
     if (headless) return;
+    if (!recoverableDeleteCoordinator.shouldAddChat(toAdd.guid)) return;
     // Check if chat already exists
     if (chatStates.containsKey(toAdd.guid)) {
       // Update existing chat instead (debounced during init, immediate for new chats)
@@ -1092,18 +1127,38 @@ class ChatsService {
   /// untouched on this device.
   Future<bool> recoverablyDeleteChat(Chat chat) async {
     if (kIsWeb) return false;
-    if (!pendingDeletes.add(chat.guid)) return false;
-
     try {
-      await HttpSvc.chat.recoverableDelete(chat.guid);
-
-      // A chat-deleted socket event may win the race with the HTTP response.
-      // Only apply the local mutation if the chat is still present. Check both
-      // collections because a deep-linked active chat may not be in the list.
-      if (_sortedChats.any((item) => item.guid == chat.guid) || chatStates.containsKey(chat.guid)) {
-        await softDeleteChatLocalOnly(chat);
-      }
-      return true;
+      return await recoverableDeleteCoordinator.delete(
+        chat.guid,
+        now: DateTime.now().toUtc(),
+        submit: () => HttpSvc.chat.recoverableDelete(chat.guid),
+        localDelete: () async {
+          // A chat-deleted socket event may win the race with the HTTP response,
+          // so consult ObjectBox rather than relying on in-memory list presence.
+          final activeLocalChat = _findActiveDatabaseChat(chat.guid);
+          if (activeLocalChat != null) await softDeleteChatLocalOnly(activeLocalChat);
+        },
+        pendingChanged: (pending) {
+          if (pending) {
+            pendingDeletes.add(chat.guid);
+          } else {
+            pendingDeletes.remove(chat.guid);
+          }
+        },
+        isDefinitiveFailure: (error) =>
+            error is Response ||
+            error is String ||
+            (error is DioException && error.type == DioExceptionType.badResponse && error.response != null),
+        definitiveFailure: (error, trace) {
+          Logger.error('Failed to recoverably delete chat', error: error, trace: trace, tag: 'ChatsService');
+          showSnackbar(
+            'Conversation not deleted',
+            'The deletion could not be completed. The conversation is still on this device.',
+            type: SnackbarType.error,
+            durationMs: 4000,
+          );
+        },
+      );
     } catch (error, trace) {
       Logger.error(
         'Failed to recoverably delete chat',
@@ -1118,9 +1173,19 @@ class ChatsService {
         durationMs: 4000,
       );
       return false;
-    } finally {
-      pendingDeletes.remove(chat.guid);
     }
+  }
+
+  Chat? _findActiveDatabaseChat(String guid) {
+    final query = Database.chats.query(Chat_.guid.equals(guid).and(Chat_.dateDeleted.isNull())).build()..limit = 1;
+    final chat = query.findFirst();
+    query.close();
+    return chat;
+  }
+
+  Future<void> restoreRecoverableDeleteChat(String guid) async {
+    final chat = _findActiveDatabaseChat(guid);
+    if (chat != null) await addChat(chat, immediate: true);
   }
 
   /// Permanently delete a chat from the local ObjectBox database.
