@@ -33,6 +33,62 @@ ChatsService get ChatsSvc => GetIt.I<ChatsService>();
 bool shouldApplyServerUnreadUpdate({required bool localUnread, required bool serverUnread}) =>
     localUnread != serverUnread || !serverUnread;
 
+enum RecoverableDeleteSubmissionDisposition { definitiveFailure, ambiguous }
+
+RecoverableDeleteSubmissionDisposition classifyRecoverableDeleteSubmissionError(Object error) {
+  if (error is DioException) {
+    if (error.response == null ||
+        error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.sendTimeout ||
+        error.type == DioExceptionType.receiveTimeout) {
+      return RecoverableDeleteSubmissionDisposition.ambiguous;
+    }
+    return classifyRecoverableDeleteSubmissionError(error.response!);
+  }
+  if (error is Response) {
+    final data = error.data;
+    if (data is Map && data['error'] is Map && (data['error'] as Map)['type'] == 'timeout') {
+      return RecoverableDeleteSubmissionDisposition.ambiguous;
+    }
+    final statusCode = error.statusCode;
+    if (statusCode != null && statusCode >= 400 && statusCode < 500) {
+      return RecoverableDeleteSubmissionDisposition.definitiveFailure;
+    }
+    return RecoverableDeleteSubmissionDisposition.ambiguous;
+  }
+  if (error is String && error == 'No server URL!') {
+    return RecoverableDeleteSubmissionDisposition.definitiveFailure;
+  }
+  return RecoverableDeleteSubmissionDisposition.ambiguous;
+}
+
+bool shouldIncludeRecoverableDeleteChat(RecoverableDeleteCoordinator coordinator, String guid) =>
+    coordinator.shouldAddChat(guid);
+
+Future<bool> executeRecoverableDelete({
+  required RecoverableDeleteCoordinator coordinator,
+  required String guid,
+  required DateTime now,
+  required Future<void> Function() submit,
+  required Future<void> Function() localDelete,
+  required void Function(bool pending) pendingChanged,
+  required void Function(Object error, StackTrace trace) onDefinitiveFailure,
+  required void Function(Object error, StackTrace trace) onPendingConfirmation,
+}) async {
+  final outcome = await coordinator.delete(
+    guid,
+    now: now,
+    submit: submit,
+    localDelete: localDelete,
+    pendingChanged: pendingChanged,
+    isDefinitiveFailure: (error) =>
+        classifyRecoverableDeleteSubmissionError(error) == RecoverableDeleteSubmissionDisposition.definitiveFailure,
+    definitiveFailure: onDefinitiveFailure,
+    pendingConfirmation: onPendingConfirmation,
+  );
+  return outcome != RecoverableDeleteOutcome.definitiveFailure;
+}
+
 class ChatsService {
   static const batchSize = 100;
   int currentCount = 0;
@@ -55,26 +111,38 @@ class ChatsService {
   /// their guid is here, and a repeat request for the same chat is dropped.
   final RxSet<String> pendingDeletes = <String>{}.obs;
 
-  RecoverableDeleteCoordinator? _recoverableDeleteCoordinator;
-
-  RecoverableDeleteCoordinator get recoverableDeleteCoordinator {
-    final serverAddress = SettingsSvc.settings.serverAddress.value;
-    if (_recoverableDeleteCoordinator?.journal.serverAddress != serverAddress) {
-      _recoverableDeleteCoordinator = RecoverableDeleteCoordinator(
-        RecoverableDeleteJournal(
-          serverAddress: serverAddress,
-          readRaw: PrefsSvc.database.getRecoverableDeleteJournal,
-          writeRaw: PrefsSvc.database.setRecoverableDeleteJournal,
-          onMalformed: (error, trace) => Logger.warn(
-            'Recoverable-delete journal was malformed; clearing it so chats remain visible',
-            error: error,
-            trace: trace,
-            tag: 'ChatsService',
-          ),
+  late final RecoverableDeleteCoordinatorStore _recoverableDeleteCoordinators =
+      RecoverableDeleteCoordinatorStore(
+    (serverAddress) => RecoverableDeleteCoordinator(
+      RecoverableDeleteJournal(
+        serverAddress: serverAddress,
+        readRaw: PrefsSvc.database.getRecoverableDeleteJournal,
+        writeRaw: PrefsSvc.database.setRecoverableDeleteJournal,
+        onMalformed: (error, trace) => Logger.warn(
+          'Recoverable-delete journal was malformed; clearing all server buckets so chats remain visible',
+          error: error,
+          trace: trace,
+          tag: 'ChatsService',
         ),
-      );
-    }
-    return _recoverableDeleteCoordinator!;
+      ),
+    ),
+  );
+
+  Future<RecoverableDeleteCoordinator> recoverableDeleteCoordinatorForCurrentServer({bool forceReload = false}) {
+    return _recoverableDeleteCoordinators.forServer(
+      SettingsSvc.settings.serverAddress.value,
+      forceReload: forceReload,
+      finishAccepted: (guid) async {
+        final chat = _findActiveDatabaseChat(guid);
+        if (chat != null) await softDeleteChatLocalOnly(chat);
+      },
+      acceptedFailure: (_, error, trace) => Logger.warn(
+        'Failed to finish one accepted recoverable delete; retaining it for retry',
+        error: error,
+        trace: trace,
+        tag: 'ChatsService',
+      ),
+    );
   }
 
   ChatState? _activeChat;
@@ -343,13 +411,8 @@ class ChatsService {
 
     // Hydrate before reading the first ObjectBox batch. A recoverable delete
     // accepted just before process death must never flash back into the list.
-    _recoverableDeleteCoordinator = null;
-    await recoverableDeleteCoordinator.hydrate(
-      finishAccepted: (guid) async {
-        final chat = _findActiveDatabaseChat(guid);
-        if (chat != null) await softDeleteChatLocalOnly(chat);
-      },
-    );
+    final recoverableDeleteCoordinator =
+        await recoverableDeleteCoordinatorForCurrentServer(forceReload: true);
 
     // Preload the saved default filter selection (if any) — independent of
     // chat count, so set this up unconditionally.
@@ -391,7 +454,7 @@ class ChatsService {
       // Insert each chat at the correct position using binary search
       // This maintains proper ordering including pinIndex which DB queries cannot handle
       for (Chat c in chatBatch) {
-        if (!recoverableDeleteCoordinator.shouldAddChat(c.guid)) continue;
+        if (!shouldIncludeRecoverableDeleteChat(recoverableDeleteCoordinator, c.guid)) continue;
         // Create ChatState and add to map
         final state = chatStates[c.guid] = ChatState(c);
         _setupChatStateListeners(state);
@@ -817,7 +880,8 @@ class ChatsService {
 
   Future<void> addChat(Chat toAdd, {bool immediate = false}) async {
     if (headless) return;
-    if (!recoverableDeleteCoordinator.shouldAddChat(toAdd.guid)) return;
+    final recoverableDeleteCoordinator = await recoverableDeleteCoordinatorForCurrentServer();
+    if (!shouldIncludeRecoverableDeleteChat(recoverableDeleteCoordinator, toAdd.guid)) return;
     // Check if chat already exists
     if (chatStates.containsKey(toAdd.guid)) {
       // Update existing chat instead (debounced during init, immediate for new chats)
@@ -1128,8 +1192,10 @@ class ChatsService {
   Future<bool> recoverablyDeleteChat(Chat chat) async {
     if (kIsWeb) return false;
     try {
-      return await recoverableDeleteCoordinator.delete(
-        chat.guid,
+      final recoverableDeleteCoordinator = await recoverableDeleteCoordinatorForCurrentServer();
+      return await executeRecoverableDelete(
+        coordinator: recoverableDeleteCoordinator,
+        guid: chat.guid,
         now: DateTime.now().toUtc(),
         submit: () => HttpSvc.chat.recoverableDelete(chat.guid),
         localDelete: () async {
@@ -1145,11 +1211,7 @@ class ChatsService {
             pendingDeletes.remove(chat.guid);
           }
         },
-        isDefinitiveFailure: (error) =>
-            error is Response ||
-            error is String ||
-            (error is DioException && error.type == DioExceptionType.badResponse && error.response != null),
-        definitiveFailure: (error, trace) {
+        onDefinitiveFailure: (error, trace) {
           Logger.error('Failed to recoverably delete chat', error: error, trace: trace, tag: 'ChatsService');
           showSnackbar(
             'Conversation not deleted',
@@ -1158,14 +1220,25 @@ class ChatsService {
             durationMs: 4000,
           );
         },
+        onPendingConfirmation: (error, trace) {
+          Logger.warn(
+            'Recoverable chat deletion is awaiting server confirmation',
+            error: error,
+            trace: trace,
+            tag: 'ChatsService',
+          );
+          showSnackbar(
+            'Deletion is being confirmed',
+            'The conversation will remain hidden until server state is checked.',
+            type: SnackbarType.info,
+            durationMs: 4000,
+          );
+        },
       );
     } catch (error, trace) {
-      Logger.error(
-        'Failed to recoverably delete chat',
-        error: error,
-        trace: trace,
-        tag: 'ChatsService',
-      );
+      // This path is limited to failures before submission (for example, the
+      // submitted journal write). Submission failures are classified above.
+      Logger.error('Failed to start recoverable chat deletion', error: error, trace: trace, tag: 'ChatsService');
       showSnackbar(
         'Conversation not deleted',
         'The deletion could not be completed. The conversation is still on this device.',

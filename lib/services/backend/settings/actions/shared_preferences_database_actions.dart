@@ -1,5 +1,7 @@
 import 'package:bluebubbles/services/backend/settings/shared_preferences_service.dart';
 
+typedef PreferenceStringWriter = Future<bool> Function(String key, String value);
+
 class SharedPreferencesDatabaseActions {
   static const String _finishedSetupKey = 'finishedSetup';
   static const String _dbVersionKey = 'dbVersion';
@@ -11,8 +13,16 @@ class SharedPreferencesDatabaseActions {
   static const String _recoverableDeleteJournalKey = 'recoverable-chat-delete-journal-v1';
 
   final SharedPreferencesService service;
+  final PreferenceStringWriter _writeString;
 
-  SharedPreferencesDatabaseActions(this.service);
+  SharedPreferencesDatabaseActions(this.service, {PreferenceStringWriter? writeString})
+      : _writeString = writeString ??
+            ((key, value) async {
+              // SharedPreferencesWithCache reports platform failures by
+              // throwing rather than returning the legacy bool result.
+              await service.i.setString(key, value);
+              return true;
+            });
 
   bool getFinishedSetup() => service.i.getBool(_finishedSetupKey) ?? false;
 
@@ -38,7 +48,10 @@ class SharedPreferencesDatabaseActions {
 
   String? getRecoverableDeleteJournal() => service.i.getString(_recoverableDeleteJournalKey);
 
-  Future<void> setRecoverableDeleteJournal(String value) => service.i.setString(_recoverableDeleteJournalKey, value);
+  Future<void> setRecoverableDeleteJournal(String value) async {
+    final written = await _writeString(_recoverableDeleteJournalKey, value);
+    if (!written) throw StateError('failed to persist recoverable-delete journal');
+  }
 
   Future<void> clearCustomPathConfig() async {
     await service.i.remove(_useCustomPathKey);

@@ -27,4 +27,63 @@ void main() {
       isNull,
     );
   });
+
+
+  test('recoverable delete resolution is gated behind complete valid non-stale validation', () async {
+    var calls = 0;
+    Future<Set<String>> resolve() async {
+      calls++;
+      return {'resolved'};
+    }
+
+    expect(
+      await resolveRecoverableDeletesAfterValidation(
+        isComplete: false,
+        isValid: true,
+        isStale: false,
+        resolve: resolve,
+      ),
+      isEmpty,
+    );
+    expect(
+      await resolveRecoverableDeletesAfterValidation(
+        isComplete: true,
+        isValid: false,
+        isStale: false,
+        resolve: resolve,
+      ),
+      isEmpty,
+    );
+    expect(
+      await resolveRecoverableDeletesAfterValidation(
+        isComplete: true,
+        isValid: true,
+        isStale: true,
+        resolve: resolve,
+      ),
+      isEmpty,
+    );
+    expect(calls, 0);
+
+    expect(
+      await resolveRecoverableDeletesAfterValidation(
+        isComplete: true,
+        isValid: true,
+        isStale: false,
+        resolve: resolve,
+      ),
+      {'resolved'},
+    );
+    expect(calls, 1);
+  });
+
+  test('unconfirmed existing deferred deletions survive a journal draft handoff', () {
+    expect(
+      deferredDeletionsToCarryForward(
+        queued: {'existing-unconfirmed', 'confirmed'},
+        confirmed: {'confirmed'},
+      ),
+      {'existing-unconfirmed'},
+    );
+  });
 }

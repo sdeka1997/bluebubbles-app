@@ -25,6 +25,22 @@ bool? desiredUnreadFromSnapshot({
   return desiredUnread == localUnread ? null : desiredUnread;
 }
 
+Future<Set<String>> resolveRecoverableDeletesAfterValidation({
+  required bool isComplete,
+  required bool isValid,
+  required bool isStale,
+  required Future<Set<String>> Function() resolve,
+}) {
+  if (!isComplete || !isValid || isStale) return Future.value(<String>{});
+  return resolve();
+}
+
+Set<String> deferredDeletionsToCarryForward({
+  required Set<String> queued,
+  required Set<String> confirmed,
+}) =>
+    queued.difference(confirmed);
+
 class ChatSnapshotEntry {
   const ChatSnapshotEntry({
     required this.guid,
@@ -313,7 +329,8 @@ class ChatStateReconciler {
       return entry == null || entry.messageCount == 0;
     }).toSet();
     final baselineMatchesServer = baseline.initialized && baseline.serverAddress == serverAddress;
-    if (baselineMatchesServer && generatedAt <= baseline.lastGeneratedAt) {
+    final snapshotIsStale = baselineMatchesServer && generatedAt <= baseline.lastGeneratedAt;
+    if (snapshotIsStale) {
       Logger.warn('Chat snapshot was older than the applied baseline; refusing to reconcile');
       return const ChatSnapshotOutcome(skipped: true, reason: 'stale');
     }
@@ -326,32 +343,46 @@ class ChatStateReconciler {
 
     var readUpdated = 0;
     var deleted = 0;
-    final remainingDeferredDeletionGuids = <String>{};
+    final remainingDeferredDeletionGuids = deferredDeletionsToCarryForward(
+      queued: queuedDeletionGuids,
+      confirmed: confirmedQueuedDeletionGuids,
+    );
     final deletionCandidates = {...transition.deletedGuids, ...confirmedQueuedDeletionGuids};
 
     final localChatsByGuid = {for (final chat in localChats) chat.guid: chat};
-    final journaledGuids = await ChatsSvc.recoverableDeleteCoordinator.resolveSnapshot(
-      messageCounts: entries.map((guid, entry) => MapEntry(guid, entry.messageCount)),
-      now: DateTime.now().toUtc(),
-      hasLocalWork: (guid) {
-        if (ChatsSvc.hasLocalWorkForChat(guid)) return true;
-        final chat = localChatsByGuid[guid];
-        return (chat?.textFieldText?.isNotEmpty ?? false) || (chat?.textFieldAttachments.isNotEmpty ?? false);
+    final journaledGuids = await resolveRecoverableDeletesAfterValidation(
+      isComplete: payload['complete'] == true,
+      isValid: true,
+      isStale: snapshotIsStale,
+      resolve: () async {
+        final coordinator = await ChatsSvc.recoverableDeleteCoordinatorForCurrentServer();
+        return coordinator.resolveSnapshot(
+          messageCounts: entries.map((guid, entry) => MapEntry(guid, entry.messageCount)),
+          now: DateTime.now().toUtc(),
+          hasLocalWork: (guid) {
+            if (ChatsSvc.hasLocalWorkForChat(guid)) return true;
+            final chat = localChatsByGuid[guid];
+            return (chat?.textFieldText?.isNotEmpty ?? false) || (chat?.textFieldAttachments.isNotEmpty ?? false);
+          },
+          softDelete: (guid) async {
+            final chat = localChatsByGuid[guid];
+            if (chat != null) {
+              await ChatsSvc.softDeleteChatLocalOnly(chat);
+              deleted++;
+            }
+          },
+          deferDeletion: (guid) async {
+            remainingDeferredDeletionGuids.add(guid);
+            // Persist the hand-off before the recoverable-delete journal is
+            // cleared, so a crash cannot strand a protected draft between queues.
+            await _saveDeferredDeletionGuids(
+              serverAddress,
+              {...queuedDeletionGuids, ...remainingDeferredDeletionGuids},
+            );
+          },
+          restore: ChatsSvc.restoreRecoverableDeleteChat,
+        );
       },
-      softDelete: (guid) async {
-        final chat = localChatsByGuid[guid];
-        if (chat != null) {
-          await ChatsSvc.softDeleteChatLocalOnly(chat);
-          deleted++;
-        }
-      },
-      deferDeletion: (guid) async {
-        remainingDeferredDeletionGuids.add(guid);
-        // Persist the hand-off before the recoverable-delete journal is
-        // cleared, so a crash cannot strand a protected draft between queues.
-        await _saveDeferredDeletionGuids(serverAddress, {...queuedDeletionGuids, ...remainingDeferredDeletionGuids});
-      },
-      restore: ChatsSvc.restoreRecoverableDeleteChat,
     );
 
     for (final chat in localChats) {

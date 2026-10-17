@@ -8,6 +8,8 @@ const recoverableDeleteSubmittedExpiry = Duration(minutes: 10);
 
 enum RecoverableDeletePhase { submitted, accepted }
 
+enum RecoverableDeleteOutcome { deleted, definitiveFailure, pendingConfirmation }
+
 class RecoverableDeleteEntry {
   const RecoverableDeleteEntry({required this.startedAt, required this.phase});
 
@@ -53,7 +55,7 @@ class RecoverableDeleteJournal {
   final JournalWrite writeRaw;
   final void Function(Object error, StackTrace trace)? onMalformed;
 
-  static Future<void> _writeTail = Future<void>.value();
+  Future<void> _writeTail = Future<void>.value();
 
   Future<T> _serialized<T>(Future<T> Function() operation) {
     final completer = Completer<T>();
@@ -128,7 +130,14 @@ class RecoverableDeleteJournal {
       byServer = _decode(readRaw());
     } catch (error, trace) {
       onMalformed?.call(error, trace);
-      await writeRaw(_encode({}));
+      // Corruption is fail-open: one malformed server bucket invalidates the
+      // whole document so no unknown entry can keep a chat hidden. Failure to
+      // persist that reset is reported separately but must not block startup.
+      try {
+        await writeRaw(_encode({}));
+      } catch (clearError, clearTrace) {
+        onMalformed?.call(clearError, clearTrace);
+      }
       return const RecoverableDeleteJournalLoad(entries: {}, wasMalformed: true);
     }
 
@@ -195,6 +204,7 @@ class RecoverableDeleteCoordinator {
   Future<RecoverableDeleteJournalLoad> hydrate({
     DateTime? now,
     Future<void> Function(String guid)? finishAccepted,
+    void Function(String guid, Object error, StackTrace trace)? acceptedFailure,
   }) async {
     final loaded = await journal.load(now: now);
     _suppressedGuids
@@ -203,15 +213,21 @@ class RecoverableDeleteCoordinator {
     if (finishAccepted != null) {
       for (final item in loaded.entries.entries) {
         if (item.value.phase != RecoverableDeletePhase.accepted) continue;
-        await finishAccepted(item.key);
-        await journal.clear(item.key);
-        _suppressedGuids.remove(item.key);
+        try {
+          await finishAccepted(item.key);
+          await journal.clear(item.key);
+          _suppressedGuids.remove(item.key);
+        } catch (error, trace) {
+          // Keep this accepted entry suppressed and durable for the next
+          // startup, but continue processing unrelated chats.
+          acceptedFailure?.call(item.key, error, trace);
+        }
       }
     }
     return loaded;
   }
 
-  Future<bool> delete(
+  Future<RecoverableDeleteOutcome> delete(
     String guid, {
     required DateTime now,
     required Future<void> Function() submit,
@@ -219,8 +235,9 @@ class RecoverableDeleteCoordinator {
     required void Function(bool pending) pendingChanged,
     bool Function(Object error)? isDefinitiveFailure,
     void Function(Object error, StackTrace trace)? definitiveFailure,
+    void Function(Object error, StackTrace trace)? pendingConfirmation,
   }) async {
-    if (_suppressedGuids.contains(guid)) return false;
+    if (_suppressedGuids.contains(guid)) return RecoverableDeleteOutcome.pendingConfirmation;
     await journal.recordSubmitted(guid, now: now);
     _suppressedGuids.add(guid);
     pendingChanged(true);
@@ -232,15 +249,23 @@ class RecoverableDeleteCoordinator {
           await journal.clear(guid);
           _suppressedGuids.remove(guid);
           definitiveFailure?.call(error, trace);
-          return false;
+          return RecoverableDeleteOutcome.definitiveFailure;
         }
-        rethrow;
+        pendingConfirmation?.call(error, trace);
+        return RecoverableDeleteOutcome.pendingConfirmation;
       }
-      await journal.recordAccepted(guid);
-      await localDelete();
-      await journal.clear(guid);
-      _suppressedGuids.remove(guid);
-      return true;
+      try {
+        await journal.recordAccepted(guid);
+        await localDelete();
+        await journal.clear(guid);
+        _suppressedGuids.remove(guid);
+        return RecoverableDeleteOutcome.deleted;
+      } catch (error, trace) {
+        // The POST completed, so retrying would be unsafe. Keep the durable
+        // entry suppressed for startup/snapshot recovery.
+        pendingConfirmation?.call(error, trace);
+        return RecoverableDeleteOutcome.pendingConfirmation;
+      }
     } finally {
       pendingChanged(false);
     }
@@ -282,5 +307,45 @@ class RecoverableDeleteCoordinator {
       await journal.clear(guid);
     }
     return journaledGuids;
+  }
+}
+
+typedef RecoverableDeleteCoordinatorFactory = RecoverableDeleteCoordinator Function(String serverAddress);
+
+/// Hydrates coordinators independently per server. Switching servers never
+/// reuses another server's suppression set or waits on its storage writes.
+class RecoverableDeleteCoordinatorStore {
+  RecoverableDeleteCoordinatorStore(this.create);
+
+  final RecoverableDeleteCoordinatorFactory create;
+  final Map<String, Future<RecoverableDeleteCoordinator>> _byServer = {};
+
+  Future<RecoverableDeleteCoordinator> forServer(
+    String serverAddress, {
+    DateTime? now,
+    Future<void> Function(String guid)? finishAccepted,
+    void Function(String guid, Object error, StackTrace trace)? acceptedFailure,
+    bool forceReload = false,
+  }) {
+    if (forceReload) _byServer.remove(serverAddress);
+    return _byServer.putIfAbsent(serverAddress, () {
+      final coordinator = create(serverAddress);
+      final hydrated = coordinator
+          .hydrate(
+            now: now,
+            finishAccepted: finishAccepted,
+            acceptedFailure: acceptedFailure,
+          )
+          .then((_) => coordinator);
+      unawaited(
+        hydrated.then<void>(
+          (_) {},
+          onError: (Object _, StackTrace _) {
+            if (identical(_byServer[serverAddress], hydrated)) _byServer.remove(serverAddress);
+          },
+        ),
+      );
+      return hydrated;
+    });
   }
 }
