@@ -18,6 +18,20 @@ const miami = LatLng(25.7617, -80.1918);
 const montana = LatLng(46.8721, -113.9940);
 
 void main() {
+  group("selectFindMyInitialCenter", () {
+    test("uses a marker immediately while GPS is unresolved", () {
+      expect(selectFindMyInitialCenter(currentLocation: null, markerCenter: dallas), dallas);
+    });
+
+    test("prefers the current location once GPS resolves", () {
+      expect(selectFindMyInitialCenter(currentLocation: seattle, markerCenter: dallas), seattle);
+    });
+
+    test("has no center when neither GPS nor a marker is available", () {
+      expect(selectFindMyInitialCenter(currentLocation: null, markerCenter: null), isNull);
+    });
+  });
+
   group('selectFindMyCameraFocus without an anchor', () {
     test('opens on the clear majority and leaves a lone outlier out', () {
       final focus = selectFindMyCameraFocus([seattle, bellevue, redmond, kirkland, dallas]);
