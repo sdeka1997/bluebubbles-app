@@ -257,16 +257,24 @@ class ChatApi {
   /// This intentionally uses the dedicated recoverable endpoint. The existing
   /// DELETE /chat/:guid endpoint permanently deletes a chat and must not be used
   /// for user-initiated whole-chat deletion.
-  Future<Response> recoverableDelete(String guid, {CancelToken? cancelToken}) async {
+  Future<Response> recoverableDelete(String guid, String attemptId, {CancelToken? cancelToken}) async {
     return _svc.runApiGuarded(() async {
       final response = await _svc.dio.post(
         "${_svc.apiRoot}/chat/$guid/delete/recoverable",
         queryParameters: _svc.buildQueryParams(),
-        // The helper gives up after 30s with its own "check Recently Deleted"
-        // error; wait past that so the user sees it instead of a bare timeout.
-        options: Options(
-          receiveTimeout: _svc.dio.options.receiveTimeout! * 2,
-        ),
+        data: {'attemptId': attemptId},
+        options: Options(receiveTimeout: _svc.dio.options.receiveTimeout! * 2),
+        cancelToken: cancelToken,
+      );
+      return _svc.returnSuccessOrError(response);
+    });
+  }
+
+  Future<Response> recoverableDeleteStatus(String guid, String attemptId, {CancelToken? cancelToken}) async {
+    return _svc.runApiGuarded(() async {
+      final response = await _svc.dio.get(
+        "${_svc.apiRoot}/chat/$guid/delete/recoverable/$attemptId",
+        queryParameters: _svc.buildQueryParams(),
         cancelToken: cancelToken,
       );
       return _svc.returnSuccessOrError(response);

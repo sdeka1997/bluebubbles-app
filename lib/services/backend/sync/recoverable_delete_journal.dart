@@ -1,67 +1,176 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
-/// A submitted delete is hidden for at most one conservative full-sync window.
-/// The app normally receives a complete snapshot much sooner; ten minutes bounds
-/// visibility loss when snapshots fail without risking an unsafe POST retry.
-const recoverableDeleteSubmittedExpiry = Duration(minutes: 10);
+const _schemaVersion = 2;
 
 enum RecoverableDeletePhase { submitted, accepted }
 
 enum RecoverableDeleteOutcome { deleted, definitiveFailure, pendingConfirmation }
 
-class RecoverableDeleteEntry {
-  const RecoverableDeleteEntry({required this.startedAt, required this.phase});
+enum RecoverableDeleteReceiptState { pending, succeeded, definitiveFailure }
 
+class RecoverableDeleteEntry {
+  const RecoverableDeleteEntry({required this.attemptId, required this.startedAt, required this.phase});
+  final String attemptId;
   final DateTime startedAt;
   final RecoverableDeletePhase phase;
 
   @override
   bool operator ==(Object other) =>
-      other is RecoverableDeleteEntry && other.startedAt == startedAt && other.phase == phase;
-
+      other is RecoverableDeleteEntry &&
+      other.attemptId == attemptId &&
+      other.startedAt == startedAt &&
+      other.phase == phase;
   @override
-  int get hashCode => Object.hash(startedAt, phase);
-}
-
-class RecoverableDeleteJournalLoad {
-  const RecoverableDeleteJournalLoad({
-    required this.entries,
-    this.expiredSubmittedGuids = const {},
-    this.wasMalformed = false,
-  });
-
-  final Map<String, RecoverableDeleteEntry> entries;
-  final Set<String> expiredSubmittedGuids;
-  final bool wasMalformed;
+  int get hashCode => Object.hash(attemptId, startedAt, phase);
 }
 
 typedef JournalRead = String? Function();
-typedef JournalWrite = Future<void> Function(String value);
+typedef JournalWrite = Future<dynamic> Function(String value);
 
-/// Strict, server-scoped persistence for recoverable chat deletion attempts.
-/// Any malformed field invalidates the whole journal so corrupt state can never
-/// hide a conversation.
-class RecoverableDeleteJournal {
-  RecoverableDeleteJournal({
-    required this.serverAddress,
-    required this.readRaw,
-    required this.writeRaw,
-    this.onMalformed,
-  });
+class _DecodedJournal {
+  const _DecodedJournal(this.state, {this.needsSanitizedRewrite = false});
+  final Map<String, Map<String, RecoverableDeleteEntry>> state;
+  final bool needsSanitizedRewrite;
+}
 
-  final String serverAddress;
+class RecoverableDeleteRepository {
+  RecoverableDeleteRepository({required this.readRaw, required this.writeRaw, this.onMalformed});
+
+  static final Map<String, RecoverableDeleteRepository> _owners = {};
+
+  static RecoverableDeleteRepository ownerForKey(
+    String preferencesKey, {
+    required JournalRead readRaw,
+    required JournalWrite writeRaw,
+    void Function(Object error, StackTrace trace)? onMalformed,
+  }) => _owners.putIfAbsent(
+    preferencesKey,
+    () => RecoverableDeleteRepository(readRaw: readRaw, writeRaw: writeRaw, onMalformed: onMalformed),
+  );
+
+  static void resetOwnersForTesting() => _owners.clear();
+
   final JournalRead readRaw;
   final JournalWrite writeRaw;
   final void Function(Object error, StackTrace trace)? onMalformed;
+  final Map<String, RecoverableDeleteCoordinator> _views = {};
+  final Map<String, Future<void>> _chatTails = {};
+  Map<String, Map<String, RecoverableDeleteEntry>> _canonical = {};
+  Future<void> _transactionTail = Future<void>.value();
+  Future<void>? _loadFuture;
+  bool degraded = false;
 
-  Future<void> _writeTail = Future<void>.value();
+  RecoverableDeleteCoordinator viewForServer(String serverAddress) =>
+      _views.putIfAbsent(serverAddress, () => RecoverableDeleteCoordinator._(this, serverAddress));
 
-  Future<T> _serialized<T>(Future<T> Function() operation) {
+  Future<void> ensureLoaded() => _loadFuture ??= _load();
+
+  Future<void> _load() async {
+    String? raw;
+    try {
+      raw = readRaw();
+      final decoded = _decode(raw);
+      _canonical = decoded.state;
+      if (decoded.needsSanitizedRewrite) {
+        try {
+          final persisted = await writeRaw(_encode(_canonical));
+          if (!persisted) throw StateError('recoverable-delete sanitized rewrite returned false');
+        } catch (error, trace) {
+          degraded = true;
+          onMalformed?.call(error, trace);
+        }
+      }
+    } catch (error, trace) {
+      degraded = true;
+      _canonical = {};
+      onMalformed?.call(error, trace);
+    }
+  }
+
+  _DecodedJournal _decode(String? raw) {
+    if (raw == null) return const _DecodedJournal({});
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map || decoded['schemaVersion'] != _schemaVersion || decoded['servers'] is! Map) {
+      throw const FormatException('malformed recoverable-delete document');
+    }
+    final result = <String, Map<String, RecoverableDeleteEntry>>{};
+    var needsSanitizedRewrite = false;
+    for (final server in (decoded['servers'] as Map).entries) {
+      if (server.key is! String || (server.key as String).isEmpty || server.value is! Map) {
+        needsSanitizedRewrite = true;
+        onMalformed?.call(const FormatException('malformed recoverable-delete server bucket'), StackTrace.current);
+        continue;
+      }
+      final valid = <String, RecoverableDeleteEntry>{};
+      for (final chat in (server.value as Map).entries) {
+        try {
+          if (chat.key is! String || (chat.key as String).isEmpty || chat.value is! Map) continue;
+          final value = chat.value as Map;
+          final attemptId = value['attemptId'];
+          final startedAt = value['startedAt'];
+          final phaseName = value['phase'];
+          if (attemptId is! String || attemptId.isEmpty || startedAt is! int || startedAt < 0 || phaseName is! String) {
+            needsSanitizedRewrite = true;
+            onMalformed?.call(const FormatException('malformed recoverable-delete entry'), StackTrace.current);
+            continue;
+          }
+          final phase = switch (phaseName) {
+            'submitted' => RecoverableDeletePhase.submitted,
+            'accepted' => RecoverableDeletePhase.accepted,
+            _ => throw const FormatException('unknown phase'),
+          };
+          valid[chat.key as String] = RecoverableDeleteEntry(
+            attemptId: attemptId,
+            startedAt: DateTime.fromMillisecondsSinceEpoch(startedAt, isUtc: true),
+            phase: phase,
+          );
+        } catch (error, trace) {
+          needsSanitizedRewrite = true;
+          onMalformed?.call(error, trace);
+        }
+      }
+      if (valid.isNotEmpty) result[server.key as String] = valid;
+    }
+    return _DecodedJournal(result, needsSanitizedRewrite: needsSanitizedRewrite);
+  }
+
+  String _encode(Map<String, Map<String, RecoverableDeleteEntry>> state) {
+    final servers = <String, dynamic>{};
+    for (final server in (state.keys.toList()..sort())) {
+      final bucket = state[server]!;
+      if (bucket.isEmpty) continue;
+      final encoded = <String, dynamic>{};
+      for (final guid in (bucket.keys.toList()..sort())) {
+        final entry = bucket[guid]!;
+        encoded[guid] = {
+          'attemptId': entry.attemptId,
+          'startedAt': entry.startedAt.toUtc().millisecondsSinceEpoch,
+          'phase': entry.phase.name,
+        };
+      }
+      servers[server] = encoded;
+    }
+    return jsonEncode({'schemaVersion': _schemaVersion, 'servers': servers});
+  }
+
+  Map<String, Map<String, RecoverableDeleteEntry>> _clone() => {
+    for (final server in _canonical.entries) server.key: Map<String, RecoverableDeleteEntry>.from(server.value),
+  };
+
+  Future<T> transaction<T>(T Function(Map<String, Map<String, RecoverableDeleteEntry>>) mutation) {
     final completer = Completer<T>();
-    _writeTail = _writeTail.then((_) async {
+    _transactionTail = _transactionTail.then((_) async {
       try {
-        completer.complete(await operation());
+        await ensureLoaded();
+        if (degraded) throw StateError('recoverable-delete storage is degraded');
+        final next = _clone();
+        final result = mutation(next);
+        final persisted = await writeRaw(_encode(next));
+        if (!persisted) throw StateError('recoverable-delete persistence returned false');
+        _canonical = next;
+        completer.complete(result);
       } catch (error, trace) {
         completer.completeError(error, trace);
       }
@@ -69,207 +178,156 @@ class RecoverableDeleteJournal {
     return completer.future;
   }
 
-  Map<String, Map<String, RecoverableDeleteEntry>> _decode(String? raw) {
-    if (raw == null) return {};
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map || decoded.length != 2 || decoded['schemaVersion'] != 1 || decoded['servers'] is! Map) {
-      throw const FormatException('malformed recoverable-delete journal');
-    }
-    final result = <String, Map<String, RecoverableDeleteEntry>>{};
-    for (final serverItem in (decoded['servers'] as Map).entries) {
-      if (serverItem.key is! String || (serverItem.key as String).isEmpty || serverItem.value is! Map) {
-        throw const FormatException('malformed recoverable-delete server');
-      }
-      final entries = <String, RecoverableDeleteEntry>{};
-      for (final chatItem in (serverItem.value as Map).entries) {
-        final guid = chatItem.key;
-        final value = chatItem.value;
-        if (guid is! String || guid.isEmpty || value is! Map || value.length != 2) {
-          throw const FormatException('malformed recoverable-delete entry');
-        }
-        final startedAt = value['startedAt'];
-        final phaseName = value['phase'];
-        if (startedAt is! int || startedAt < 0 || phaseName is! String) {
-          throw const FormatException('malformed recoverable-delete fields');
-        }
-        final phase = switch (phaseName) {
-          'submitted' => RecoverableDeletePhase.submitted,
-          'accepted' => RecoverableDeletePhase.accepted,
-          _ => throw const FormatException('unknown recoverable-delete phase'),
-        };
-        entries[guid] = RecoverableDeleteEntry(
-          startedAt: DateTime.fromMillisecondsSinceEpoch(startedAt, isUtc: true),
-          phase: phase,
-        );
-      }
-      result[serverItem.key as String] = entries;
-    }
-    return result;
-  }
+  RecoverableDeleteEntry? entry(String server, String guid) => _canonical[server]?[guid];
+  Set<String> suppressed(String server) => Set.unmodifiable(_canonical[server]?.keys ?? const <String>{});
 
-  String _encode(Map<String, Map<String, RecoverableDeleteEntry>> byServer) {
-    final servers = <String, dynamic>{};
-    final serverNames = byServer.keys.toList()..sort();
-    for (final server in serverNames) {
-      final entries = byServer[server]!;
-      if (entries.isEmpty) continue;
-      final encodedEntries = <String, dynamic>{};
-      final guids = entries.keys.toList()..sort();
-      for (final guid in guids) {
-        final entry = entries[guid]!;
-        encodedEntries[guid] = {'startedAt': entry.startedAt.toUtc().millisecondsSinceEpoch, 'phase': entry.phase.name};
-      }
-      servers[server] = encodedEntries;
-    }
-    return jsonEncode({'schemaVersion': 1, 'servers': servers});
-  }
-
-  Future<RecoverableDeleteJournalLoad> load({DateTime? now}) => _serialized(() async {
-    Map<String, Map<String, RecoverableDeleteEntry>> byServer;
+  Future<T> withChatLock<T>(String server, String guid, Future<T> Function() action) async {
+    final key = '$server\u0000$guid';
+    final previous = _chatTails[key] ?? Future<void>.value();
+    final done = Completer<void>();
+    final queued = previous.then((_) => done.future);
+    _chatTails[key] = queued;
+    await previous;
     try {
-      byServer = _decode(readRaw());
-    } catch (error, trace) {
-      onMalformed?.call(error, trace);
-      // Corruption is fail-open: one malformed server bucket invalidates the
-      // whole document so no unknown entry can keep a chat hidden. Failure to
-      // persist that reset is reported separately but must not block startup.
-      try {
-        await writeRaw(_encode({}));
-      } catch (clearError, clearTrace) {
-        onMalformed?.call(clearError, clearTrace);
-      }
-      return const RecoverableDeleteJournalLoad(entries: {}, wasMalformed: true);
+      return await action();
+    } finally {
+      done.complete();
+      if (identical(_chatTails[key], queued)) _chatTails.remove(key);
     }
-
-    final current = Map<String, RecoverableDeleteEntry>.from(byServer[serverAddress] ?? const {});
-    final expiryNow = (now ?? DateTime.now().toUtc()).toUtc();
-    final expired = current.entries
-        .where(
-          (item) =>
-              item.value.phase == RecoverableDeletePhase.submitted &&
-              !item.value.startedAt.add(recoverableDeleteSubmittedExpiry).isAfter(expiryNow),
-        )
-        .map((item) => item.key)
-        .toSet();
-    if (expired.isNotEmpty) {
-      current.removeWhere((guid, _) => expired.contains(guid));
-      if (current.isEmpty) {
-        byServer.remove(serverAddress);
-      } else {
-        byServer[serverAddress] = current;
-      }
-      await writeRaw(_encode(byServer));
-    }
-    return RecoverableDeleteJournalLoad(entries: Map.unmodifiable(current), expiredSubmittedGuids: expired);
-  });
-
-  Future<void> recordSubmitted(String guid, {DateTime? now}) => _mutate((entries) {
-    entries[guid] = RecoverableDeleteEntry(
-      startedAt: (now ?? DateTime.now().toUtc()).toUtc(),
-      phase: RecoverableDeletePhase.submitted,
-    );
-  });
-
-  Future<void> recordAccepted(String guid) => _mutate((entries) {
-    final existing = entries[guid];
-    if (existing == null) throw StateError('cannot accept a delete that was not submitted');
-    entries[guid] = RecoverableDeleteEntry(startedAt: existing.startedAt, phase: RecoverableDeletePhase.accepted);
-  });
-
-  Future<void> clear(String guid) => _mutate((entries) => entries.remove(guid));
-
-  Future<void> _mutate(void Function(Map<String, RecoverableDeleteEntry> entries) mutation) => _serialized(() async {
-    final byServer = _decode(readRaw());
-    final entries = Map<String, RecoverableDeleteEntry>.from(byServer[serverAddress] ?? const {});
-    mutation(entries);
-    if (entries.isEmpty) {
-      byServer.remove(serverAddress);
-    } else {
-      byServer[serverAddress] = entries;
-    }
-    await writeRaw(_encode(byServer));
-  });
+  }
 }
 
 class RecoverableDeleteCoordinator {
-  RecoverableDeleteCoordinator(this.journal);
+  RecoverableDeleteCoordinator._(this.repository, this.serverAddress);
+  final RecoverableDeleteRepository repository;
+  final String serverAddress;
 
-  final RecoverableDeleteJournal journal;
-  final Set<String> _suppressedGuids = {};
-
-  bool isSuppressed(String guid) => _suppressedGuids.contains(guid);
+  bool isSuppressed(String guid) => repository.entry(serverAddress, guid) != null;
   bool shouldAddChat(String guid) => !isSuppressed(guid);
   List<String> visibleGuids(Iterable<String> guids) => guids.where(shouldAddChat).toList();
 
-  Future<RecoverableDeleteJournalLoad> hydrate({
-    DateTime? now,
-    Future<void> Function(String guid)? finishAccepted,
+  Future<void> recordSubmitted(String guid, {required String attemptId, DateTime? now}) async {
+    await repository.ensureLoaded();
+    await repository.transaction((state) {
+      (state[serverAddress] ??= {})[guid] = RecoverableDeleteEntry(
+        attemptId: attemptId,
+        startedAt: (now ?? DateTime.now().toUtc()).toUtc(),
+        phase: RecoverableDeletePhase.submitted,
+      );
+    });
+  }
+
+  Future<void> _recordAccepted(String guid, String attemptId) => repository.transaction((state) {
+    final current = state[serverAddress]?[guid];
+    if (current == null || current.attemptId != attemptId) throw StateError('delete claim changed');
+    state[serverAddress]![guid] = RecoverableDeleteEntry(
+      attemptId: attemptId,
+      startedAt: current.startedAt,
+      phase: RecoverableDeletePhase.accepted,
+    );
+  });
+
+  Future<void> _clear(String guid, String attemptId) => repository.transaction((state) {
+    final current = state[serverAddress]?[guid];
+    if (current?.attemptId != attemptId) return;
+    state[serverAddress]!.remove(guid);
+    if (state[serverAddress]!.isEmpty) state.remove(serverAddress);
+  });
+
+  Future<void> hydrate({
+    required Future<RecoverableDeleteReceiptState> Function(String guid, String attemptId) status,
+    required Future<void> Function(String guid) finishAccepted,
     void Function(String guid, Object error, StackTrace trace)? acceptedFailure,
   }) async {
-    final loaded = await journal.load(now: now);
-    _suppressedGuids
-      ..clear()
-      ..addAll(loaded.entries.keys);
-    if (finishAccepted != null) {
-      for (final item in loaded.entries.entries) {
-        if (item.value.phase != RecoverableDeletePhase.accepted) continue;
-        try {
-          await finishAccepted(item.key);
-          await journal.clear(item.key);
-          _suppressedGuids.remove(item.key);
-        } catch (error, trace) {
-          // Keep this accepted entry suppressed and durable for the next
-          // startup, but continue processing unrelated chats.
-          acceptedFailure?.call(item.key, error, trace);
-        }
+    await repository.ensureLoaded();
+    for (final guid in repository.suppressed(serverAddress).toList()) {
+      try {
+        await repository.withChatLock(serverAddress, guid, () async {
+          var claim = repository.entry(serverAddress, guid);
+          if (claim == null) return;
+          if (claim.phase == RecoverableDeletePhase.submitted) {
+            final receipt = await status(guid, claim.attemptId);
+            if (receipt == RecoverableDeleteReceiptState.pending) return;
+            if (receipt == RecoverableDeleteReceiptState.definitiveFailure) {
+              await _clear(guid, claim.attemptId);
+              return;
+            }
+            await _recordAccepted(guid, claim.attemptId);
+            claim = repository.entry(serverAddress, guid);
+          }
+          if (claim?.phase == RecoverableDeletePhase.accepted) {
+            await finishAccepted(guid);
+            await _clear(guid, claim!.attemptId);
+          }
+        });
+      } catch (error, trace) {
+        acceptedFailure?.call(guid, error, trace);
       }
     }
-    return loaded;
+  }
+
+  static String _newAttemptId() {
+    final random = Random.secure();
+    return base64Url.encode(List<int>.generate(24, (_) => random.nextInt(256))).replaceAll('=', '');
   }
 
   Future<RecoverableDeleteOutcome> delete(
     String guid, {
     required DateTime now,
-    required Future<void> Function() submit,
+    required Future<RecoverableDeleteReceiptState> Function(String attemptId) submit,
+    required Future<RecoverableDeleteReceiptState> Function(String attemptId) status,
     required Future<void> Function() localDelete,
     required void Function(bool pending) pendingChanged,
     bool Function(Object error)? isDefinitiveFailure,
     void Function(Object error, StackTrace trace)? definitiveFailure,
     void Function(Object error, StackTrace trace)? pendingConfirmation,
-  }) async {
-    if (_suppressedGuids.contains(guid)) return RecoverableDeleteOutcome.pendingConfirmation;
-    await journal.recordSubmitted(guid, now: now);
-    _suppressedGuids.add(guid);
+  }) => repository.withChatLock(serverAddress, guid, () async {
+    await repository.ensureLoaded();
+    if (repository.degraded) throw StateError('recoverable-delete storage is degraded');
+    if (repository.entry(serverAddress, guid) != null) {
+      pendingConfirmation?.call(StateError('recoverable deletion is already pending'), StackTrace.current);
+      return RecoverableDeleteOutcome.pendingConfirmation;
+    }
+    final attemptId = _newAttemptId();
+    await recordSubmitted(guid, attemptId: attemptId, now: now);
     pendingChanged(true);
     try {
+      RecoverableDeleteReceiptState receipt;
       try {
-        await submit();
+        receipt = await submit(attemptId);
       } catch (error, trace) {
-        if (isDefinitiveFailure?.call(error) ?? true) {
-          await journal.clear(guid);
-          _suppressedGuids.remove(guid);
+        if (isDefinitiveFailure?.call(error) ?? false) {
+          await _clear(guid, attemptId);
           definitiveFailure?.call(error, trace);
           return RecoverableDeleteOutcome.definitiveFailure;
         }
-        pendingConfirmation?.call(error, trace);
+        try {
+          receipt = await status(attemptId);
+        } catch (_) {
+          pendingConfirmation?.call(error, trace);
+          return RecoverableDeleteOutcome.pendingConfirmation;
+        }
+      }
+      if (receipt == RecoverableDeleteReceiptState.pending) {
+        pendingConfirmation?.call(StateError('server receipt is pending'), StackTrace.current);
         return RecoverableDeleteOutcome.pendingConfirmation;
       }
-      try {
-        await journal.recordAccepted(guid);
-        await localDelete();
-        await journal.clear(guid);
-        _suppressedGuids.remove(guid);
-        return RecoverableDeleteOutcome.deleted;
-      } catch (error, trace) {
-        // The POST completed, so retrying would be unsafe. Keep the durable
-        // entry suppressed for startup/snapshot recovery.
-        pendingConfirmation?.call(error, trace);
-        return RecoverableDeleteOutcome.pendingConfirmation;
+      if (receipt == RecoverableDeleteReceiptState.definitiveFailure) {
+        await _clear(guid, attemptId);
+        definitiveFailure?.call(StateError('server reported definitive failure'), StackTrace.current);
+        return RecoverableDeleteOutcome.definitiveFailure;
       }
+      await _recordAccepted(guid, attemptId);
+      await localDelete();
+      await _clear(guid, attemptId);
+      return RecoverableDeleteOutcome.deleted;
+    } catch (error, trace) {
+      pendingConfirmation?.call(error, trace);
+      return RecoverableDeleteOutcome.pendingConfirmation;
     } finally {
       pendingChanged(false);
     }
-  }
+  });
 
   Future<Set<String>> resolveSnapshot({
     required Map<String, int> messageCounts,
@@ -279,73 +337,21 @@ class RecoverableDeleteCoordinator {
     required Future<void> Function(String guid) deferDeletion,
     required Future<void> Function(String guid) restore,
   }) async {
-    final loaded = await journal.load(now: now);
-    final journaledGuids = loaded.entries.keys.toSet();
-
-    for (final guid in loaded.expiredSubmittedGuids) {
-      _suppressedGuids.remove(guid);
-      await restore(guid);
-    }
-
-    _suppressedGuids.addAll(loaded.entries.keys);
-    for (final guid in loaded.entries.keys) {
-      final count = messageCounts[guid];
-      final deletionConfirmed = count == null || count == 0;
-      if (deletionConfirmed) {
+    await repository.ensureLoaded();
+    final protected = repository.suppressed(serverAddress);
+    for (final guid in protected.toList()) {
+      await repository.withChatLock(serverAddress, guid, () async {
+        final claim = repository.entry(serverAddress, guid);
+        if (claim == null || claim.phase == RecoverableDeletePhase.submitted) return;
         if (hasLocalWork(guid)) {
           await deferDeletion(guid);
-          _suppressedGuids.remove(guid);
           await restore(guid);
         } else {
           await softDelete(guid);
-          _suppressedGuids.remove(guid);
         }
-      } else {
-        _suppressedGuids.remove(guid);
-        await restore(guid);
-      }
-      await journal.clear(guid);
+        await _clear(guid, claim.attemptId);
+      });
     }
-    return journaledGuids;
-  }
-}
-
-typedef RecoverableDeleteCoordinatorFactory = RecoverableDeleteCoordinator Function(String serverAddress);
-
-/// Hydrates coordinators independently per server. Switching servers never
-/// reuses another server's suppression set or waits on its storage writes.
-class RecoverableDeleteCoordinatorStore {
-  RecoverableDeleteCoordinatorStore(this.create);
-
-  final RecoverableDeleteCoordinatorFactory create;
-  final Map<String, Future<RecoverableDeleteCoordinator>> _byServer = {};
-
-  Future<RecoverableDeleteCoordinator> forServer(
-    String serverAddress, {
-    DateTime? now,
-    Future<void> Function(String guid)? finishAccepted,
-    void Function(String guid, Object error, StackTrace trace)? acceptedFailure,
-    bool forceReload = false,
-  }) {
-    if (forceReload) _byServer.remove(serverAddress);
-    return _byServer.putIfAbsent(serverAddress, () {
-      final coordinator = create(serverAddress);
-      final hydrated = coordinator
-          .hydrate(
-            now: now,
-            finishAccepted: finishAccepted,
-            acceptedFailure: acceptedFailure,
-          )
-          .then((_) => coordinator);
-      unawaited(
-        hydrated.then<void>(
-          (_) {},
-          onError: (Object _, StackTrace _) {
-            if (identical(_byServer[serverAddress], hydrated)) _byServer.remove(serverAddress);
-          },
-        ),
-      );
-      return hydrated;
-    });
+    return protected;
   }
 }

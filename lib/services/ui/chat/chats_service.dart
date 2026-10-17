@@ -65,11 +65,36 @@ RecoverableDeleteSubmissionDisposition classifyRecoverableDeleteSubmissionError(
 bool shouldIncludeRecoverableDeleteChat(RecoverableDeleteCoordinator coordinator, String guid) =>
     coordinator.shouldAddChat(guid);
 
+/// Narrow data-source seam for exercising the real initial-batch path without
+/// initializing ObjectBox, settings, or platform watchers.
+class ChatsServiceInitSource {
+  ChatsServiceInitSource({required this.coordinator, required this.chats});
+  final RecoverableDeleteCoordinator coordinator;
+  final List<Chat> chats;
+  final List<Chat> visibleChats = [];
+
+  Future<List<Chat>> loadBatch({required int limit, required int offset}) async =>
+      chats.skip(offset).take(limit).toList();
+}
+
+RecoverableDeleteReceiptState recoverableDeleteReceiptState(Response response) {
+  final responseBody = response.data;
+  final receiptData = responseBody is Map ? responseBody['data'] : null;
+  final receiptState = receiptData is Map ? receiptData['state'] : null;
+  return switch (receiptState) {
+    'succeeded' => RecoverableDeleteReceiptState.succeeded,
+    'definitiveFailure' => RecoverableDeleteReceiptState.definitiveFailure,
+    'pending' => RecoverableDeleteReceiptState.pending,
+    _ => throw const FormatException('Invalid recoverable-delete receipt'),
+  };
+}
+
 Future<bool> executeRecoverableDelete({
   required RecoverableDeleteCoordinator coordinator,
   required String guid,
   required DateTime now,
-  required Future<void> Function() submit,
+  required Future<RecoverableDeleteReceiptState> Function(String attemptId) submit,
+  required Future<RecoverableDeleteReceiptState> Function(String attemptId) status,
   required Future<void> Function() localDelete,
   required void Function(bool pending) pendingChanged,
   required void Function(Object error, StackTrace trace) onDefinitiveFailure,
@@ -79,6 +104,7 @@ Future<bool> executeRecoverableDelete({
     guid,
     now: now,
     submit: submit,
+    status: status,
     localDelete: localDelete,
     pendingChanged: pendingChanged,
     isDefinitiveFailure: (error) =>
@@ -89,6 +115,8 @@ Future<bool> executeRecoverableDelete({
   return outcome != RecoverableDeleteOutcome.definitiveFailure;
 }
 
+/// Narrow data-source seam for exercising the real initial-batch path without
+/// initializing ObjectBox, settings, or platform watchers.
 class ChatsService {
   static const batchSize = 100;
   int currentCount = 0;
@@ -111,38 +139,35 @@ class ChatsService {
   /// their guid is here, and a repeat request for the same chat is dropped.
   final RxSet<String> pendingDeletes = <String>{}.obs;
 
-  late final RecoverableDeleteCoordinatorStore _recoverableDeleteCoordinators =
-      RecoverableDeleteCoordinatorStore(
-    (serverAddress) => RecoverableDeleteCoordinator(
-      RecoverableDeleteJournal(
-        serverAddress: serverAddress,
-        readRaw: PrefsSvc.database.getRecoverableDeleteJournal,
-        writeRaw: PrefsSvc.database.setRecoverableDeleteJournal,
-        onMalformed: (error, trace) => Logger.warn(
-          'Recoverable-delete journal was malformed; clearing all server buckets so chats remain visible',
-          error: error,
-          trace: trace,
-          tag: 'ChatsService',
-        ),
-      ),
+  late final RecoverableDeleteRepository _recoverableDeleteRepository = RecoverableDeleteRepository.ownerForKey(
+    'recoverable-delete-journal',
+    readRaw: PrefsSvc.database.getRecoverableDeleteJournal,
+    writeRaw: PrefsSvc.database.setRecoverableDeleteJournal,
+    onMalformed: (error, trace) => Logger.warn(
+      'Recoverable-delete storage is unreadable; new deletes are disabled',
+      error: error,
+      trace: trace,
+      tag: 'ChatsService',
     ),
   );
-
-  Future<RecoverableDeleteCoordinator> recoverableDeleteCoordinatorForCurrentServer({bool forceReload = false}) {
-    return _recoverableDeleteCoordinators.forServer(
-      SettingsSvc.settings.serverAddress.value,
-      forceReload: forceReload,
+  Future<RecoverableDeleteCoordinator> recoverableDeleteCoordinatorForCurrentServer() async {
+    final server = SettingsSvc.settings.serverAddress.value;
+    final coordinator = _recoverableDeleteRepository.viewForServer(server);
+    await coordinator.hydrate(
+      status: (guid, attemptId) async =>
+          recoverableDeleteReceiptState(await HttpSvc.chat.recoverableDeleteStatus(guid, attemptId)),
       finishAccepted: (guid) async {
         final chat = _findActiveDatabaseChat(guid);
         if (chat != null) await softDeleteChatLocalOnly(chat);
       },
       acceptedFailure: (_, error, trace) => Logger.warn(
-        'Failed to finish one accepted recoverable delete; retaining it for retry',
+        'Failed to recover one recoverable delete; retaining it for retry',
         error: error,
         trace: trace,
         tag: 'ChatsService',
       ),
     );
+    return coordinator;
   }
 
   ChatState? _activeChat;
@@ -402,24 +427,25 @@ class ChatsService {
     }
   }
 
-  Future<void> init({bool force = false, bool headless = false}) async {
+  Future<void> init({bool force = false, bool headless = false, ChatsServiceInitSource? testSource}) async {
     this.headless = headless;
-    if ((!force && !SettingsSvc.settings.finishedSetup.value) || headless) return;
-    Logger.info("Fetching chats...", tag: "ChatBloc");
+    if (testSource == null && ((!force && !SettingsSvc.settings.finishedSetup.value) || headless)) return;
+    if (testSource == null) Logger.info("Fetching chats...", tag: "ChatBloc");
 
     reset();
 
     // Hydrate before reading the first ObjectBox batch. A recoverable delete
     // accepted just before process death must never flash back into the list.
     final recoverableDeleteCoordinator =
-        await recoverableDeleteCoordinatorForCurrentServer(forceReload: true);
+        testSource?.coordinator ?? await recoverableDeleteCoordinatorForCurrentServer();
 
     // Preload the saved default filter selection (if any) — independent of
     // chat count, so set this up unconditionally.
-    _loadDefaultChatListFilters();
+    if (testSource == null) _loadDefaultChatListFilters();
 
     // Get current count from database or server
-    currentCount = getChatCount() ??
+    currentCount = testSource?.chats.length ??
+        getChatCount() ??
         (await HttpSvc.chat.getCount().catchError((err) {
           Logger.info("Error when fetching chat count!", tag: "ChatBloc");
           return Response(requestOptions: RequestOptions(path: ''));
@@ -444,7 +470,9 @@ class ChatsService {
 
     final batches = (currentCount / batchSize).ceil();
     for (int i = 0; i < batches; i++) {
-      final chatBatch = await Chat.getChatsAsync(limit: batchSize, offset: i * batchSize);
+      final chatBatch = testSource == null
+          ? await Chat.getChatsAsync(limit: batchSize, offset: i * batchSize)
+          : await testSource.loadBatch(limit: batchSize, offset: i * batchSize);
       if (kIsWeb) {
         webCachedHandles.addAll(chatBatch.map((e) => e.handles).flattened.toList());
         final ids = webCachedHandles.map((e) => e.address).toSet();
@@ -455,6 +483,10 @@ class ChatsService {
       // This maintains proper ordering including pinIndex which DB queries cannot handle
       for (Chat c in chatBatch) {
         if (!shouldIncludeRecoverableDeleteChat(recoverableDeleteCoordinator, c.guid)) continue;
+        if (testSource != null) {
+          testSource.visibleChats.add(c);
+          continue;
+        }
         // Create ChatState and add to map
         final state = chatStates[c.guid] = ChatState(c);
         _setupChatStateListeners(state);
@@ -475,12 +507,14 @@ class ChatsService {
     }
 
     loadedAllChats.complete();
-    Logger.info("Finished fetching chats (${chatStates.length}).", tag: "ChatBloc");
+    if (testSource == null) Logger.info("Finished fetching chats (${chatStates.length}).", tag: "ChatBloc");
 
     // Calculate initial unread count now that all chat states are populated.
     // The listener only fires on changes, so we need an explicit call here to
     // seed the badge with the correct value before any message is received.
     _recalculateUnreadCount();
+
+    if (testSource != null) return;
 
     if (kIsDesktop) {
       unawaited(
@@ -878,9 +912,9 @@ class ChatsService {
     }
   }
 
-  Future<void> addChat(Chat toAdd, {bool immediate = false}) async {
+  Future<void> addChat(Chat toAdd, {bool immediate = false, RecoverableDeleteCoordinator? testCoordinator}) async {
     if (headless) return;
-    final recoverableDeleteCoordinator = await recoverableDeleteCoordinatorForCurrentServer();
+    final recoverableDeleteCoordinator = testCoordinator ?? await recoverableDeleteCoordinatorForCurrentServer();
     if (!shouldIncludeRecoverableDeleteChat(recoverableDeleteCoordinator, toAdd.guid)) return;
     // Check if chat already exists
     if (chatStates.containsKey(toAdd.guid)) {
@@ -1197,7 +1231,10 @@ class ChatsService {
         coordinator: recoverableDeleteCoordinator,
         guid: chat.guid,
         now: DateTime.now().toUtc(),
-        submit: () => HttpSvc.chat.recoverableDelete(chat.guid),
+        submit: (attemptId) async =>
+            recoverableDeleteReceiptState(await HttpSvc.chat.recoverableDelete(chat.guid, attemptId)),
+        status: (attemptId) async =>
+            recoverableDeleteReceiptState(await HttpSvc.chat.recoverableDeleteStatus(chat.guid, attemptId)),
         localDelete: () async {
           // A chat-deleted socket event may win the race with the HTTP response,
           // so consult ObjectBox rather than relying on in-memory list presence.

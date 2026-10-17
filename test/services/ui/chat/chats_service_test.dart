@@ -31,17 +31,17 @@ class _RecordingChat extends Chat {
   }
 }
 
-
 class _DeleteMemoryStorage {
   String? value;
   final List<String> events = [];
 
   String? read() => value;
-  Future<void> write(String next) async {
+  Future<bool> write(String next) async {
     value = next;
     final decoded = jsonDecode(next) as Map;
     final chat = ((decoded['servers'] as Map)['https://first'] as Map?)?['chat-a'] as Map?;
     events.add(chat == null ? 'clear' : 'persist:${chat['phase']}');
+    return true;
   }
 }
 
@@ -77,7 +77,6 @@ void main() {
     expect(chat.recordedPrivateMark, isFalse);
   });
 
-
   group('recoverable delete submission classification', () {
     final request = RequestOptions(path: '/api/v1/chat/delete');
 
@@ -85,7 +84,9 @@ void main() {
       final response = Response(
         requestOptions: request,
         statusCode: 500,
-        data: const {'error': {'type': 'timeout'}},
+        data: const {
+          'error': {'type': 'timeout'},
+        },
       );
       expect(classifyRecoverableDeleteSubmissionError(response), RecoverableDeleteSubmissionDisposition.ambiguous);
     });
@@ -126,9 +127,10 @@ void main() {
 
   test('production delete orchestration returns true with pending UX for synthetic timeout', () async {
     final storage = _DeleteMemoryStorage();
-    final coordinator = RecoverableDeleteCoordinator(
-      RecoverableDeleteJournal(serverAddress: 'https://first', readRaw: storage.read, writeRaw: storage.write),
-    );
+    final coordinator = RecoverableDeleteRepository(
+      readRaw: storage.read,
+      writeRaw: storage.write,
+    ).viewForServer('https://first');
     final notices = <String>[];
     var postCount = 0;
 
@@ -136,14 +138,17 @@ void main() {
       coordinator: coordinator,
       guid: 'chat-a',
       now: DateTime.utc(2026, 10, 17, 12),
-      submit: () async {
+      submit: (_) async {
         postCount++;
         throw Response(
           requestOptions: RequestOptions(path: '/api/v1/chat/delete'),
           statusCode: 500,
-          data: const {'error': {'type': 'timeout'}},
+          data: const {
+            'error': {'type': 'timeout'},
+          },
         );
       },
+      status: (_) async => throw StateError('status unavailable'),
       localDelete: () async => fail('ambiguous submission must not delete locally'),
       pendingChanged: (_) {},
       onDefinitiveFailure: (_, _) => notices.add('definitive'),
@@ -158,19 +163,18 @@ void main() {
 
   test('production delete orchestration returns false for 4xx', () async {
     final storage = _DeleteMemoryStorage();
-    final coordinator = RecoverableDeleteCoordinator(
-      RecoverableDeleteJournal(serverAddress: 'https://first', readRaw: storage.read, writeRaw: storage.write),
-    );
+    final coordinator = RecoverableDeleteRepository(
+      readRaw: storage.read,
+      writeRaw: storage.write,
+    ).viewForServer('https://first');
     final notices = <String>[];
 
     final dismissed = await executeRecoverableDelete(
       coordinator: coordinator,
       guid: 'chat-a',
       now: DateTime.utc(2026, 10, 17, 12),
-      submit: () async => throw Response(
-        requestOptions: RequestOptions(path: '/api/v1/chat/delete'),
-        statusCode: 409,
-      ),
+      submit: (_) async => RecoverableDeleteReceiptState.definitiveFailure,
+      status: (_) async => RecoverableDeleteReceiptState.pending,
       localDelete: () async => fail('4xx must not delete locally'),
       pendingChanged: (_) {},
       onDefinitiveFailure: (_, _) => notices.add('definitive'),
@@ -184,15 +188,20 @@ void main() {
 
   test('production delete orchestration preserves submitted POST accepted local clear ordering', () async {
     final storage = _DeleteMemoryStorage();
-    final coordinator = RecoverableDeleteCoordinator(
-      RecoverableDeleteJournal(serverAddress: 'https://first', readRaw: storage.read, writeRaw: storage.write),
-    );
+    final coordinator = RecoverableDeleteRepository(
+      readRaw: storage.read,
+      writeRaw: storage.write,
+    ).viewForServer('https://first');
 
     final dismissed = await executeRecoverableDelete(
       coordinator: coordinator,
       guid: 'chat-a',
       now: DateTime.utc(2026, 10, 17, 12),
-      submit: () async => storage.events.add('post'),
+      submit: (_) async {
+        storage.events.add('post');
+        return RecoverableDeleteReceiptState.succeeded;
+      },
+      status: (_) async => RecoverableDeleteReceiptState.pending,
       localDelete: () async => storage.events.add('local-delete'),
       pendingChanged: (_) {},
       onDefinitiveFailure: (_, _) {},
@@ -203,19 +212,92 @@ void main() {
     expect(storage.events, ['persist:submitted', 'post', 'persist:accepted', 'local-delete', 'clear']);
   });
 
-
   test('startup and addChat suppression helper uses the hydrated coordinator policy', () async {
     final storage = _DeleteMemoryStorage();
-    final journal = RecoverableDeleteJournal(
-      serverAddress: 'https://first',
+    final coordinator = RecoverableDeleteRepository(
       readRaw: storage.read,
       writeRaw: storage.write,
+    ).viewForServer('https://first');
+    await coordinator.recordSubmitted('chat-a', attemptId: 'attempt_startup_01', now: DateTime.utc(2026, 10, 17, 12));
+    await coordinator.hydrate(
+      status: (_, _) async => RecoverableDeleteReceiptState.pending,
+      finishAccepted: (_) async {},
     );
-    await journal.recordSubmitted('chat-a', now: DateTime.utc(2026, 10, 17, 12));
-    final coordinator = RecoverableDeleteCoordinator(journal);
-    await coordinator.hydrate(now: DateTime.utc(2026, 10, 17, 12));
 
     expect(shouldIncludeRecoverableDeleteChat(coordinator, 'chat-a'), isFalse);
     expect(shouldIncludeRecoverableDeleteChat(coordinator, 'chat-b'), isTrue);
+  });
+
+  test('production delete orchestration shows neutral UX for an explicit pending receipt', () async {
+    final storage = _DeleteMemoryStorage();
+    final coordinator = RecoverableDeleteRepository(
+      readRaw: storage.read,
+      writeRaw: storage.write,
+    ).viewForServer('https://first');
+    final notices = <String>[];
+
+    final dismissed = await executeRecoverableDelete(
+      coordinator: coordinator,
+      guid: 'chat-a',
+      now: DateTime.utc(2026, 10, 17, 12),
+      submit: (_) async => RecoverableDeleteReceiptState.pending,
+      status: (_) async => RecoverableDeleteReceiptState.pending,
+      localDelete: () async => fail('pending must not delete locally'),
+      pendingChanged: (_) {},
+      onDefinitiveFailure: (_, _) => notices.add('definitive'),
+      onPendingConfirmation: (_, _) => notices.add('pending'),
+    );
+
+    expect(dismissed, isTrue);
+    expect(notices, ['pending']);
+    expect(coordinator.isSuppressed('chat-a'), isTrue);
+  });
+
+  test('actual ChatsService.init first batch excludes claims and loads unrelated chats', () async {
+    final storage = _DeleteMemoryStorage();
+    final coordinator = RecoverableDeleteRepository(
+      readRaw: storage.read,
+      writeRaw: storage.write,
+    ).viewForServer('https://first');
+    await coordinator.recordSubmitted(
+      'suppressed',
+      attemptId: 'attempt_init_012345',
+      now: DateTime.utc(2026, 10, 17, 12),
+    );
+    final service = ChatsService();
+    final source = ChatsServiceInitSource(
+      coordinator: coordinator,
+      chats: [
+        Chat(id: 10, guid: 'suppressed', hasUnreadMessage: false),
+        Chat(id: 11, guid: 'unrelated', hasUnreadMessage: false),
+      ],
+    );
+    await service.init(force: true, testSource: source);
+
+    expect(source.visibleChats.map((chat) => chat.guid), ['unrelated']);
+    expect(service.loadedFirstChatBatch.value, isTrue);
+    service.close();
+  });
+
+  test('actual ChatsService.addChat path rejects a suppressed watcher insertion', () async {
+    final storage = _DeleteMemoryStorage();
+    final coordinator = RecoverableDeleteRepository(
+      readRaw: storage.read,
+      writeRaw: storage.write,
+    ).viewForServer('https://first');
+    await coordinator.recordSubmitted(
+      'suppressed',
+      attemptId: 'attempt_watcher_0123',
+      now: DateTime.utc(2026, 10, 17, 12),
+    );
+    final service = ChatsService();
+    await service.addChat(
+      Chat(id: 12, guid: 'suppressed', hasUnreadMessage: false),
+      immediate: true,
+      testCoordinator: coordinator,
+    );
+
+    expect(service.getChatState('suppressed'), isNull);
+    service.close();
   });
 }
