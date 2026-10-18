@@ -8,6 +8,7 @@ class SharedPreferencesDatabaseActions {
   static const String _customPathKey = 'custom-path';
   static const String _chatStateBaselineKey = 'chat-state-replication-baseline-v2';
   static const String _deferredChatDeletionsKey = 'deferred-chat-deletions-v2';
+  static const String _recoverableDeleteJournalKey = 'recoverable-delete-journal-v1';
 
   final SharedPreferencesService service;
 
@@ -34,6 +35,10 @@ class SharedPreferencesDatabaseActions {
   String? getDeferredChatDeletions() => service.i.getString(_deferredChatDeletionsKey);
 
   Future<void> setDeferredChatDeletions(String value) => service.i.setString(_deferredChatDeletionsKey, value);
+
+  String? getRecoverableDeleteJournal() => service.i.getString(_recoverableDeleteJournalKey);
+
+  Future<void> setRecoverableDeleteJournal(String value) => service.i.setString(_recoverableDeleteJournalKey, value);
 
   Future<void> clearCustomPathConfig() async {
     await service.i.remove(_useCustomPathKey);

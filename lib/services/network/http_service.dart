@@ -364,6 +364,8 @@ class HttpService implements BaseApi {
 
 /// Intercepts API requests, responses, and errors and logs them to console
 class ApiInterceptor extends Interceptor {
+  static const String redactRequestDataKey = redactRequestDataExtraKey;
+
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     Logger.info("Request: [${options.method}] ${options.path}", tag: "HTTP Service");
@@ -383,13 +385,17 @@ class ApiInterceptor extends Interceptor {
     params.remove("guid");
     params.remove("password");
 
+    final redactData = err.requestOptions.extra[redactRequestDataKey] == true;
+    final requestData = redactData ? '[REDACTED]' : err.requestOptions.data ?? 'No Data';
+    final responseData = redactData ? '[REDACTED]' : err.response?.data ?? 'No Data';
+
     // Make a nice log of what failed
     Logger.error("""Failed Request: [${err.requestOptions.method}] ${err.requestOptions.path}
   -> Error: ${err.error ?? 'No Error'}
   -> Request Params: ${params.toString()}
-  -> Request Data: ${err.requestOptions.data ?? 'No Data'}
+  -> Request Data: $requestData
   -> Response Status: ${err.response?.statusCode ?? 'No Response'}
-  -> Response Data: ${err.response?.data ?? 'No Data'}""", tag: "HTTP Service");
+  -> Response Data: $responseData""", tag: "HTTP Service");
 
     // The rewrites below synthesize the BlueBubbles server's JSON error
     // envelope, which only makes sense for a request that asked for JSON.

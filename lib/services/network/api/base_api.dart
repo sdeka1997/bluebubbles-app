@@ -1,5 +1,8 @@
 import 'package:dio/dio.dart';
 
+/// Request option consumed by [ApiInterceptor] to suppress sensitive bodies.
+const String redactRequestDataExtraKey = 'bluebubbles.redactRequestData';
+
 /// Minimal interface exposed to API sub-services so they can make
 /// requests without creating a circular import with [HttpService].
 abstract interface class BaseApi {

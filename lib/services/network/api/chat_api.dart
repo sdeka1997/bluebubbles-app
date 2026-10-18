@@ -1,4 +1,5 @@
 import 'package:bluebubbles/services/network/api/base_api.dart';
+import 'package:bluebubbles/services/network/api/recoverable_delete_receipt.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:dio/dio.dart';
 
@@ -251,6 +252,76 @@ class ChatApi {
       return _svc.returnSuccessOrError(response);
     });
   }
+
+  /// Submit an idempotent recoverable-delete attempt.
+  ///
+  /// This client performs no policy retries. Stage 3 owns ambiguous-result
+  /// lookup and same-ID resubmission.
+  Future<RecoverableDeleteAttemptResult> submitRecoverableDeleteAttempt({
+    required String chatGuid,
+    required String attemptId,
+    CancelToken? cancelToken,
+  }) async {
+    if (!recoverableDeleteAttemptIdRegExp.hasMatch(attemptId)) {
+      return const RecoverableDeleteAttemptAmbiguous();
+    }
+    try {
+      final response = await _svc.runApiGuarded(() async {
+        final response = await _svc.dio.post(
+          '${_svc.apiRoot}/chat/delete/recoverable/attempts',
+          queryParameters: _svc.buildQueryParams(),
+          data: <String, String>{'chatGuid': chatGuid, 'attemptId': attemptId},
+          options: Options(extra: const <String, Object>{redactRequestDataExtraKey: true}),
+          cancelToken: cancelToken,
+        );
+        return _svc.returnSuccessOrError(response);
+      });
+      return _receiptResult(response, attemptId);
+    } on Object catch (error) {
+      final status = _statusCode(error);
+      if (status == 400 || status == 409) {
+        return const RecoverableDeleteSubmitRejectedNoDispatch();
+      }
+      return const RecoverableDeleteAttemptAmbiguous();
+    }
+  }
+
+  /// Look up a previously submitted recoverable-delete attempt.
+  Future<RecoverableDeleteAttemptResult> getRecoverableDeleteAttempt(
+    String attemptId, {
+    CancelToken? cancelToken,
+  }) async {
+    if (!recoverableDeleteAttemptIdRegExp.hasMatch(attemptId)) {
+      return const RecoverableDeleteAttemptAmbiguous();
+    }
+    try {
+      final response = await _svc.runApiGuarded(() async {
+        final response = await _svc.dio.get(
+          '${_svc.apiRoot}/chat/delete/recoverable/attempts/$attemptId',
+          queryParameters: _svc.buildQueryParams(),
+          cancelToken: cancelToken,
+        );
+        return _svc.returnSuccessOrError(response);
+      });
+      return _receiptResult(response, attemptId);
+    } on Object catch (error) {
+      if (_statusCode(error) == 404) return const RecoverableDeleteAttemptNotRecorded();
+      return const RecoverableDeleteAttemptAmbiguous();
+    }
+  }
+
+  RecoverableDeleteAttemptResult _receiptResult(Response response, String expectedAttemptId) {
+    final receipt = RecoverableDeleteReceipt.tryParse(response.data, expectedAttemptId: expectedAttemptId);
+    return receipt == null
+        ? const RecoverableDeleteAttemptAmbiguous()
+        : RecoverableDeleteReceiptResult(receipt);
+  }
+
+  int? _statusCode(Object error) => switch (error) {
+        Response response => response.statusCode,
+        DioException exception => exception.response?.statusCode,
+        _ => null,
+      };
 
   /// Move a chat to Recently Deleted on the Apple devices connected to the server.
   ///
