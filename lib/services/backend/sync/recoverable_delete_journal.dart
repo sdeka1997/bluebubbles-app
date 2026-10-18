@@ -89,6 +89,7 @@ class RecoverableDeleteJournal {
   final RecoverableDeleteJournalStore _store;
   Map<String, Map<String, RecoverableDeleteJournalEntry>> _entries =
       <String, Map<String, RecoverableDeleteJournalEntry>>{};
+  Map<String, dynamic> _preservedDocument = <String, dynamic>{'version': 1, 'servers': <String, dynamic>{}};
   Future<void> _mutationTail = Future<void>.value();
   Future<void>? _hydration;
   final Map<String, RecoverableDeleteJournalServerView> _serverViews = <String, RecoverableDeleteJournalServerView>{};
@@ -111,44 +112,58 @@ class RecoverableDeleteJournal {
         throw const FormatException('Unsupported recoverable delete journal');
       }
       final hydrated = <String, Map<String, RecoverableDeleteJournalEntry>>{};
+      final quarantinedServers = <String, dynamic>{};
       for (final server in (decoded['servers'] as Map).entries) {
-        if (server.key is! String || server.value is! Map) continue;
+        if (server.key is! String) continue;
+        if (server.value is! Map) {
+          quarantinedServers[server.key as String] = server.value;
+          continue;
+        }
         final bucket = <String, RecoverableDeleteJournalEntry>{};
+        final quarantinedBucket = <String, dynamic>{};
         for (final chat in (server.value as Map).entries) {
-          if (chat.key is! String || chat.value is! Map) continue;
-          try {
-            final value = Map<String, dynamic>.from(chat.value as Map);
-            final identity = value['serverIdentity'];
-            final guid = value['chatGuid'];
-            final attemptId = value['attemptId'];
-            final startedAt = value['startedAt'];
-            final phase = value['phase'];
-            if (identity is! String ||
-                guid is! String ||
-                attemptId is! String ||
-                !_attemptIdRegExp.hasMatch(attemptId) ||
-                startedAt is! int ||
-                (phase != 'submitted' && phase != 'accepted') ||
-                server.key != _opaqueKey(identity) ||
-                chat.key != _opaqueKey(guid)) {
-              continue;
+          var parsed = false;
+          if (chat.key is String && chat.value is Map) {
+            try {
+              final value = Map<String, dynamic>.from(chat.value as Map);
+              final identity = value['serverIdentity'];
+              final guid = value['chatGuid'];
+              final attemptId = value['attemptId'];
+              final startedAt = value['startedAt'];
+              final phase = value['phase'];
+              if (identity is String &&
+                  guid is String &&
+                  attemptId is String &&
+                  _attemptIdRegExp.hasMatch(attemptId) &&
+                  startedAt is int &&
+                  (phase == 'submitted' || phase == 'accepted') &&
+                  server.key == _opaqueKey(identity) &&
+                  chat.key == _opaqueKey(guid)) {
+                bucket[chat.key as String] = RecoverableDeleteJournalEntry(
+                  serverIdentity: identity,
+                  chatGuid: guid,
+                  attemptId: attemptId,
+                  startedAt: DateTime.fromMillisecondsSinceEpoch(startedAt),
+                  phase: phase == 'submitted'
+                      ? RecoverableDeleteJournalPhase.submitted
+                      : RecoverableDeleteJournalPhase.accepted,
+                );
+                parsed = true;
+              }
+            } on Object {
+              // Preserve this malformed entry below without exposing it as a claim.
             }
-            bucket[chat.key as String] = RecoverableDeleteJournalEntry(
-              serverIdentity: identity,
-              chatGuid: guid,
-              attemptId: attemptId,
-              startedAt: DateTime.fromMillisecondsSinceEpoch(startedAt),
-              phase: phase == 'submitted'
-                  ? RecoverableDeleteJournalPhase.submitted
-                  : RecoverableDeleteJournalPhase.accepted,
-            );
-          } on Object {
-            // Quarantine only this malformed entry; adjacent claims remain usable.
-            continue;
+          }
+          if (!parsed && chat.key is String) {
+            quarantinedBucket[chat.key as String] = chat.value;
           }
         }
         if (bucket.isNotEmpty) hydrated[server.key as String] = bucket;
+        if (quarantinedBucket.isNotEmpty) {
+          quarantinedServers[server.key as String] = quarantinedBucket;
+        }
       }
+      _preservedDocument = Map<String, dynamic>.from(decoded)..['servers'] = quarantinedServers;
       _entries = hydrated;
       _state = RecoverableDeleteJournalState.ready;
     } on Object {
@@ -203,16 +218,22 @@ class RecoverableDeleteJournal {
     return _mutate((next) {
       final serverKey = _opaqueKey(serverIdentity);
       final chatKey = _opaqueKey(chatGuid);
-      next.putIfAbsent(
-        serverKey,
-        () => <String, RecoverableDeleteJournalEntry>{},
-      )[chatKey] = RecoverableDeleteJournalEntry(
+      final bucket = next.putIfAbsent(serverKey, () => <String, RecoverableDeleteJournalEntry>{});
+      final current = bucket[chatKey];
+      if (current != null) {
+        if (current.attemptId != attemptId) {
+          throw StateError('An unresolved recoverable delete claim already exists');
+        }
+        return false;
+      }
+      bucket[chatKey] = RecoverableDeleteJournalEntry(
         serverIdentity: serverIdentity,
         chatGuid: chatGuid,
         attemptId: attemptId,
         startedAt: startedAt,
         phase: RecoverableDeleteJournalPhase.submitted,
       );
+      return true;
     });
   }
 
@@ -245,11 +266,11 @@ class RecoverableDeleteJournal {
     return operation;
   }
 
-  Future<void> _mutate(void Function(Map<String, Map<String, RecoverableDeleteJournalEntry>>) change) {
+  Future<void> _mutate(bool Function(Map<String, Map<String, RecoverableDeleteJournalEntry>>) change) {
     _requireReady();
     final operation = _mutationTail.then((_) async {
       final next = _cloneEntries();
-      change(next);
+      if (!change(next)) return;
       await _store.write(_encode(next));
       _entries = next;
     });
@@ -263,13 +284,28 @@ class RecoverableDeleteJournal {
           server.key: Map<String, RecoverableDeleteJournalEntry>.from(server.value),
       };
 
-  String _encode(Map<String, Map<String, RecoverableDeleteJournalEntry>> entries) => jsonEncode(<String, Object>{
-    'version': 1,
-    'servers': <String, Object>{
-      for (final server in entries.entries)
-        server.key: <String, Object>{for (final chat in server.value.entries) chat.key: chat.value.toJson()},
-    },
-  });
+  String _encode(Map<String, Map<String, RecoverableDeleteJournalEntry>> entries) {
+    final document = Map<String, dynamic>.from(_preservedDocument);
+    final preservedServers = document['servers'];
+    final servers = preservedServers is Map ? Map<String, dynamic>.from(preservedServers) : <String, dynamic>{};
+    for (final server in entries.entries) {
+      final preservedBucket = servers[server.key];
+      if (preservedBucket != null && preservedBucket is! Map) {
+        throw StateError('Canonical server key collides with quarantined evidence');
+      }
+      final bucket = preservedBucket == null ? <String, dynamic>{} : Map<String, dynamic>.from(preservedBucket as Map);
+      for (final chat in server.value.entries) {
+        if (bucket.containsKey(chat.key)) {
+          throw StateError('Canonical chat key collides with quarantined evidence');
+        }
+        bucket[chat.key] = chat.value.toJson();
+      }
+      servers[server.key] = bucket;
+    }
+    document['version'] = 1;
+    document['servers'] = servers;
+    return jsonEncode(document);
+  }
 
   void _requireReady() {
     if (state != RecoverableDeleteJournalState.ready) {

@@ -145,6 +145,34 @@ void main() {
     );
   });
 
+  test('submit treats a forged receipt attempt id as ambiguous', () async {
+    final forged = envelope('pending');
+    (forged['data']! as Map<String, Object?>)['attemptId'] = 'bbbbbbbbbbbbbbbb';
+    final adapter = StubAdapter((_) => jsonResponse(200, forged));
+    final dio = Dio(BaseOptions(validateStatus: (_) => true))..httpClientAdapter = adapter;
+
+    final result = await ChatApi(
+      TestBaseApi(dio),
+    ).submitRecoverableDeleteAttempt(chatGuid: 'chat', attemptId: 'abcdefghijklmnop');
+
+    expect(result, isA<RecoverableDeleteAttemptAmbiguous>());
+  });
+
+  test('lookup rejects malformed attempt id without making a network call', () async {
+    var requests = 0;
+    final adapter = StubAdapter((_) {
+      requests++;
+      return jsonResponse(200, envelope('pending'));
+    });
+    final dio = Dio(BaseOptions(validateStatus: (_) => true))..httpClientAdapter = adapter;
+
+    final result = await ChatApi(TestBaseApi(dio)).getRecoverableDeleteAttempt('../not-valid');
+
+    expect(result, isA<RecoverableDeleteAttemptAmbiguous>());
+    expect(requests, 0);
+    expect(adapter.lastRequest, isNull);
+  });
+
   test('lookup uses exact path, parses receipts, and maps only 404 to not recorded', () async {
     final successAdapter = StubAdapter((_) => jsonResponse(200, envelope('pending')));
     final successDio = Dio(BaseOptions(validateStatus: (_) => true))..httpClientAdapter = successAdapter;

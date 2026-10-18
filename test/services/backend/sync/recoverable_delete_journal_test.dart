@@ -163,6 +163,102 @@ void main() {
     expect(restarted.lookup('server-b', 'chat-b'), isNotNull);
   });
 
+  test('concurrent distinct submissions cannot replace an unresolved claim', () async {
+    final rawStore = RawStore(null);
+    final store = DelayedStore(rawStore);
+    final journal = RecoverableDeleteJournal.testing(store);
+    await journal.hydrate();
+
+    final first = journal.recordSubmitted(
+      serverIdentity: 'server',
+      chatGuid: 'chat',
+      attemptId: 'aaaaaaaaaaaaaaaa',
+      startedAt: DateTime.fromMillisecondsSinceEpoch(1),
+    );
+    await store.entered.future;
+    final replacement = journal.recordSubmitted(
+      serverIdentity: 'server',
+      chatGuid: 'chat',
+      attemptId: 'bbbbbbbbbbbbbbbb',
+      startedAt: DateTime.fromMillisecondsSinceEpoch(2),
+    );
+    store.release.complete();
+
+    await first;
+    await expectLater(replacement, throwsStateError);
+    expect(
+      journal.lookup('server', 'chat'),
+      isA<RecoverableDeleteJournalEntry>()
+          .having((entry) => entry.attemptId, 'attemptId', 'aaaaaaaaaaaaaaaa')
+          .having((entry) => entry.startedAt.millisecondsSinceEpoch, 'startedAt', 1),
+    );
+    final persisted = jsonDecode(rawStore.value!) as Map<String, dynamic>;
+    final bucket = (persisted['servers'] as Map<String, dynamic>).values.single as Map<String, dynamic>;
+    expect((bucket.values.single as Map<String, dynamic>)['attemptId'], 'aaaaaaaaaaaaaaaa');
+  });
+
+  test('same attempt submission is idempotent and preserves accepted claim metadata', () async {
+    final store = RawStore(null);
+    final journal = RecoverableDeleteJournal.testing(store);
+    await journal.hydrate();
+    await journal.recordSubmitted(
+      serverIdentity: 'server',
+      chatGuid: 'chat',
+      attemptId: 'aaaaaaaaaaaaaaaa',
+      startedAt: DateTime.fromMillisecondsSinceEpoch(1),
+    );
+    await journal.recordAccepted('server', 'chat', 'aaaaaaaaaaaaaaaa');
+    final writesBeforeDuplicate = store.writes;
+
+    await journal.recordSubmitted(
+      serverIdentity: 'server',
+      chatGuid: 'chat',
+      attemptId: 'aaaaaaaaaaaaaaaa',
+      startedAt: DateTime.fromMillisecondsSinceEpoch(999),
+    );
+
+    expect(store.writes, writesBeforeDuplicate);
+    expect(
+      journal.lookup('server', 'chat'),
+      isA<RecoverableDeleteJournalEntry>()
+          .having((entry) => entry.phase, 'phase', RecoverableDeleteJournalPhase.accepted)
+          .having((entry) => entry.startedAt.millisecondsSinceEpoch, 'startedAt', 1),
+    );
+    expect(journal.listUnresolved(), hasLength(1));
+  });
+
+  test('distinct submission cannot replace an accepted claim', () async {
+    final store = RawStore(null);
+    final journal = RecoverableDeleteJournal.testing(store);
+    await journal.hydrate();
+    await journal.recordSubmitted(
+      serverIdentity: 'server',
+      chatGuid: 'chat',
+      attemptId: 'aaaaaaaaaaaaaaaa',
+      startedAt: DateTime.fromMillisecondsSinceEpoch(1),
+    );
+    await journal.recordAccepted('server', 'chat', 'aaaaaaaaaaaaaaaa');
+    final writesBeforeReplacement = store.writes;
+
+    await expectLater(
+      journal.recordSubmitted(
+        serverIdentity: 'server',
+        chatGuid: 'chat',
+        attemptId: 'bbbbbbbbbbbbbbbb',
+        startedAt: DateTime.fromMillisecondsSinceEpoch(2),
+      ),
+      throwsStateError,
+    );
+
+    expect(store.writes, writesBeforeReplacement);
+    expect(
+      journal.lookup('server', 'chat'),
+      isA<RecoverableDeleteJournalEntry>()
+          .having((entry) => entry.attemptId, 'attemptId', 'aaaaaaaaaaaaaaaa')
+          .having((entry) => entry.phase, 'phase', RecoverableDeleteJournalPhase.accepted),
+    );
+  });
+
   test('accepted and clear are compare-and-set against attempt id', () async {
     final store = RawStore(null);
     final journal = RecoverableDeleteJournal.testing(store);
@@ -225,6 +321,107 @@ void main() {
     expect(journal.lookup(server, badChat), isNull);
     expect(journal.listUnresolved(), hasLength(1));
     expect(store.writes, 0);
+  });
+
+  test('unrelated mutation preserves quarantined raw entry and compatible document data', () async {
+    const server = 'server-a';
+    const validChat = 'valid-chat';
+    const badChat = 'bad-chat';
+    final malformed = <String, Object>{
+      ...entryJson(server, badChat, 'not valid!', 'submitted', 2),
+      'evidence': <String, Object>{'raw': true},
+    };
+    final originalValid = entryJson(server, validChat, 'aaaaaaaaaaaaaaaa', 'accepted', 1);
+    final store = RawStore(
+      jsonEncode(<String, Object>{
+        'version': 1,
+        'futureMetadata': <String, Object>{'keep': true},
+        'servers': <String, Object>{
+          opaque(server): <String, Object>{opaque(validChat): originalValid, opaque(badChat): malformed},
+        },
+      }),
+    );
+    final journal = RecoverableDeleteJournal.testing(store);
+    await journal.hydrate();
+
+    expect(journal.lookup(server, badChat), isNull);
+    await journal.recordSubmitted(
+      serverIdentity: 'server-b',
+      chatGuid: 'new-chat',
+      attemptId: 'bbbbbbbbbbbbbbbb',
+      startedAt: DateTime.fromMillisecondsSinceEpoch(3),
+    );
+
+    final persisted = jsonDecode(store.value!) as Map<String, dynamic>;
+    final servers = persisted['servers'] as Map<String, dynamic>;
+    final originalBucket = servers[opaque(server)] as Map<String, dynamic>;
+    expect(originalBucket[opaque(badChat)], malformed);
+    expect(originalBucket[opaque(validChat)], originalValid);
+    final newBucket = servers[opaque('server-b')] as Map<String, dynamic>;
+    expect((newBucket[opaque('new-chat')] as Map<String, dynamic>)['attemptId'], 'bbbbbbbbbbbbbbbb');
+    expect(persisted['futureMetadata'], <String, Object>{'keep': true});
+    expect(journal.listUnresolved(), hasLength(2));
+  });
+
+  test('compare-and-set and clear preserve quarantined evidence', () async {
+    const server = 'server';
+    const validChat = 'valid-chat';
+    const badChat = 'bad-chat';
+    final malformed = entryJson(server, badChat, 'not valid!', 'submitted', 2);
+    final store = RawStore(
+      jsonEncode(<String, Object>{
+        'version': 1,
+        'servers': <String, Object>{
+          opaque(server): <String, Object>{
+            opaque(validChat): entryJson(server, validChat, 'aaaaaaaaaaaaaaaa', 'submitted', 1),
+            opaque(badChat): malformed,
+          },
+        },
+      }),
+    );
+    final journal = RecoverableDeleteJournal.testing(store);
+    await journal.hydrate();
+
+    expect(await journal.recordAccepted(server, validChat, 'aaaaaaaaaaaaaaaa'), isTrue);
+    var persisted = jsonDecode(store.value!) as Map<String, dynamic>;
+    var bucket = (persisted['servers'] as Map<String, dynamic>)[opaque(server)] as Map<String, dynamic>;
+    expect(bucket[opaque(badChat)], malformed);
+    expect((bucket[opaque(validChat)] as Map<String, dynamic>)['phase'], 'accepted');
+
+    expect(await journal.clear(server, validChat, 'aaaaaaaaaaaaaaaa'), isTrue);
+    persisted = jsonDecode(store.value!) as Map<String, dynamic>;
+    bucket = (persisted['servers'] as Map<String, dynamic>)[opaque(server)] as Map<String, dynamic>;
+    expect(bucket[opaque(badChat)], malformed);
+    expect(bucket.containsKey(opaque(validChat)), isFalse);
+    expect(journal.lookup(server, badChat), isNull);
+  });
+
+  test('canonical key collision rejects mutation without overwriting quarantined evidence', () async {
+    const server = 'server';
+    const chat = 'chat';
+    final malformed = entryJson(server, chat, 'not valid!', 'submitted', 1);
+    final original = jsonEncode(<String, Object>{
+      'version': 1,
+      'servers': <String, Object>{
+        opaque(server): <String, Object>{opaque(chat): malformed},
+      },
+    });
+    final store = RawStore(original);
+    final journal = RecoverableDeleteJournal.testing(store);
+    await journal.hydrate();
+
+    await expectLater(
+      journal.recordSubmitted(
+        serverIdentity: server,
+        chatGuid: chat,
+        attemptId: 'aaaaaaaaaaaaaaaa',
+        startedAt: DateTime.fromMillisecondsSinceEpoch(2),
+      ),
+      throwsStateError,
+    );
+    expect(store.writes, 0);
+    expect(store.value, original);
+    expect(journal.lookup(server, chat), isNull);
   });
 
   test('corrupt whole document degrades without wiping persistence', () async {
