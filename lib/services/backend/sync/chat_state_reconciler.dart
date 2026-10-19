@@ -6,6 +6,7 @@ import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/backend/sync/chat_state_transition.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
+import 'package:flutter/foundation.dart';
 
 final RegExp _decimalPointer = RegExp(r'^(0|[1-9][0-9]*)$');
 
@@ -96,6 +97,8 @@ class _Baseline {
   final int lastGeneratedAt;
 }
 
+enum ChatDeletionApplication { notCandidate, suppressed, deferred, deleted }
+
 /// Applies an Apple-authoritative chat snapshot to local state.
 ///
 /// Deletions remain forward-only. Read state is also transition-only: a pointer
@@ -105,6 +108,29 @@ class _Baseline {
 /// v3 read transitions on the first pointer-aware snapshot.
 class ChatStateReconciler {
   static Future<void> _applyTail = Future<void>.value();
+
+  @visibleForTesting
+  static Future<ChatDeletionApplication> applyDeletionCandidate(
+    Chat chat,
+    Set<String> deletionCandidates, {
+    bool Function(String)? isRecoverableDeleteSuppressed,
+    bool Function(String)? hasLocalWork,
+    Future<void> Function(Chat)? softDelete,
+  }) async {
+    if (!deletionCandidates.contains(chat.guid)) return ChatDeletionApplication.notCandidate;
+
+    final isSuppressed = isRecoverableDeleteSuppressed ?? ChatsSvc.isRecoverableDeleteSuppressed;
+    if (isSuppressed(chat.guid)) return ChatDeletionApplication.suppressed;
+
+    final hasWork = hasLocalWork ?? ChatsSvc.hasLocalWorkForChat;
+    if (hasWork(chat.guid)) {
+      Logger.warn('Deferring server chat deletion because the chat has local work', tag: 'ChatStateReconciler');
+      return ChatDeletionApplication.deferred;
+    }
+
+    await (softDelete ?? ChatsSvc.softDeleteChatLocalOnly)(chat);
+    return ChatDeletionApplication.deleted;
+  }
 
   static bool _isServerBacked(Chat chat) => chat.guid.isNotEmpty && !chat.guid.startsWith('temp-');
 
@@ -333,13 +359,12 @@ class ChatStateReconciler {
       if (chat.dateDeleted != null || !_isServerBacked(chat)) continue;
       final entry = entries[chat.guid];
 
-      if (deletionCandidates.contains(chat.guid)) {
-        if (ChatsSvc.hasLocalWorkForChat(chat.guid)) {
-          remainingDeferredDeletionGuids.add(chat.guid);
-          Logger.warn('Deferring server chat deletion because ${chat.guid} has local work', tag: 'ChatStateReconciler');
-          continue;
-        }
-        await ChatsSvc.softDeleteChatLocalOnly(chat);
+      final deletionApplication = await applyDeletionCandidate(chat, deletionCandidates);
+      if (deletionApplication == ChatDeletionApplication.deferred) {
+        remainingDeferredDeletionGuids.add(chat.guid);
+        continue;
+      }
+      if (deletionApplication == ChatDeletionApplication.deleted) {
         deleted++;
         continue;
       }

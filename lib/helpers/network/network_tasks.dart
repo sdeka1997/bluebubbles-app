@@ -39,10 +39,26 @@ class NetworkTasks {
       }
     }
 
-    // When we re-connect, try an incremental sync.
-    // The sync function has a guard based on time to ensure that it doesn't
-    // get invoked multiple times in quick succession.
-    unawaited(SyncSvc.startIncrementalSync());
+    // When we re-connect, recover durable delete claims before any sync can
+    // ingest server chat state. The sync function keeps its existing time guard.
+    await recoverPendingDeletesBeforeSync(
+      recoverPendingDeletes: ChatsSvc.recoverPendingDeletes,
+      startIncrementalSync: () => unawaited(SyncSvc.startIncrementalSync()),
+    );
+  }
+
+  @visibleForTesting
+  static Future<void> recoverPendingDeletesBeforeSync({
+    required Future<void> Function() recoverPendingDeletes,
+    required void Function() startIncrementalSync,
+  }) async {
+    try {
+      await recoverPendingDeletes();
+    } catch (_) {
+      // Recovery is best-effort here. Durable claims remain for the next reconnect,
+      // while sync must stay usable even when recovery cannot reach the server.
+    }
+    startIncrementalSync();
   }
 
   static Future<void> detectLocalhost({bool createSnackbar = false}) {
