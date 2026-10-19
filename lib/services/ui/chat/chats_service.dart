@@ -11,6 +11,8 @@ import 'package:bluebubbles/helpers/backend/startup_tasks.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
+import 'package:bluebubbles/services/backend/sync/recoverable_delete_journal.dart';
+import 'package:bluebubbles/services/network/api/recoverable_delete_receipt.dart';
 import 'package:bluebubbles/services/backend/notifications/desktop_notification.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -32,7 +34,52 @@ ChatsService get ChatsSvc => GetIt.I<ChatsService>();
 bool shouldApplyServerUnreadUpdate({required bool localUnread, required bool serverUnread}) =>
     localUnread != serverUnread || !serverUnread;
 
+typedef RecoverableDeleteSubmit =
+    Future<RecoverableDeleteAttemptResult> Function({required String chatGuid, required String attemptId});
+typedef RecoverableDeleteLookup = Future<RecoverableDeleteAttemptResult> Function(String attemptId);
+typedef RecoverableDeleteNoticeSink = void Function(String title, String message, SnackbarType type);
+
 class ChatsService {
+  ChatsService({
+    RecoverableDeleteJournal? journal,
+    String Function()? configuredServerIdentity,
+    this.initialActiveChatsLoader,
+    RecoverableDeleteSubmit? submitRecoverableDelete,
+    RecoverableDeleteLookup? getRecoverableDelete,
+    String Function()? attemptIdGenerator,
+    DateTime Function()? clock,
+    Chat? Function(String guid)? localChatLookup,
+    Future<void> Function(Chat chat)? localSoftDelete,
+    RecoverableDeleteNoticeSink? noticeSink,
+  }) : _journalValue = journal,
+       _configuredServerIdentity = configuredServerIdentity ?? (() => SettingsSvc.settings.serverAddress.value),
+       _submitRecoverableDelete =
+           submitRecoverableDelete ??
+           (({required chatGuid, required attemptId}) =>
+               HttpSvc.chat.submitRecoverableDeleteAttempt(chatGuid: chatGuid, attemptId: attemptId)),
+       _getRecoverableDelete =
+           getRecoverableDelete ?? ((attemptId) => HttpSvc.chat.getRecoverableDeleteAttempt(attemptId)),
+       _attemptIdGenerator = attemptIdGenerator ?? generateRecoverableDeleteAttemptId,
+       _clock = clock ?? DateTime.now,
+       _localChatLookup = localChatLookup ?? ((guid) => Chat.findOne(guid: guid)),
+       _localSoftDeleteOverride = localSoftDelete,
+       _noticeSink =
+           noticeSink ?? ((title, message, type) => showSnackbar(title, message, type: type, durationMs: 4000));
+
+  RecoverableDeleteJournal? _journalValue;
+  RecoverableDeleteJournal get _journal => _journalValue ??= RecoverableDeleteJournal();
+  final String Function() _configuredServerIdentity;
+  final Future<List<Chat>> Function()? initialActiveChatsLoader;
+  final RecoverableDeleteSubmit _submitRecoverableDelete;
+  final RecoverableDeleteLookup _getRecoverableDelete;
+  final String Function() _attemptIdGenerator;
+  final DateTime Function() _clock;
+  final Chat? Function(String guid) _localChatLookup;
+  final Future<void> Function(Chat chat)? _localSoftDeleteOverride;
+  final RecoverableDeleteNoticeSink _noticeSink;
+  String? _initializedServerIdentity;
+  Future<void>? _initInFlight;
+  Future<void>? _recoveryInFlight;
   static const batchSize = 100;
   int currentCount = 0;
   StreamSubscription? countSub;
@@ -311,8 +358,36 @@ class ChatsService {
     }
   }
 
-  Future<void> init({bool force = false, bool headless = false}) async {
+  Future<void> init({bool force = false, bool headless = false}) {
+    final running = _initInFlight;
+    if (running != null) return running;
+    late final Future<void> tracked;
+    tracked = _init(force: force, headless: headless).whenComplete(() {
+      if (identical(_initInFlight, tracked)) _initInFlight = null;
+    });
+    _initInFlight = tracked;
+    return tracked;
+  }
+
+  Future<void> _init({required bool force, required bool headless}) async {
+    await _journal.hydrate();
+    _initializedServerIdentity = _configuredServerIdentity();
     this.headless = headless;
+    final initialActiveChatsLoader = this.initialActiveChatsLoader;
+    if (initialActiveChatsLoader != null) {
+      reset();
+      this.headless = false;
+      final chats = await initialActiveChatsLoader();
+      currentCount = chats.length;
+      hasChats.value = chats.isNotEmpty;
+      for (final chat in chats) {
+        await addChat(chat);
+      }
+      loadedFirstChatBatch.value = true;
+      loadedAllChats.complete();
+      await recoverPendingDeletes();
+      return;
+    }
     if ((!force && !SettingsSvc.settings.finishedSetup.value) || headless) return;
     Logger.info("Fetching chats...", tag: "ChatBloc");
 
@@ -336,6 +411,7 @@ class ChatsService {
       hasChats.value = true;
     } else {
       loadedFirstChatBatch.value = true;
+      await recoverPendingDeletes();
       initDbWatchers();
       return;
     }
@@ -357,18 +433,8 @@ class ChatsService {
 
       // Insert each chat at the correct position using binary search
       // This maintains proper ordering including pinIndex which DB queries cannot handle
-      for (Chat c in chatBatch) {
-        // Create ChatState and add to map
-        final state = chatStates[c.guid] = ChatState(c);
-        _setupChatStateListeners(state);
-
-        if (activeChatGuid.value == c.guid) {
-          _activeChat = state;
-          state.updateActiveAndAliveInternal(true);
-        }
-
-        // Add to sorted list
-        _insertChatSorted(c);
+      for (final chat in chatBatch) {
+        await addChat(chat);
       }
       loadedFirstChatBatch.value = true;
       // Increment chatListVersion after every batch so the UI rebuilds for each batch,
@@ -393,6 +459,9 @@ class ChatsService {
         )
       );
     }
+
+    // Recover only after paging so suppressed rows do not shift ObjectBox offsets.
+    await recoverPendingDeletes();
 
     // Initialize watchers AFTER loading all chats to avoid duplicates
     initDbWatchers();
@@ -781,8 +850,25 @@ class ChatsService {
     }
   }
 
+  bool isRecoverableDeleteSuppressed(String guid) {
+    if (_journal.state != RecoverableDeleteJournalState.ready) return false;
+    return _journal.isSuppressed(_initializedServerIdentity ?? _configuredServerIdentity(), guid);
+  }
+
+  bool canOpenChat(String guid, {bool explain = false}) {
+    final allowed = !isRecoverableDeleteSuppressed(guid);
+    if (!allowed && explain) {
+      _noticeSink(
+        'Deletion is being confirmed',
+        'This conversation cannot be opened while deletion is being confirmed.',
+        SnackbarType.success,
+      );
+    }
+    return allowed;
+  }
+
   Future<void> addChat(Chat toAdd, {bool immediate = false}) async {
-    if (headless) return;
+    if (headless || isRecoverableDeleteSuppressed(toAdd.guid)) return;
     // Check if chat already exists
     if (chatStates.containsKey(toAdd.guid)) {
       // Update existing chat instead (debounced during init, immediate for new chats)
@@ -792,7 +878,12 @@ class ChatsService {
 
     // Create new ChatState and add to map
     chatStates[toAdd.guid] = ChatState(toAdd);
-    _setupChatStateListeners(chatStates[toAdd.guid]!);
+    final state = chatStates[toAdd.guid]!;
+    _setupChatStateListeners(state);
+    if (toAdd.guid == activeChatGuid.value) {
+      _activeChat = state;
+      state.updateActiveAndAliveInternal(true);
+    }
 
     // Insert into sorted list at correct position
     _insertChatSorted(toAdd);
@@ -1085,42 +1176,209 @@ class ChatsService {
     return Database.chats.count();
   }
 
-  /// Requests a recoverable Apple-side deletion, then soft-deletes locally.
-  ///
-  /// The local mutation is deliberately sequenced after the dedicated server
-  /// endpoint succeeds. Any server failure leaves the chat and its transcript
-  /// untouched on this device.
-  Future<bool> recoverablyDeleteChat(Chat chat) async {
-    if (kIsWeb) return false;
-    if (!pendingDeletes.add(chat.guid)) return false;
+  Future<void> recoverPendingDeletes() {
+    final running = _recoveryInFlight;
+    if (running != null) return running;
+    late final Future<void> tracked;
+    tracked = _recoverPendingDeletes().whenComplete(() {
+      if (identical(_recoveryInFlight, tracked)) _recoveryInFlight = null;
+    });
+    _recoveryInFlight = tracked;
+    return tracked;
+  }
 
-    try {
-      await HttpSvc.chat.recoverableDelete(chat.guid);
-
-      // A chat-deleted socket event may win the race with the HTTP response.
-      // Only apply the local mutation if the chat is still present. Check both
-      // collections because a deep-linked active chat may not be in the list.
-      if (_sortedChats.any((item) => item.guid == chat.guid) || chatStates.containsKey(chat.guid)) {
-        await softDeleteChatLocalOnly(chat);
+  Future<void> _recoverPendingDeletes() async {
+    if (_journal.state != RecoverableDeleteJournalState.ready) return;
+    final serverIdentity = _initializedServerIdentity ?? _configuredServerIdentity();
+    final entries = _journal.listUnresolved(serverIdentity: serverIdentity);
+    for (final snapshot in entries) {
+      try {
+        await _journal.chatLock(serverIdentity, snapshot.chatGuid).synchronized(() async {
+          final entry = _journal.lookup(serverIdentity, snapshot.chatGuid);
+          if (entry == null || entry.attemptId != snapshot.attemptId) return;
+          final chat = findChatByGuid(entry.chatGuid) ?? _localChatLookup(entry.chatGuid);
+          if (chat != null) await _suppressChatFromUi(chat);
+          if (entry.phase == RecoverableDeleteJournalPhase.accepted) {
+            await _finishAccepted(entry, chat, notify: false);
+            return;
+          }
+          final result = await _safeGet(entry.attemptId);
+          await _handleAttemptResult(entry, chat, result, allowSameIdResubmit: true, notify: false);
+        });
+      } on Object catch (error, trace) {
+        Logger.error('Failed to recover pending chat deletion', error: error, trace: trace, tag: 'ChatsService');
       }
+    }
+  }
+
+  Future<void> _suppressChatFromUi(Chat chat) async {
+    pendingDeletes.add(chat.guid);
+    final removedState = chatStates.remove(chat.guid);
+    _sortedChats.removeWhere((item) => item.guid == chat.guid);
+    _scheduleListVersionUpdate(immediate: true);
+    if (activeChat?.chat.guid == chat.guid) {
+      removedState?.updateActiveAndAliveInternal(false);
+      if (Get.context != null) NavigationSvc.closeAllConversationView(Get.context!);
+      _activeChat = null;
+      activeChatGuid.value = null;
+      await PrefsSvc.messaging.clearLastOpenedChat();
+    }
+  }
+
+  void _pendingNotice() {
+    _noticeSink(
+      'Deletion is being confirmed',
+      'The conversation will stay hidden while deletion is being confirmed.',
+      SnackbarType.success,
+    );
+  }
+
+  void _failureNotice() {
+    _noticeSink(
+      'Conversation not deleted',
+      'The deletion could not be completed. The conversation is still on this device.',
+      SnackbarType.error,
+    );
+  }
+
+  Future<RecoverableDeleteAttemptResult> _safeGet(String attemptId) async {
+    try {
+      return await _getRecoverableDelete(attemptId);
+    } on Object {
+      return const RecoverableDeleteAttemptAmbiguous();
+    }
+  }
+
+  Future<RecoverableDeleteAttemptResult> _safeSubmit(String chatGuid, String attemptId) async {
+    try {
+      return await _submitRecoverableDelete(chatGuid: chatGuid, attemptId: attemptId);
+    } on Object {
+      return const RecoverableDeleteAttemptAmbiguous();
+    }
+  }
+
+  Future<bool> _finishAccepted(RecoverableDeleteJournalEntry entry, Chat? chat, {required bool notify}) async {
+    try {
+      if (entry.phase != RecoverableDeleteJournalPhase.accepted) {
+        final accepted = await _journal.recordAccepted(entry.serverIdentity, entry.chatGuid, entry.attemptId);
+        if (!accepted) {
+          if (notify) _pendingNotice();
+          return true;
+        }
+      }
+      if (chat != null && chat.dateDeleted == null) {
+        final localDelete = _localSoftDeleteOverride;
+        if (localDelete != null) {
+          await localDelete(chat);
+        } else {
+          await softDeleteChatLocalOnly(chat);
+        }
+      }
+      final cleared = await _journal.clear(entry.serverIdentity, entry.chatGuid, entry.attemptId);
+      if (cleared) pendingDeletes.remove(entry.chatGuid);
       return true;
-    } catch (error, trace) {
-      Logger.error(
-        'Failed to recoverably delete chat',
-        error: error,
-        trace: trace,
-        tag: 'ChatsService',
-      );
-      showSnackbar(
+    } on Object {
+      if (notify) _pendingNotice();
+      return true;
+    }
+  }
+
+  Future<bool> _restoreAfterDefinitiveFailure(
+    RecoverableDeleteJournalEntry entry,
+    Chat? chat, {
+    required bool notify,
+  }) async {
+    try {
+      final cleared = await _journal.clear(entry.serverIdentity, entry.chatGuid, entry.attemptId);
+      if (!cleared) {
+        if (notify) _pendingNotice();
+        return true;
+      }
+      pendingDeletes.remove(entry.chatGuid);
+      if (chat != null && chat.dateDeleted == null) await addChat(chat, immediate: true);
+      if (notify) _failureNotice();
+      return false;
+    } on Object {
+      if (notify) _pendingNotice();
+      return true;
+    }
+  }
+
+  Future<bool> _handleAttemptResult(
+    RecoverableDeleteJournalEntry entry,
+    Chat? chat,
+    RecoverableDeleteAttemptResult result, {
+    required bool allowSameIdResubmit,
+    required bool notify,
+  }) async {
+    if (result is RecoverableDeleteReceiptResult) {
+      switch (result.receipt.state) {
+        case RecoverableDeleteReceiptState.succeeded:
+          return _finishAccepted(entry, chat, notify: notify);
+        case RecoverableDeleteReceiptState.definitiveFailure:
+          return _restoreAfterDefinitiveFailure(entry, chat, notify: notify);
+        case RecoverableDeleteReceiptState.pending:
+          if (notify) _pendingNotice();
+          return true;
+      }
+    }
+    if (result is RecoverableDeleteSubmitRejectedNoDispatch) {
+      return _restoreAfterDefinitiveFailure(entry, chat, notify: notify);
+    }
+    if (result is RecoverableDeleteAttemptNotRecorded && allowSameIdResubmit) {
+      final resubmitted = await _safeSubmit(entry.chatGuid, entry.attemptId);
+      if (resubmitted is RecoverableDeleteAttemptAmbiguous) {
+        final finalLookup = await _safeGet(entry.attemptId);
+        return _handleAttemptResult(entry, chat, finalLookup, allowSameIdResubmit: false, notify: notify);
+      }
+      return _handleAttemptResult(entry, chat, resubmitted, allowSameIdResubmit: false, notify: notify);
+    }
+    if (notify) _pendingNotice();
+    return true;
+  }
+
+  /// Requests a recoverable Apple-side deletion using a durable, idempotent claim.
+  Future<bool> recoverablyDeleteChat(Chat chat) async {
+    if (kIsWeb || _journal.state != RecoverableDeleteJournalState.ready) {
+      _noticeSink(
         'Conversation not deleted',
-        'The deletion could not be completed. The conversation is still on this device.',
-        type: SnackbarType.error,
-        durationMs: 4000,
+        'Deletion is unavailable until recovery storage is ready.',
+        SnackbarType.error,
       );
       return false;
-    } finally {
-      pendingDeletes.remove(chat.guid);
     }
+    final serverIdentity = _initializedServerIdentity ?? _configuredServerIdentity();
+    return _journal.chatLock(serverIdentity, chat.guid).synchronized(() async {
+      final existing = _journal.lookup(serverIdentity, chat.guid);
+      if (existing != null) {
+        await _suppressChatFromUi(chat);
+        _pendingNotice();
+        return true;
+      }
+      final attemptId = _attemptIdGenerator();
+      try {
+        await _journal.recordSubmitted(
+          serverIdentity: serverIdentity,
+          chatGuid: chat.guid,
+          attemptId: attemptId,
+          startedAt: _clock().toUtc(),
+        );
+      } on Object {
+        _noticeSink(
+          'Conversation not deleted',
+          'The deletion could not be saved safely. The conversation is still on this device.',
+          SnackbarType.error,
+        );
+        return false;
+      }
+      final entry = _journal.lookup(serverIdentity, chat.guid)!;
+      await _suppressChatFromUi(chat);
+      var result = await _safeSubmit(chat.guid, attemptId);
+      if (result is RecoverableDeleteAttemptAmbiguous) {
+        result = await _safeGet(attemptId);
+      }
+      return _handleAttemptResult(entry, chat, result, allowSameIdResubmit: true, notify: true);
+    });
   }
 
   /// Permanently delete a chat from the local ObjectBox database.
