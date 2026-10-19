@@ -1,6 +1,7 @@
 import 'package:bluebubbles/app/layouts/chat_creator/chat_creator.dart' show SelectedContact;
 import 'package:bluebubbles/app/layouts/chat_creator/chat_creator_controller.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 // No ChatsService is registered, so activating, undeleting or re-adding the chat throws.
@@ -11,6 +12,77 @@ void main() {
           guards.add('$guid|$explain');
           return allowed;
         };
+
+  Chat group(String guid, List<String> addresses, {String service = 'iMessage'}) {
+    final chat = Chat(id: 99, guid: guid, hasUnreadMessage: false);
+    chat.handles.addAll(addresses.map((address) => Handle(address: address, service: service)));
+    return chat;
+  }
+
+  test('duplicate selected recipients cannot reuse one participant handle', () {
+    final chat = group('iMessage;+;different-group', ['same@example.com', 'other@example.com']);
+
+    expect(
+      ChatCreatorController.chatMatchesParticipants(
+        chat,
+        ['same@example.com', 'same@example.com'],
+        ChatServiceType.iMessage,
+      ),
+      isFalse,
+    );
+  });
+
+  test('email participant matching is case insensitive', () {
+    final chat = group('iMessage;+;email-group', ['Person@Example.COM', 'other@example.com']);
+
+    expect(
+      ChatCreatorController.chatMatchesParticipants(
+        chat,
+        ['person@example.com', 'OTHER@example.com'],
+        ChatServiceType.iMessage,
+      ),
+      isTrue,
+    );
+  });
+
+  test('an SMS chat cannot match an iMessage request with identical participants', () {
+    final chat = group('SMS;+;sms-group', ['one@example.com', 'two@example.com'], service: 'SMS');
+
+    expect(
+      ChatCreatorController.chatMatchesParticipants(
+        chat,
+        ['one@example.com', 'two@example.com'],
+        ChatServiceType.iMessage,
+      ),
+      isFalse,
+    );
+  });
+
+  test('participant order does not affect matching', () {
+    final chat = group('iMessage;+;ordered-group', ['two@example.com', 'one@example.com']);
+
+    expect(
+      ChatCreatorController.chatMatchesParticipants(
+        chat,
+        ['one@example.com', 'two@example.com'],
+        ChatServiceType.iMessage,
+      ),
+      isTrue,
+    );
+  });
+
+  test('equivalent phone formatting and country code match', () {
+    final chat = group('iMessage;+;phone-group', ['+1 (555) 123-4567', '+1 (555) 765-4321']);
+
+    expect(
+      ChatCreatorController.chatMatchesParticipants(
+        chat,
+        ['555-123-4567', '(555) 765-4321'],
+        ChatServiceType.iMessage,
+      ),
+      isTrue,
+    );
+  });
 
   test('a suppressed existing chat is explained once and never activated or undeleted', () async {
     final guards = <String>[];

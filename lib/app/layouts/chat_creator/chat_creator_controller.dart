@@ -165,15 +165,65 @@ class ChatCreatorController extends StatefulController {
     return _SearchResult(chats: chats, contacts: contacts);
   }
 
-  bool _chatMatchesService(Chat c) {
-    switch (selectedService.value) {
+  bool _chatMatchesService(Chat c) => _chatMatchesRequestedService(c, selectedService.value);
+
+  static bool _chatMatchesRequestedService(Chat chat, ChatServiceType service) {
+    switch (service) {
       case ChatServiceType.iMessage:
-        return c.isIMessage;
+        return chat.isIMessage;
       case ChatServiceType.sms:
-        return !c.isIMessage;
+        return !chat.isIMessage;
       case ChatServiceType.rcs:
         return false;
     }
+  }
+
+  /// Matches the requested service and exact participant multiset. Each chat
+  /// handle can satisfy only one selected address, regardless of list order.
+  @visibleForTesting
+  static bool chatMatchesParticipants(Chat chat, List<String> selectedAddresses, ChatServiceType service) {
+    if (!_chatMatchesRequestedService(chat, service) || chat.handles.length != selectedAddresses.length) {
+      return false;
+    }
+
+    final participantMatches = List<int>.filled(chat.handles.length, -1);
+
+    bool assignParticipant(int selectedIndex, List<bool> visited) {
+      for (int participantIndex = 0; participantIndex < chat.handles.length; participantIndex++) {
+        if (visited[participantIndex] ||
+            !_addressesMatch(selectedAddresses[selectedIndex], chat.handles[participantIndex].address)) {
+          continue;
+        }
+        visited[participantIndex] = true;
+        final previousSelection = participantMatches[participantIndex];
+        if (previousSelection == -1 ||
+            assignParticipant(previousSelection, List<bool>.from(visited))) {
+          participantMatches[participantIndex] = selectedIndex;
+          return true;
+        }
+      }
+      return false;
+    }
+
+    for (int selectedIndex = 0; selectedIndex < selectedAddresses.length; selectedIndex++) {
+      if (!assignParticipant(selectedIndex, List<bool>.filled(chat.handles.length, false))) return false;
+    }
+    return true;
+  }
+
+  static bool _addressesMatch(String selectedAddress, String participantAddress) {
+    final selectedIsEmail = selectedAddress.isEmail;
+    final participantIsEmail = participantAddress.isEmail;
+    if (selectedIsEmail || participantIsEmail) {
+      return selectedIsEmail &&
+          participantIsEmail &&
+          selectedAddress.toLowerCase() == participantAddress.toLowerCase();
+    }
+    if (selectedAddress == participantAddress) return true;
+
+    const matchLengths = <int>[15, 14, 13, 12, 11, 10, 9, 8, 7];
+    final numeric = selectedAddress.numericOnly();
+    return matchLengths.contains(numeric.length) && cleansePhoneNumber(participantAddress).endsWith(numeric);
   }
 
   /// Returns true if [c] has at least one address type valid for the selected service.
@@ -343,34 +393,15 @@ class ChatCreatorController extends StatefulController {
       } catch (_) {}
     }
 
-    // Multi-contact: match by participant handles.
-    // Always use the complete service-filtered list here — filteredChats is
-    // narrowed by the current search query and would miss valid chats.
+    // Match against the complete source; filteredChats may be narrowed by the
+    // current query. The matcher itself enforces service and exact participants
+    // for both loaded chats and recoverable database rows.
     if (existingChat == null) {
-      final searchList = checkDeleted ? recoverableChatSource() : _allChats.where(_chatMatchesService).toList();
-      for (final c in searchList) {
-        if (c.handles.length != selectedContacts.length) continue;
-        int matches = 0;
-        for (final contact in selectedContacts) {
-          for (final participant in c.handles) {
-            if (contact.address.isEmail && !participant.address.isEmail) continue;
-            if (contact.address == participant.address) {
-              matches++;
-              break;
-            }
-            final matchLengths = [15, 14, 13, 12, 11, 10, 9, 8, 7];
-            final numeric = contact.address.numericOnly();
-            if (matchLengths.contains(numeric.length) && cleansePhoneNumber(participant.address).endsWith(numeric)) {
-              matches++;
-              break;
-            }
-          }
-        }
-        if (matches == selectedContacts.length) {
-          existingChat = c;
-          break;
-        }
-      }
+      final searchList = checkDeleted ? recoverableChatSource() : _allChats;
+      final selectedAddresses = selectedContacts.map((contact) => contact.address).toList();
+      existingChat = searchList.firstWhereOrNull(
+        (chat) => chatMatchesParticipants(chat, selectedAddresses, selectedService.value),
+      );
     }
 
     return settleExistingChat(existingChat, checkDeleted: checkDeleted, update: update);
