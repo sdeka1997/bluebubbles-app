@@ -370,20 +370,20 @@ class ChatsService {
 
   Future<void> _init({required bool force, required bool headless, required String serverIdentity}) async {
     await _journal.hydrate();
-    // A newer server's pass is queued behind this one and owns the state.
-    if (!_isCurrentServer(serverIdentity)) return;
+    // A started pass always finishes loading: the configured address also changes on
+    // routine URL rediscovery, and nothing re-runs init then. Recovery skips a stale identity.
     _initializedServerIdentity = serverIdentity;
+    // Only guids still claimed for the identity this list belongs to stay marked.
+    pendingDeletes.retainWhere(isRecoverableDeleteSuppressed);
     this.headless = headless;
     final initialActiveChatsLoader = this.initialActiveChatsLoader;
     if (initialActiveChatsLoader != null) {
       await _resetForInit();
       this.headless = false;
       final chats = await initialActiveChatsLoader();
-      if (!_isCurrentServer(serverIdentity)) return;
       currentCount = chats.length;
       hasChats.value = chats.isNotEmpty;
       for (final chat in chats) {
-        if (!_isCurrentServer(serverIdentity)) return;
         await addChat(chat);
       }
       loadedFirstChatBatch.value = true;
@@ -395,7 +395,6 @@ class ChatsService {
     Logger.info("Fetching chats...", tag: "ChatBloc");
 
     await _resetForInit();
-    if (!_isCurrentServer(serverIdentity)) return;
 
     // Preload the saved default filter selection (if any) — independent of
     // chat count, so set this up unconditionally.
@@ -409,7 +408,6 @@ class ChatsService {
         }))
             .data['data']['total'] ??
         0;
-    if (!_isCurrentServer(serverIdentity)) return;
 
     loadedAllChats = Completer();
     if (currentCount != 0) {
@@ -417,7 +415,6 @@ class ChatsService {
     } else {
       loadedFirstChatBatch.value = true;
       await _recoverPendingDeletesFor(serverIdentity);
-      if (!_isCurrentServer(serverIdentity)) return;
       initDbWatchers();
       return;
     }
@@ -431,7 +428,6 @@ class ChatsService {
     final batches = (currentCount / batchSize).ceil();
     for (int i = 0; i < batches; i++) {
       final chatBatch = await Chat.getChatsAsync(limit: batchSize, offset: i * batchSize);
-      if (!_isCurrentServer(serverIdentity)) return;
       if (kIsWeb) {
         webCachedHandles.addAll(chatBatch.map((e) => e.handles).flattened.toList());
         final ids = webCachedHandles.map((e) => e.address).toSet();
@@ -469,7 +465,6 @@ class ChatsService {
 
     // Recover only after paging so suppressed rows do not shift ObjectBox offsets.
     await _recoverPendingDeletesFor(serverIdentity);
-    if (!_isCurrentServer(serverIdentity)) return;
 
     // Initialize watchers AFTER loading all chats to avoid duplicates
     initDbWatchers();
@@ -1203,17 +1198,27 @@ class ChatsService {
           final chat = findChatByGuid(entry.chatGuid) ?? _localChatLookup(entry.chatGuid);
           // Keyed by guid: a re-init may have dropped the row while its guid is still active.
           await _suppressChatFromUi(entry.chatGuid);
-          if (entry.phase == RecoverableDeleteJournalPhase.accepted) {
-            await _finishAccepted(entry, chat, notify: false);
-            return;
+          try {
+            if (entry.phase == RecoverableDeleteJournalPhase.accepted) {
+              await _finishAccepted(entry, chat, notify: false);
+              return;
+            }
+            final result = await _safeGet(entry.attemptId);
+            await _handleAttemptResult(entry, chat, result, allowSameIdResubmit: true, notify: false);
+          } finally {
+            _releasePendingMark(entry.chatGuid);
           }
-          final result = await _safeGet(entry.attemptId);
-          await _handleAttemptResult(entry, chat, result, allowSameIdResubmit: true, notify: false);
         });
       } on Object catch (error, trace) {
         Logger.error('Failed to recover pending chat deletion', error: error, trace: trace, tag: 'ChatsService');
       }
     }
+  }
+
+  /// Every exit drops the mark unless the guid is still claimed for the list's server,
+  /// so a server switch never leaves another server's tile dimmed.
+  void _releasePendingMark(String guid) {
+    if (!isRecoverableDeleteSuppressed(guid)) pendingDeletes.remove(guid);
   }
 
   Future<void> _suppressChatFromUi(String guid) async {
@@ -1325,24 +1330,31 @@ class ChatsService {
 
   /// Restores the row as it is now, not the object captured before the network wait.
   Future<bool> _restoreAfterDefinitiveFailure(RecoverableDeleteJournalEntry entry, {required bool notify}) async {
+    final Chat? current;
     try {
       if (!_isCurrentServer(entry.serverIdentity)) return true;
       // Read before clearing: if the row cannot be read, the claim and suppression stay.
-      final current = _localChatLookup(entry.chatGuid);
+      current = _localChatLookup(entry.chatGuid);
       final cleared = await _journal.clear(entry.serverIdentity, entry.chatGuid, entry.attemptId);
       if (!cleared) {
         if (notify) _pendingNotice();
         return true;
       }
-      if (!_isCurrentServer(entry.serverIdentity)) return false;
-      pendingDeletes.remove(entry.chatGuid);
-      if (current != null && current.dateDeleted == null) await addChat(current, immediate: true);
-      if (notify) _failureNotice();
-      return false;
     } on Object {
       if (notify) _pendingNotice();
       return true;
     }
+    // The claim is gone: the mark goes too, and the outcome is a failure even if re-adding fails.
+    pendingDeletes.remove(entry.chatGuid);
+    if (_isCurrentServer(entry.serverIdentity) && current != null && current.dateDeleted == null) {
+      try {
+        await addChat(current, immediate: true);
+      } on Object catch (error) {
+        _logSuppressionCleanupFailure('restore a conversation', error);
+      }
+    }
+    if (notify) _failureNotice();
+    return false;
   }
 
   Future<bool> _handleAttemptResult(
@@ -1408,7 +1420,11 @@ class ChatsService {
       return false;
     }
     return _journal.chatLock(serverIdentity, chat.guid).synchronized(() async {
-      if (!_isCurrentServer(serverIdentity)) return false;
+      if (!_isCurrentServer(serverIdentity)) {
+        // The list belongs to another server than the one requests now reach.
+        _failureNotice();
+        return false;
+      }
       final existing = _journal.lookup(serverIdentity, chat.guid);
       if (existing != null) {
         await _suppressChatFromUi(chat.guid);
@@ -1434,12 +1450,16 @@ class ChatsService {
       final entry = _journal.lookup(serverIdentity, chat.guid)!;
       if (!_isCurrentServer(serverIdentity)) return true;
       await _suppressChatFromUi(chat.guid);
-      if (!_isCurrentServer(serverIdentity)) return true;
-      var result = await _safeSubmit(chat.guid, attemptId);
-      if (result is RecoverableDeleteAttemptAmbiguous) {
-        result = await _safeGet(attemptId);
+      try {
+        if (!_isCurrentServer(serverIdentity)) return true;
+        var result = await _safeSubmit(chat.guid, attemptId);
+        if (result is RecoverableDeleteAttemptAmbiguous) {
+          result = await _safeGet(attemptId);
+        }
+        return await _handleAttemptResult(entry, chat, result, allowSameIdResubmit: true, notify: true);
+      } finally {
+        _releasePendingMark(chat.guid);
       }
-      return _handleAttemptResult(entry, chat, result, allowSameIdResubmit: true, notify: true);
     });
   }
 

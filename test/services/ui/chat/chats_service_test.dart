@@ -54,6 +54,14 @@ class _MemoryStore implements RecoverableDeleteJournalStore {
   }
 }
 
+/// Its restore insert fails after the claim was cleared.
+class _UnrestorableChat extends Chat {
+  _UnrestorableChat(String guid) : super(id: guid.hashCode, guid: guid, hasUnreadMessage: false);
+
+  @override
+  bool? get isPinned => throw StateError('restore failed');
+}
+
 Chat _chat(String guid) => Chat(id: guid.hashCode, guid: guid, hasUnreadMessage: false);
 
 Future<void> _claim(
@@ -823,6 +831,8 @@ void main() {
       await Future.wait([initA, initB]).timeout(const Duration(seconds: 5));
 
       expect(loads, 2);
+      expect(service.loadedAllChats.isCompleted, isTrue);
+      expect(service.loadedFirstChatBatch.value, isTrue);
       expect(service.chatStates.keys, ['a-claimed']);
       expect(service.isRecoverableDeleteSuppressed('b-claimed'), isTrue);
       expect(service.isRecoverableDeleteSuppressed('a-claimed'), isFalse);
@@ -1023,6 +1033,149 @@ void main() {
         'Deletion is being confirmed|info',
         'Conversation not deleted|error',
       ]);
+    });
+    test('an identity change mid-load still finishes the started init pass', () async {
+      final journal = RecoverableDeleteJournal.testing(_MemoryStore());
+      await journal.hydrate();
+      await _claim(journal, 'a-claimed', 'hihihihihihihihi');
+      var identity = 'server-a';
+      final loadEntered = Completer<void>();
+      final releaseLoad = Completer<void>();
+      var lookups = 0;
+      final service = ChatsService(
+        journal: journal,
+        configuredServerIdentity: () => identity,
+        initialActiveChatsLoader: () async {
+          loadEntered.complete();
+          await releaseLoad.future;
+          return [_chat('a-claimed'), _chat('other')];
+        },
+        localChatLookup: (_) => null,
+        getRecoverableDelete: (_) async {
+          lookups++;
+          return const RecoverableDeleteAttemptAmbiguous();
+        },
+        noticeSink: (_, _, _) {},
+      );
+
+      final initialization = service.init(force: true);
+      await loadEntered.future;
+      // Address rediscovery rewrites the configured identity; nothing re-runs init.
+      identity = 'server-b';
+      releaseLoad.complete();
+      await initialization.timeout(const Duration(seconds: 5));
+
+      expect(service.loadedAllChats.isCompleted, isTrue);
+      await service.loadedAllChats.future.timeout(const Duration(seconds: 5));
+      expect(service.loadedFirstChatBatch.value, isTrue);
+      expect(service.chatStates.keys, ['other']);
+      expect(service.isRecoverableDeleteSuppressed('a-claimed'), isTrue);
+      expect(lookups, 0);
+      expect(journal.lookup('server-a', 'a-claimed')?.phase, RecoverableDeleteJournalPhase.submitted);
+    });
+
+    for (final path in ['user delete', 'recovery']) {
+      test('$path pending mark does not follow a server switch into the next list', () async {
+        final journal = RecoverableDeleteJournal.testing(_MemoryStore());
+        await journal.hydrate();
+        if (path == 'recovery') await _claim(journal, 'switch-row', 'ghghghghghghghgh');
+        var identity = 'server-a';
+        final network = Completer<RecoverableDeleteAttemptResult>();
+        final chat = _chat('switch-row');
+        final service = ChatsService(
+          journal: journal,
+          configuredServerIdentity: () => identity,
+          initialActiveChatsLoader: () async => [_chat('switch-row')],
+          attemptIdGenerator: () => 'ghghghghghghghgh',
+          submitRecoverableDelete: ({required chatGuid, required attemptId}) => network.future,
+          getRecoverableDelete: (_) => network.future,
+          localChatLookup: (_) => chat,
+          localSoftDelete: (_) async {},
+          noticeSink: (_, _, _) {},
+        );
+        final Future<Object?> operation;
+        if (path == 'user delete') {
+          await service.addChat(chat);
+          operation = service.recoverablyDeleteChat(chat);
+        } else {
+          operation = service.recoverPendingDeletes();
+        }
+        await Future<void>.delayed(Duration.zero);
+        identity = 'server-b';
+        network.complete(_receipt(RecoverableDeleteReceiptState.succeeded, 'ghghghghghghghgh'));
+        await operation.timeout(const Duration(seconds: 5));
+
+        expect(service.pendingDeletes, isNot(contains('switch-row')));
+        await service.init(force: true).timeout(const Duration(seconds: 5));
+        expect(service.chatStates.keys, ['switch-row']);
+        expect(service.pendingDeletes, isEmpty);
+        expect(service.isRecoverableDeleteSuppressed('switch-row'), isFalse);
+        expect(journal.lookup('server-a', 'switch-row'), isNotNull);
+      });
+    }
+
+    for (final failure in ['identity changes during clear', 'restore insert throws']) {
+      test('a cleared definitive failure restores the mark and explains once when $failure', () async {
+        var identity = 'server-a';
+        var writes = 0;
+        final journal = RecoverableDeleteJournal.testing(
+          _MemoryStore(
+            onWrite: (_) {
+              if (++writes == 2 && failure.startsWith('identity')) identity = 'server-b';
+            },
+          ),
+        );
+        await journal.hydrate();
+        final notices = <String>[];
+        final chat = _chat('cleared-row');
+        final service = ChatsService(
+          journal: journal,
+          configuredServerIdentity: () => identity,
+          attemptIdGenerator: () => 'ijijijijijijijij',
+          submitRecoverableDelete: ({required chatGuid, required attemptId}) async =>
+              _receipt(RecoverableDeleteReceiptState.definitiveFailure, attemptId),
+          localChatLookup: (_) => failure.startsWith('restore') ? _UnrestorableChat('cleared-row') : chat,
+          noticeSink: (title, _, type) => notices.add('$title|${type.name}'),
+        );
+        await service.addChat(chat);
+
+        final result = await service.recoverablyDeleteChat(chat).timeout(const Duration(seconds: 5));
+
+        expect(result, isFalse);
+        expect(service.pendingDeletes, isNot(contains('cleared-row')));
+        expect(notices, ['Conversation not deleted|error']);
+        expect(journal.lookup('server-a', 'cleared-row'), isNull);
+      });
+    }
+
+    test('a delete while the list belongs to another server sends nothing and explains once', () async {
+      final journal = RecoverableDeleteJournal.testing(_MemoryStore());
+      await journal.hydrate();
+      var identity = 'server-a';
+      var posts = 0;
+      final notices = <String>[];
+      final chat = _chat('stale-list');
+      final service = ChatsService(
+        journal: journal,
+        configuredServerIdentity: () => identity,
+        initialActiveChatsLoader: () async => [chat],
+        attemptIdGenerator: () => 'klklklklklklklkl',
+        submitRecoverableDelete: ({required chatGuid, required attemptId}) async {
+          posts++;
+          return const RecoverableDeleteAttemptAmbiguous();
+        },
+        noticeSink: (title, _, type) => notices.add('$title|${type.name}'),
+      );
+      await service.init(force: true);
+      identity = 'server-b';
+
+      final result = await service.recoverablyDeleteChat(chat).timeout(const Duration(seconds: 5));
+
+      expect(result, isFalse);
+      expect(posts, 0);
+      expect(notices, ['Conversation not deleted|error']);
+      expect(service.pendingDeletes, isEmpty);
+      expect(service.chatStates.keys, ['stale-list']);
     });
   });
 }
