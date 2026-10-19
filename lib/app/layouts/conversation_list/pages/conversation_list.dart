@@ -30,6 +30,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:universal_io/io.dart';
+import 'package:bluebubbles/services/ui/chat/chat_open_guard.dart';
 
 class ConversationListController extends StatefulController {
   final bool showArchivedChats;
@@ -160,15 +161,21 @@ class _ConversationListState extends CustomState<ConversationList, void, Convers
       if (lastOpenedChat != null &&
           showAltLayoutContextless &&
           ChatsSvc.activeChat?.chat.guid != lastOpenedChat &&
-          !LifecycleSvc.isBubble) {
+          !LifecycleSvc.isBubble &&
+          ChatsSvc.canOpenChat(lastOpenedChat)) {
         WidgetsBinding.instance.addPostFrameCallback((_) async {
           if (kIsWeb) {
             await ChatsSvc.loadedAllChats.future;
           }
+          final chat = await resolveOpenableChat(
+            lastOpenedChat,
+            canOpen: ChatsSvc.canOpenChat,
+            lookup: (guid) async => kIsWeb ? await Chat.findOneWeb(guid: guid) : Chat.findOne(guid: guid),
+          );
+          if (chat == null || !mounted) return;
           NavigationSvc.pushAndRemoveUntil(
             context,
-            ConversationView(
-                chat: kIsWeb ? (await Chat.findOneWeb(guid: lastOpenedChat))! : Chat.findOne(guid: lastOpenedChat)!),
+            ConversationView(chat: chat),
             (route) => route.isFirst,
           );
         });

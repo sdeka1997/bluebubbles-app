@@ -58,6 +58,10 @@ class ChatCreatorController extends StatefulController {
 
   bool get canCreateGroupChats => SettingsSvc.canCreateGroupChatSync();
 
+  /// A chat whose delete is still being confirmed resolves here but is never opened.
+  bool Function(String guid, {bool explain}) canOpenChat =
+      (guid, {explain = false}) => ChatsSvc.canOpenChat(guid, explain: explain);
+
   @override
   void onInit() {
     super.onInit();
@@ -366,6 +370,18 @@ class ChatCreatorController extends StatefulController {
       }
     }
 
+    return settleExistingChat(existingChat, checkDeleted: checkDeleted, update: update);
+  }
+
+  /// Shows, hides or restores the resolved chat. A suppressed chat is explained when
+  /// it would have been shown and is otherwise left alone, keeping the composer up.
+  @visibleForTesting
+  Future<Chat?> settleExistingChat(Chat? existingChat, {required bool checkDeleted, required bool update}) async {
+    if (existingChat != null && !canOpenChat(existingChat.guid, explain: update)) {
+      if (update && activeController.value != null) await deactivateExistingChat();
+      return existingChat;
+    }
+
     if (update) {
       if (existingChat != null) {
         await _activateExistingChat(existingChat);
@@ -538,6 +554,12 @@ class ChatCreatorController extends StatefulController {
         if (selectedContacts.length == 1) {
           final address = selectedContacts.first.address;
           serverChat = await ChatsSvc.fetchChat('$method;-;$address');
+          if (serverChat != null && !canOpenChat(serverChat.guid, explain: true)) {
+            _createCompleter?.complete();
+            isSending.value = false;
+            Navigator.of(context, rootNavigator: true).pop(); // dismiss loading dialog
+            return;
+          }
         }
 
         if (serverChat == null) {
@@ -605,6 +627,8 @@ class ChatCreatorController extends StatefulController {
         return;
       }
     }
+
+    if (!canOpenChat(resolvedChat.guid, explain: true)) return;
 
     // ------------------------------------------------------------------
     // Step 3: We have a chat (local or freshly synced). Set up its CVC

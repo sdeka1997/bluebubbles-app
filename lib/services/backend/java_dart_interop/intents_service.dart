@@ -13,6 +13,7 @@ import 'package:bluebubbles/app/layouts/chat_creator/chat_creator.dart';
 import 'package:bluebubbles/app/layouts/conversation_view/pages/conversation_view.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
+import 'package:bluebubbles/services/ui/chat/chat_open_guard.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Intent;
 import 'package:get/get.dart';
@@ -27,6 +28,13 @@ import 'package:get_it/get_it.dart';
 IntentsService get IntentsSvc => GetIt.I<IntentsService>();
 
 class IntentsService {
+  IntentsService({ChatOpenGuard? canOpenChat, Chat? Function(String guid)? findChat})
+      : _canOpenChat = canOpenChat ?? ((guid) => ChatsSvc.canOpenChat(guid, explain: true)),
+        _findChat = findChat ?? ((guid) => Chat.findOne(guid: guid));
+
+  final ChatOpenGuard _canOpenChat;
+  final Chat? Function(String guid) _findChat;
+
   late final StreamSubscription sub;
 
   /// When a notification tap triggers navigation to a specific chat, this is
@@ -218,13 +226,14 @@ class IntentsService {
     } else {
       Logger.debug("Opening existing chat (Attachments: ${attachments.length}; Text: ${text?.shorten(10) ?? 'N/A'})",
           tag: "IntentsService");
-      final chat = Chat.findOne(guid: guid);
+      final chat = await resolveOpenableChat(guid, canOpen: _canOpenChat, lookup: _findChat);
       if (chat == null) {
-        Logger.debug("Chat not found with guid: $guid", tag: "IntentsService");
+        Logger.debug("Chat not found or not openable with guid: $guid", tag: "IntentsService");
         return;
       }
 
       await StartupTasks.waitForUI();
+      if (!ChatsSvc.canOpenChat(guid)) return;
 
       // On the initial-intent path the widget tree is starting fresh (see the
       // comment in init()), so activeChat may be a stale leftover from before the

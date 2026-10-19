@@ -204,6 +204,15 @@ class ChatCreatorState extends State<ChatCreator> with ThemeHelpers {
         }
       }
     }
+    // a chat whose delete is still being confirmed is never shown, restored or sent to
+    if (existingChat != null && !ChatsSvc.canOpenChat(existingChat.guid, explain: update)) {
+      if (update && fakeController.value != null) {
+        await ChatsSvc.setAllInactive();
+        fakeController.value = null;
+        messagesService = null;
+      }
+      return existingChat;
+    }
     // if match, show message view, otherwise hide it
     if (update) {
       if (existingChat != null) {
@@ -494,6 +503,7 @@ class ChatCreatorState extends State<ChatCreator> with ThemeHelpers {
                               final service = selectedService.value.method;
                               chat = await ChatsSvc.fetchChat('$service;-;$address');
                             }
+                            if (chat != null && !ChatsSvc.canOpenChat(chat.guid, explain: true)) return;
 
                             if (chat != null) {
                               final existingChat = chat;

@@ -10,6 +10,7 @@ import 'package:bluebubbles/helpers/ui/facetime_helpers.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
+import 'package:bluebubbles/services/ui/chat/chat_open_guard.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Notification;
@@ -628,8 +629,12 @@ class NotificationsService {
       return;
     }
 
-    await _openChat(chat);
-    await showAndFocusWindow();
+    final opened = await openIfAllowed(
+      chat.guid,
+      canOpen: (guid) => ChatsSvc.canOpenChat(guid, explain: true),
+      open: () => _openChat(chat),
+    );
+    if (opened) await showAndFocusWindow();
   }
 
   Future<void> _deleteTempFile(String path) async {
@@ -721,6 +726,7 @@ class NotificationsService {
         body: subtitle,
         onOpen: () async {
           failedToast = null;
+          if (!scheduled && !ChatsSvc.canOpenChat(chat.guid, explain: true)) return;
           await showAndFocusWindow();
           if (scheduled) {
             Navigator.of(Get.context!).push(

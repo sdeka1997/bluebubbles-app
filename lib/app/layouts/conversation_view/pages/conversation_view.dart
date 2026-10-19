@@ -38,6 +38,10 @@ class ConversationView extends StatefulWidget {
 class ConversationViewState extends State<ConversationView> with ThemeHelpers<ConversationView>, RouteAware {
   late final ConversationViewController controller = cvc(chat, tag: widget.customService?.tag);
 
+  /// Every way into a conversation ends here, so a chat whose delete is still being
+  /// confirmed is refused before anything creates its controller or makes it active.
+  late final bool _blocked;
+
   // Cache actions map to avoid rebuilding on every frame
   late final Map<Type, Action<Intent>> _actionsMap;
 
@@ -65,6 +69,17 @@ class ConversationViewState extends State<ConversationView> with ThemeHelpers<Co
   @override
   void initState() {
     super.initState();
+    _blocked = !ChatsSvc.canOpenChat(chat.guid, explain: true);
+    if (_blocked) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final navigator = Navigator.of(context);
+        final route = ModalRoute.of(context);
+        if (route == null || !route.isActive || !navigator.canPop()) return;
+        route.isCurrent ? navigator.pop() : navigator.removeRoute(route);
+      });
+      return;
+    }
     controller.fromChatCreator = widget.fromChatCreator;
     controller.fromSearchResult = widget.initialScrollToGuid != null;
     ChatsSvc.setActiveChatSync(chat);
@@ -185,6 +200,7 @@ class ConversationViewState extends State<ConversationView> with ThemeHelpers<Co
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (_blocked) return;
     final route = ModalRoute.of(context);
     if (route != null) {
       routeObserver.subscribe(this, route);
@@ -205,13 +221,16 @@ class ConversationViewState extends State<ConversationView> with ThemeHelpers<Co
 
   @override
   void dispose() {
-    routeObserver.unsubscribe(this);
-    controller.saveReplyToMessageState(); // P8bda
+    if (!_blocked) {
+      routeObserver.unsubscribe(this);
+      controller.saveReplyToMessageState(); // P8bda
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_blocked) return const SizedBox.shrink();
     final windowEffect = SettingsSvc.settings.windowEffect.value;
     final chatState = ChatsSvc.getOrCreateChatState(chat);
     return ChatStateScope(
