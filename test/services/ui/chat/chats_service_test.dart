@@ -1177,5 +1177,64 @@ void main() {
       expect(service.pendingDeletes, isEmpty);
       expect(service.chatStates.keys, ['stale-list']);
     });
+    test('init for another server drops a pending mark kept for the previous server', () async {
+      final journal = RecoverableDeleteJournal.testing(_MemoryStore());
+      await journal.hydrate();
+      var identity = 'server-a';
+      final chat = _chat('kept-mark');
+      final service = ChatsService(
+        journal: journal,
+        configuredServerIdentity: () => identity,
+        initialActiveChatsLoader: () async => [_chat('kept-mark')],
+        attemptIdGenerator: () => 'mnmnmnmnmnmnmnmn',
+        submitRecoverableDelete: ({required chatGuid, required attemptId}) async =>
+            _receipt(RecoverableDeleteReceiptState.pending, attemptId),
+        localChatLookup: (_) => chat,
+        noticeSink: (_, _, _) {},
+      );
+      await service.init(force: true);
+      expect(await service.recoverablyDeleteChat(chat), isTrue);
+      expect(service.pendingDeletes, contains('kept-mark'));
+
+      identity = 'server-b';
+      await service.init(force: true).timeout(const Duration(seconds: 5));
+
+      expect(service.pendingDeletes, isNot(contains('kept-mark')));
+      expect(service.chatStates.keys, ['kept-mark']);
+      expect(journal.lookup('server-a', 'kept-mark')?.attemptId, 'mnmnmnmnmnmnmnmn');
+    });
+
+    test('public recovery stays on the list server while the configured server differs', () async {
+      final journal = RecoverableDeleteJournal.testing(_MemoryStore());
+      await journal.hydrate();
+      await _claim(journal, 'shared-guid', 'opopopopopopopop', serverIdentity: 'server-b');
+      var identity = 'server-a';
+      var lookups = 0;
+      var softDeletes = 0;
+      final service = ChatsService(
+        journal: journal,
+        configuredServerIdentity: () => identity,
+        initialActiveChatsLoader: () async => [_chat('shared-guid')],
+        getRecoverableDelete: (attemptId) async {
+          lookups++;
+          return _receipt(RecoverableDeleteReceiptState.succeeded, attemptId);
+        },
+        localChatLookup: _chat,
+        localSoftDelete: (_) async => softDeletes++,
+        noticeSink: (_, _, _) {},
+      );
+      await service.init(force: true);
+      identity = 'server-b';
+
+      await service.recoverPendingDeletes().timeout(const Duration(seconds: 5));
+
+      expect(service.chatStates.keys, ['shared-guid']);
+      expect(service.pendingDeletes, isEmpty);
+      expect(lookups, 0);
+      expect(softDeletes, 0);
+      final claim = journal.lookup('server-b', 'shared-guid');
+      expect(claim?.attemptId, 'opopopopopopopop');
+      expect(claim?.phase, RecoverableDeleteJournalPhase.submitted);
+    });
   });
 }

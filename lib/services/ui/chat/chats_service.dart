@@ -1179,8 +1179,10 @@ class ChatsService {
     return Database.chats.count();
   }
 
-  /// Recovers the configured server's claims; gated like [init].
-  Future<void> recoverPendingDeletes() => _recoverPendingDeletesFor(_configuredServerIdentity());
+  /// Recovers the claims of the server the list is bound to; gated like [init].
+  /// Its per-claim current-server checks skip the pass while the configured server differs.
+  Future<void> recoverPendingDeletes() =>
+      _recoverPendingDeletesFor(_initializedServerIdentity ?? _configuredServerIdentity());
 
   Future<void> _recoverPendingDeletesFor(String serverIdentity) =>
       _recoveryGate.run(serverIdentity, () => _recoverPendingDeletes(serverIdentity));
@@ -1345,7 +1347,7 @@ class ChatsService {
       return true;
     }
     // The claim is gone: the mark goes too, and the outcome is a failure even if re-adding fails.
-    pendingDeletes.remove(entry.chatGuid);
+    _releasePendingMark(entry.chatGuid);
     if (_isCurrentServer(entry.serverIdentity) && current != null && current.dateDeleted == null) {
       try {
         await addChat(current, immediate: true);
