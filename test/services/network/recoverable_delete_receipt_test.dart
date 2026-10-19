@@ -43,10 +43,22 @@ class TestBaseApi implements BaseApi {
     'guid': 'auth',
   };
   @override
-  Future<Response> runApiGuarded(Future<Response> Function() func, {bool checkOrigin = true}) => func();
+  Future<Response> runApiGuarded(
+    Future<Response> Function() func, {
+    bool checkOrigin = true,
+    bool retryCloudflare502 = true,
+  }) => func();
   @override
   Future<Response> returnSuccessOrError(Response response) =>
       response.statusCode == 200 ? Future<Response>.value(response) : Future<Response>.error(response);
+}
+
+class ProductionPathHttpService extends HttpService {
+  @override
+  Map<String, dynamic> buildQueryParams([Map<String, dynamic> params = const {}]) => <String, dynamic>{
+    ...params,
+    'guid': 'auth',
+  };
 }
 
 class CapturingLogger extends BaseLogger {
@@ -199,6 +211,29 @@ void main() {
     );
   });
 
+  test('production Cloudflare 502 receipt submit is attempted once and remains ambiguous', () async {
+    var requests = 0;
+    final adapter = StubAdapter((_) {
+      requests++;
+      return requests == 1
+          ? jsonResponse(502, <String, Object>{'error': 'ambiguous'})
+          : jsonResponse(200, envelope('succeeded'));
+    });
+    final service = ProductionPathHttpService()
+      ..originOverride = 'https://receipt.trycloudflare.com'
+      ..dio = (Dio(BaseOptions(validateStatus: (_) => true))..httpClientAdapter = adapter);
+    service.dio.interceptors.add(ApiInterceptor());
+    GetIt.I.registerSingleton<BaseLogger>(CapturingLogger());
+    GetIt.I.registerSingleton<HttpService>(service);
+
+    final result = await ChatApi(
+      service,
+    ).submitRecoverableDeleteAttempt(chatGuid: 'iMessage;-;secret-guid', attemptId: 'abcdefghijklmnop');
+
+    expect(result, isA<RecoverableDeleteAttemptAmbiguous>());
+    expect(requests, 1);
+  });
+
   test('secure generated attempt ids match the server contract and do not repeat', () {
     final ids = List<String>.generate(200, (_) => generateRecoverableDeleteAttemptId());
     final pattern = RegExp(r'^[A-Za-z0-9_-]{16,128}$');
@@ -210,7 +245,17 @@ void main() {
   test('production interceptor seam redacts receipt submit body on failure', () async {
     final logger = CapturingLogger();
     GetIt.I.registerSingleton<BaseLogger>(logger);
-    final adapter = StubAdapter((_) => jsonResponse(500, <String, Object>{'echo': 'iMessage;-;must-not-log'}));
+    final adapter = StubAdapter((options) {
+      throw DioException(
+        requestOptions: options,
+        response: Response<Object?>(
+          requestOptions: options,
+          statusCode: 500,
+          data: <String, Object>{'echo': 'iMessage;-;must-not-log'},
+        ),
+        error: 'transport echoed body iMessage;-;must-not-log',
+      );
+    });
     final dio = Dio()..httpClientAdapter = adapter;
     dio.interceptors.add(ApiInterceptor());
 
@@ -220,8 +265,28 @@ void main() {
 
     expect(result, isA<RecoverableDeleteAttemptAmbiguous>());
     expect(logger.messages.join('\n'), isNot(contains('iMessage;-;must-not-log')));
+    expect(logger.messages.join('\n'), contains('Error: [REDACTED]'));
     expect(logger.messages.join('\n'), contains('Request Data: [REDACTED]'));
+    expect(logger.messages.join('\n'), contains('Response Data: [REDACTED]'));
     expect(adapter.lastRequest?.extra[ApiInterceptor.redactRequestDataKey], isTrue);
+  });
+
+  test('ApiInterceptor preserves ordinary error detail without the sensitive marker', () async {
+    final logger = CapturingLogger();
+    GetIt.I.registerSingleton<BaseLogger>(logger);
+    final adapter = StubAdapter(
+      (options) => throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.connectionError,
+        error: 'ordinary transport detail',
+      ),
+    );
+    final dio = Dio()..httpClientAdapter = adapter;
+    dio.interceptors.add(ApiInterceptor());
+
+    await expectLater(dio.get<Object?>('https://server.example/api/v1/status'), throwsA(isA<DioException>()));
+
+    expect(logger.messages.join('\n'), contains('Error: ordinary transport detail'));
   });
 
   test('ApiInterceptor synthetic timeout response remains ambiguous', () async {

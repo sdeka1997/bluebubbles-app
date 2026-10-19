@@ -58,6 +58,7 @@ class RawStore implements RecoverableDeleteJournalStore {
   RawStore(this.value);
   String? value;
   int writes = 0;
+  bool failNextWrite = false;
 
   @override
   String? read() => value;
@@ -65,6 +66,10 @@ class RawStore implements RecoverableDeleteJournalStore {
   @override
   Future<void> write(String value) async {
     writes++;
+    if (failNextWrite) {
+      failNextWrite = false;
+      throw StateError('injected raw store write failure');
+    }
     this.value = value;
   }
 }
@@ -134,6 +139,51 @@ void main() {
     expect(journal.lookup('server-a', 'chat-b')?.attemptId, 'bbbbbbbbbbbbbbbb');
   });
 
+  test('successful write after persistence failure preserves quarantine and omits failed mutation', () async {
+    const evidenceServer = 'evidence-server';
+    const evidenceChat = 'evidence-chat';
+    final evidence = entryJson(evidenceServer, evidenceChat, 'invalid id', 'submitted', 1);
+    final store = RawStore(
+      jsonEncode(<String, Object>{
+        'version': 1,
+        'servers': <String, Object>{
+          opaque(evidenceServer): <String, Object>{opaque(evidenceChat): evidence},
+        },
+      }),
+    );
+    final journal = RecoverableDeleteJournal.testing(store);
+    await journal.hydrate();
+
+    store.failNextWrite = true;
+    await expectLater(
+      journal.recordSubmitted(
+        serverIdentity: 'valid-server',
+        chatGuid: 'failed-chat',
+        attemptId: 'aaaaaaaaaaaaaaaa',
+        startedAt: DateTime.fromMillisecondsSinceEpoch(2),
+      ),
+      throwsStateError,
+    );
+    expect(journal.lookup('valid-server', 'failed-chat'), isNull);
+
+    await journal.recordSubmitted(
+      serverIdentity: 'valid-server',
+      chatGuid: 'successful-chat',
+      attemptId: 'bbbbbbbbbbbbbbbb',
+      startedAt: DateTime.fromMillisecondsSinceEpoch(3),
+    );
+
+    final persisted = jsonDecode(store.value!) as Map<String, dynamic>;
+    final servers = persisted['servers'] as Map<String, dynamic>;
+    final evidenceBucket = servers[opaque(evidenceServer)] as Map<String, dynamic>;
+    final validBucket = servers[opaque('valid-server')] as Map<String, dynamic>;
+    expect(evidenceBucket[opaque(evidenceChat)], evidence);
+    expect(validBucket.containsKey(opaque('failed-chat')), isFalse);
+    expect(validBucket.containsKey(opaque('successful-chat')), isTrue);
+    expect(journal.lookup('valid-server', 'failed-chat'), isNull);
+    expect(journal.lookup('valid-server', 'successful-chat'), isNotNull);
+  });
+
   test('delayed cross-server writes preserve both buckets', () async {
     SharedPreferencesAsyncPlatform.instance = InMemorySharedPreferencesAsync.empty();
     final actions = await realActions();
@@ -195,6 +245,34 @@ void main() {
     final persisted = jsonDecode(rawStore.value!) as Map<String, dynamic>;
     final bucket = (persisted['servers'] as Map<String, dynamic>).values.single as Map<String, dynamic>;
     expect((bucket.values.single as Map<String, dynamic>)['attemptId'], 'aaaaaaaaaaaaaaaa');
+  });
+
+  test('same attempt submission is no-write idempotent while submitted', () async {
+    final store = RawStore(null);
+    final journal = RecoverableDeleteJournal.testing(store);
+    await journal.hydrate();
+    await journal.recordSubmitted(
+      serverIdentity: 'server',
+      chatGuid: 'chat',
+      attemptId: 'aaaaaaaaaaaaaaaa',
+      startedAt: DateTime.fromMillisecondsSinceEpoch(1),
+    );
+    final writesBeforeDuplicate = store.writes;
+
+    await journal.recordSubmitted(
+      serverIdentity: 'server',
+      chatGuid: 'chat',
+      attemptId: 'aaaaaaaaaaaaaaaa',
+      startedAt: DateTime.fromMillisecondsSinceEpoch(999),
+    );
+
+    expect(store.writes, writesBeforeDuplicate);
+    expect(
+      journal.lookup('server', 'chat'),
+      isA<RecoverableDeleteJournalEntry>()
+          .having((entry) => entry.phase, 'phase', RecoverableDeleteJournalPhase.submitted)
+          .having((entry) => entry.startedAt.millisecondsSinceEpoch, 'startedAt', 1),
+    );
   });
 
   test('same attempt submission is idempotent and preserves accepted claim metadata', () async {
@@ -323,6 +401,40 @@ void main() {
     expect(store.writes, 0);
   });
 
+  test('malformed whole server bucket stays quarantined through unrelated mutation', () async {
+    const badServer = 'bad-server';
+    final malformedBucket = <Object>[
+      <String, Object>{'rawGuid': 'must-remain-structural-evidence'},
+      17,
+    ];
+    final store = RawStore(
+      jsonEncode(<String, Object>{
+        'version': 1,
+        'servers': <String, Object>{opaque(badServer): malformedBucket},
+      }),
+    );
+    final journal = RecoverableDeleteJournal.testing(store);
+    await journal.hydrate();
+
+    expect(journal.lookup(badServer, 'rawGuid'), isNull);
+    expect(journal.isSuppressed(badServer, 'rawGuid'), isFalse);
+    expect(journal.listUnresolved(serverIdentity: badServer), isEmpty);
+
+    await journal.recordSubmitted(
+      serverIdentity: 'valid-server',
+      chatGuid: 'valid-chat',
+      attemptId: 'aaaaaaaaaaaaaaaa',
+      startedAt: DateTime.fromMillisecondsSinceEpoch(1),
+    );
+
+    final persisted = jsonDecode(store.value!) as Map<String, dynamic>;
+    final servers = persisted['servers'] as Map<String, dynamic>;
+    expect(servers[opaque(badServer)], malformedBucket);
+    expect(journal.listUnresolved(), hasLength(1));
+    expect(journal.lookup(badServer, 'rawGuid'), isNull);
+    expect(journal.isSuppressed(badServer, 'rawGuid'), isFalse);
+  });
+
   test('unrelated mutation preserves quarantined raw entry and compatible document data', () async {
     const server = 'server-a';
     const validChat = 'valid-chat';
@@ -361,6 +473,49 @@ void main() {
     expect((newBucket[opaque('new-chat')] as Map<String, dynamic>)['attemptId'], 'bbbbbbbbbbbbbbbb');
     expect(persisted['futureMetadata'], <String, Object>{'keep': true});
     expect(journal.listUnresolved(), hasLength(2));
+  });
+
+  test('repeated valid writes keep quarantined raw evidence intact', () async {
+    const quarantinedServer = 'server-with-evidence';
+    const quarantinedChat = 'malformed-chat';
+    final evidence = <String, Object>{
+      ...entryJson(quarantinedServer, quarantinedChat, 'invalid id', 'submitted', 1),
+      'rawEvidence': <Object>['first', 2],
+    };
+    final store = RawStore(
+      jsonEncode(<String, Object>{
+        'version': 1,
+        'servers': <String, Object>{
+          opaque(quarantinedServer): <String, Object>{opaque(quarantinedChat): evidence},
+        },
+      }),
+    );
+    final journal = RecoverableDeleteJournal.testing(store);
+    await journal.hydrate();
+
+    Future<void> expectEvidence() async {
+      final persisted = jsonDecode(store.value!) as Map<String, dynamic>;
+      final bucket = (persisted['servers'] as Map<String, dynamic>)[opaque(quarantinedServer)] as Map<String, dynamic>;
+      expect(bucket[opaque(quarantinedChat)], evidence);
+      expect(journal.lookup(quarantinedServer, quarantinedChat), isNull);
+    }
+
+    await journal.recordSubmitted(
+      serverIdentity: 'valid-server',
+      chatGuid: 'chat-one',
+      attemptId: 'aaaaaaaaaaaaaaaa',
+      startedAt: DateTime.fromMillisecondsSinceEpoch(2),
+    );
+    await expectEvidence();
+
+    await journal.recordSubmitted(
+      serverIdentity: 'valid-server',
+      chatGuid: 'chat-two',
+      attemptId: 'bbbbbbbbbbbbbbbb',
+      startedAt: DateTime.fromMillisecondsSinceEpoch(3),
+    );
+    await expectEvidence();
+    expect(store.writes, 2);
   });
 
   test('compare-and-set and clear preserve quarantined evidence', () async {

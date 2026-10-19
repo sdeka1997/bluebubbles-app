@@ -77,7 +77,11 @@ class HttpService implements BaseApi {
   }
 
   @override
-  Future<Response> runApiGuarded(Future<Response> Function() func, {bool checkOrigin = true}) async {
+  Future<Response> runApiGuarded(
+    Future<Response> Function() func, {
+    bool checkOrigin = true,
+    bool retryCloudflare502 = true,
+  }) async {
     if (HttpSvc.origin.isEmpty && checkOrigin) {
       return Future.error("No server URL!");
     }
@@ -95,7 +99,7 @@ class HttpService implements BaseApi {
           : e is DioException
               ? e.response?.statusCode
               : null;
-      if (statusCode == 502 && apiRoot.contains("trycloudflare")) {
+      if (retryCloudflare502 && statusCode == 502 && apiRoot.contains("trycloudflare")) {
         try {
           return await func();
         } catch (e, s) {
@@ -388,10 +392,11 @@ class ApiInterceptor extends Interceptor {
     final redactData = err.requestOptions.extra[redactRequestDataKey] == true;
     final requestData = redactData ? '[REDACTED]' : err.requestOptions.data ?? 'No Data';
     final responseData = redactData ? '[REDACTED]' : err.response?.data ?? 'No Data';
+    final errorData = redactData ? '[REDACTED]' : err.error ?? 'No Error';
 
     // Make a nice log of what failed
     Logger.error("""Failed Request: [${err.requestOptions.method}] ${err.requestOptions.path}
-  -> Error: ${err.error ?? 'No Error'}
+  -> Error: $errorData
   -> Request Params: ${params.toString()}
   -> Request Data: $requestData
   -> Response Status: ${err.response?.statusCode ?? 'No Response'}

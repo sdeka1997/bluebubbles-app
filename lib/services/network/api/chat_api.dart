@@ -275,7 +275,7 @@ class ChatApi {
           cancelToken: cancelToken,
         );
         return _svc.returnSuccessOrError(response);
-      });
+      }, retryCloudflare502: false);
       return _receiptResult(response, attemptId);
     } on Object catch (error) {
       final status = _statusCode(error);
@@ -302,7 +302,7 @@ class ChatApi {
           cancelToken: cancelToken,
         );
         return _svc.returnSuccessOrError(response);
-      });
+      }, retryCloudflare502: true);
       return _receiptResult(response, attemptId);
     } on Object catch (error) {
       if (_statusCode(error) == 404) return const RecoverableDeleteAttemptNotRecorded();
