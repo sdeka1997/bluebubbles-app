@@ -27,3 +27,12 @@ Future<bool> openIfAllowed(
   await open();
   return true;
 }
+
+
+/// Restores a previously active chat only if it is still openable on return.
+Future<bool> restoreIfAllowed(
+  String guid, {
+  required ChatOpenGuard canOpen,
+  required FutureOr<void> Function() restore,
+}) =>
+    openIfAllowed(guid, canOpen: canOpen, open: restore);

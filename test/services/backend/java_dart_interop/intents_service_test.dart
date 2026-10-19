@@ -1,3 +1,4 @@
+import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/backend/java_dart_interop/intents_service.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -46,5 +47,23 @@ void main() {
 
     expect(guards, ['open']);
     expect(lookups, 1);
+  });
+
+
+  test('suppression after waiting for UI uses the injected guard and stops navigation setup', () async {
+    var guardCalls = 0;
+    var waits = 0;
+    final chat = Chat(id: 1, guid: 'racing', hasUnreadMessage: false);
+    final service = IntentsService(
+      canOpenChat: (_) => ++guardCalls < 3,
+      findChat: (_) => chat,
+      waitForUI: () async => waits++,
+    );
+
+    await service.openChat('racing', isInitialIntent: false);
+
+    expect(guardCalls, 3);
+    expect(waits, 1);
+    expect(service.pendingOpenChatGuid, isNull);
   });
 }

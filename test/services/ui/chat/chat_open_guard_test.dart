@@ -29,9 +29,7 @@ void main() {
 
     test('an openable guid resolves its chat', () async {
       final open = _chat('open');
-
       final chat = await resolveOpenableChat('open', canOpen: (_) => true, lookup: (_) async => open);
-
       expect(chat, same(open));
     });
 
@@ -41,7 +39,6 @@ void main() {
 
     test('a suppression that starts during the lookup still wins', () async {
       var suppressed = false;
-
       final chat = await resolveOpenableChat(
         'racing',
         canOpen: (_) => !suppressed,
@@ -50,7 +47,6 @@ void main() {
           return _chat(guid);
         },
       );
-
       expect(chat, isNull);
     });
   });
@@ -58,20 +54,32 @@ void main() {
   group('openIfAllowed', () {
     test('a suppressed guid never runs the open callback', () async {
       var opened = 0;
-
       final result = await openIfAllowed('suppressed', canOpen: (_) => false, open: () => opened++);
-
       expect(result, isFalse);
       expect(opened, 0);
     });
 
     test('an openable guid runs the open callback once', () async {
       var opened = 0;
-
       final result = await openIfAllowed('open', canOpen: (_) => true, open: () async => opened++);
-
       expect(result, isTrue);
       expect(opened, 1);
+    });
+  });
+
+  group('restoreIfAllowed', () {
+    test('a suppressed guid never runs the restore callback', () async {
+      var restored = 0;
+      final result = await restoreIfAllowed('suppressed', canOpen: (_) => false, restore: () => restored++);
+      expect(result, isFalse);
+      expect(restored, 0);
+    });
+
+    test('an openable guid runs the restore callback once', () async {
+      var restored = 0;
+      final result = await restoreIfAllowed('open', canOpen: (_) => true, restore: () async => restored++);
+      expect(result, isTrue);
+      expect(restored, 1);
     });
   });
 }

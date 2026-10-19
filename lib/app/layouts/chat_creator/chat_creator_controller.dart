@@ -5,6 +5,7 @@ import 'package:bluebubbles/app/layouts/chat_creator/chat_creator.dart' show Sel
 import 'package:bluebubbles/app/layouts/conversation_view/pages/conversation_view.dart';
 import 'package:bluebubbles/app/wrappers/stateful_boilerplate.dart';
 import 'package:bluebubbles/app/wrappers/titlebar_wrapper.dart';
+import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/services.dart';
@@ -25,11 +26,13 @@ class ChatCreatorController extends StatefulController {
     this.initialText = "",
     this.initialAttachments = const [],
     this.initialSelected = const [],
-  });
+    List<Chat> Function()? recoverableChatSource,
+  }) : recoverableChatSource = recoverableChatSource ?? (() => Database.chats.getAll());
 
   final String? initialText;
   final List<PlatformFile> initialAttachments;
   final List<SelectedContact> initialSelected;
+  final List<Chat> Function() recoverableChatSource;
 
   // ---- State ----
   final RxList<SelectedContact> selectedContacts = <SelectedContact>[].obs;
@@ -344,7 +347,7 @@ class ChatCreatorController extends StatefulController {
     // Always use the complete service-filtered list here — filteredChats is
     // narrowed by the current search query and would miss valid chats.
     if (existingChat == null) {
-      final searchList = checkDeleted ? ChatsSvc.allChats : _allChats.where(_chatMatchesService).toList();
+      final searchList = checkDeleted ? recoverableChatSource() : _allChats.where(_chatMatchesService).toList();
       for (final c in searchList) {
         if (c.handles.length != selectedContacts.length) continue;
         int matches = 0;
@@ -676,6 +679,8 @@ class ChatCreatorController extends StatefulController {
     // text/attachments (i.e. "open conversation" intent), skip the send step.
     final hasContent = capturedText.isNotEmpty || capturedAttachments.isNotEmpty;
 
+    if (!canOpenChat(chat.guid, explain: true)) return;
+
     // Pre-queue the send so _SendAnimationState fires it as soon as it wires up
     // sendFunc — after the ConversationView frame builds and MessagesView has
     // initialized its handlers. Only set when there is actual content to send,
@@ -713,6 +718,8 @@ class ChatCreatorController extends StatefulController {
     // tree before the new ConversationView mounts — prevents GlobalKey conflicts
     // (the shared focusInfoKey on the CVC would otherwise appear in both trees).
     activeController.value = null;
+
+    if (!canOpenChat(chat.guid, explain: true)) return;
 
     NavigationSvc.pushAndRemoveUntil(
       Get.context!,

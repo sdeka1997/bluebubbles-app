@@ -14,6 +14,7 @@ import 'package:bluebubbles/app/wrappers/theme_switcher.dart';
 import 'package:bluebubbles/app/wrappers/titlebar_wrapper.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
+import 'package:bluebubbles/services/ui/chat/chat_open_guard.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -468,18 +469,22 @@ Future<void> goToFindMy(BuildContext context) async {
     ),
   );
   if (currentChat != null) {
-    await ChatsSvc.setActiveChat(currentChat);
-    if (SettingsSvc.settings.tabletMode.value) {
-      NavigationSvc.pushAndRemoveUntil(
-        context,
-        ConversationView(
-          chat: currentChat,
-        ),
-        (route) => route.isFirst,
-      );
-    } else {
-      cvc(currentChat).close();
-    }
+    await restoreIfAllowed(
+      currentChat.guid,
+      canOpen: ChatsSvc.canOpenChat,
+      restore: () async {
+        await ChatsSvc.setActiveChat(currentChat);
+        if (SettingsSvc.settings.tabletMode.value) {
+          NavigationSvc.pushAndRemoveUntil(
+            context,
+            ConversationView(chat: currentChat),
+            (route) => route.isFirst,
+          );
+        } else {
+          cvc(currentChat).close();
+        }
+      },
+    );
   }
 }
 
@@ -586,18 +591,22 @@ Future<void> goToSettings(BuildContext context) async {
     ),
   );
   if (currentChat != null) {
-    await ChatsSvc.setActiveChat(currentChat);
-    if (SettingsSvc.settings.tabletMode.value) {
-      NavigationSvc.pushAndRemoveUntil(
-        context,
-        ConversationView(
-          chat: currentChat,
-        ),
-        (route) => route.isFirst,
-      ).onError((error, stackTrace) => ChatsSvc.setAllInactiveSync());
-    } else {
-      cvc(currentChat).close();
-    }
+    await restoreIfAllowed(
+      currentChat.guid,
+      canOpen: ChatsSvc.canOpenChat,
+      restore: () async {
+        await ChatsSvc.setActiveChat(currentChat);
+        if (SettingsSvc.settings.tabletMode.value) {
+          NavigationSvc.pushAndRemoveUntil(
+            context,
+            ConversationView(chat: currentChat),
+            (route) => route.isFirst,
+          ).onError((error, stackTrace) => ChatsSvc.setAllInactiveSync());
+        } else {
+          cvc(currentChat).close();
+        }
+      },
+    );
   }
 }
 

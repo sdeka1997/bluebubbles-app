@@ -589,6 +589,7 @@ class NotificationsService {
 
     _cleanNotificationState(data.chatGuid);
     if (interaction.reply != null) {
+      if (!ChatsSvc.canOpenChat(chat.guid, explain: true)) return;
       final Message reply = Message(
         dateCreated: DateTime.now(),
         handleId: 0,

@@ -20,6 +20,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 
 Future<void> peekChat(BuildContext context, Chat c, Offset offset) async {
+  if (!ChatsSvc.canOpenChat(c.guid, explain: true)) return;
   HapticFeedback.mediumImpact();
   final messages = Chat.getMessages(c, getDetails: true).where((e) => e.associatedMessageGuid == null).toList();
   await Navigator.push(
@@ -59,25 +60,22 @@ class _ConversationPeekViewState extends State<ConversationPeekView>
   late final ConversationViewController cvController = cvc(widget.chat);
   final double itemHeight = kIsDesktop || kIsWeb ? 56 : 48;
   bool disposed = false;
+  bool chatInitialized = false;
 
   @override
   void initState() {
     super.initState();
-    ChatsSvc.setActiveChatSync(widget.chat, clearNotifications: false);
-    ChatsSvc.activeChat!.controller = cvController;
-
-    // Initialize messages service with message states for proper reactivity
-    initializeMessagesService(
-      widget.chat,
-      widget.messages,
-      cvController,
-    );
-
     controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 150),
       animationBehavior: AnimationBehavior.preserve,
     );
+    if (!ChatsSvc.canOpenChat(widget.chat.guid)) return;
+
+    ChatsSvc.setActiveChatSync(widget.chat, clearNotifications: false);
+    ChatsSvc.activeChat!.controller = cvController;
+    initializeMessagesService(widget.chat, widget.messages, cvController);
+    chatInitialized = true;
     controller.forward();
   }
 
@@ -96,8 +94,10 @@ class _ConversationPeekViewState extends State<ConversationPeekView>
   @override
   void dispose() {
     if (!disposed) {
-      cvController.close();
-      disposeMessagesService();
+      if (chatInitialized) {
+        cvController.close();
+        disposeMessagesService();
+      }
       controller.dispose();
     }
     super.dispose();
@@ -105,6 +105,7 @@ class _ConversationPeekViewState extends State<ConversationPeekView>
 
   @override
   Widget build(BuildContext context) {
+    if (!ChatsSvc.canOpenChat(widget.chat.guid)) return const SizedBox.shrink();
     return Theme(
       data: context.theme.copyWith(
         // in case some components still use legacy theming
@@ -171,6 +172,7 @@ class _ConversationPeekViewState extends State<ConversationPeekView>
                           children: [
                             GestureDetector(
                               onTap: () async {
+                                if (!ChatsSvc.canOpenChat(widget.chat.guid, explain: true)) return;
                                 cvController.close();
                                 MessagesSvc(widget.chat.guid).close();
                                 // Controllers are disposed by MessagesService.onClose()

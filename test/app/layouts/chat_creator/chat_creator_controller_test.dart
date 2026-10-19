@@ -1,3 +1,4 @@
+import 'package:bluebubbles/app/layouts/chat_creator/chat_creator.dart' show SelectedContact;
 import 'package:bluebubbles/app/layouts/chat_creator/chat_creator_controller.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -46,6 +47,51 @@ void main() {
 
     expect(result, same(chat));
     expect(guards, ['open|false']);
+    expect(controller.activeController.value, isNull);
+  });
+
+
+  test('a suppressed local group outside the visible list resolves before creation', () async {
+    final chat = Chat(id: 3, guid: 'suppressed-group', hasUnreadMessage: false);
+    chat.handles.addAll([
+      Handle(address: '+15550000001', service: 'iMessage'),
+      Handle(address: '+15550000002', service: 'iMessage'),
+    ]);
+    final guards = <String>[];
+    final controller = ChatCreatorController(recoverableChatSource: () => [chat])
+      ..selectedContacts.addAll([
+        SelectedContact(displayName: 'One', address: '+15550000001'),
+        SelectedContact(displayName: 'Two', address: '+15550000002'),
+      ])
+      ..canOpenChat = (guid, {explain = false}) {
+        guards.add('$guid|$explain');
+        return false;
+      };
+
+    final result = await controller.findExistingChat(checkDeleted: true, update: false);
+    await controller.settleExistingChat(result, checkDeleted: true, update: true);
+
+    expect(result, same(chat));
+    expect(guards, ['suppressed-group|false', 'suppressed-group|true']);
+    expect(controller.activeController.value, isNull);
+  });
+
+  test('an openable local group outside the visible list still resolves', () async {
+    final chat = Chat(id: 4, guid: 'open-group', hasUnreadMessage: false);
+    chat.handles.addAll([
+      Handle(address: '+15550000003', service: 'iMessage'),
+      Handle(address: '+15550000004', service: 'iMessage'),
+    ]);
+    final controller = ChatCreatorController(recoverableChatSource: () => [chat])
+      ..selectedContacts.addAll([
+        SelectedContact(displayName: 'Three', address: '+15550000003'),
+        SelectedContact(displayName: 'Four', address: '+15550000004'),
+      ])
+      ..canOpenChat = (guid, {explain = false}) => true;
+
+    final result = await controller.findExistingChat(checkDeleted: true, update: false);
+
+    expect(result, same(chat));
     expect(controller.activeController.value, isNull);
   });
 }

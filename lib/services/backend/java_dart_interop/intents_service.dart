@@ -28,12 +28,17 @@ import 'package:get_it/get_it.dart';
 IntentsService get IntentsSvc => GetIt.I<IntentsService>();
 
 class IntentsService {
-  IntentsService({ChatOpenGuard? canOpenChat, Chat? Function(String guid)? findChat})
-      : _canOpenChat = canOpenChat ?? ((guid) => ChatsSvc.canOpenChat(guid, explain: true)),
-        _findChat = findChat ?? ((guid) => Chat.findOne(guid: guid));
+  IntentsService({
+    ChatOpenGuard? canOpenChat,
+    Chat? Function(String guid)? findChat,
+    Future<void> Function()? waitForUI,
+  })  : _canOpenChat = canOpenChat ?? ((guid) => ChatsSvc.canOpenChat(guid, explain: true)),
+        _findChat = findChat ?? ((guid) => Chat.findOne(guid: guid)),
+        _waitForUI = waitForUI ?? StartupTasks.waitForUI;
 
   final ChatOpenGuard _canOpenChat;
   final Chat? Function(String guid) _findChat;
+  final Future<void> Function() _waitForUI;
 
   late final StreamSubscription sub;
 
@@ -228,12 +233,12 @@ class IntentsService {
           tag: "IntentsService");
       final chat = await resolveOpenableChat(guid, canOpen: _canOpenChat, lookup: _findChat);
       if (chat == null) {
-        Logger.debug("Chat not found or not openable with guid: $guid", tag: "IntentsService");
+        Logger.debug("Chat not found or not openable", tag: "IntentsService");
         return;
       }
 
-      await StartupTasks.waitForUI();
-      if (!ChatsSvc.canOpenChat(guid)) return;
+      await _waitForUI();
+      if (!_canOpenChat(guid)) return;
 
       // On the initial-intent path the widget tree is starting fresh (see the
       // comment in init()), so activeChat may be a stale leftover from before the
