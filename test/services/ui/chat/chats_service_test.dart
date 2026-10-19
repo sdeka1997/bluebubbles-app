@@ -61,15 +61,16 @@ Future<void> _claim(
   String guid,
   String attemptId, {
   RecoverableDeleteJournalPhase phase = RecoverableDeleteJournalPhase.submitted,
+  String serverIdentity = 'server-a',
 }) async {
   await journal.recordSubmitted(
-    serverIdentity: 'server-a',
+    serverIdentity: serverIdentity,
     chatGuid: guid,
     attemptId: attemptId,
     startedAt: DateTime.utc(2026, 1, 1),
   );
   if (phase == RecoverableDeleteJournalPhase.accepted) {
-    await journal.recordAccepted('server-a', guid, attemptId);
+    await journal.recordAccepted(serverIdentity, guid, attemptId);
   }
 }
 
@@ -281,14 +282,15 @@ void main() {
         final journal = RecoverableDeleteJournal.testing(_MemoryStore());
         await journal.hydrate();
         final notices = <String>[];
+        final chat = _chat('case-chat');
         final service = ChatsService(
           journal: journal,
           configuredServerIdentity: () => 'server-a',
           attemptIdGenerator: () => 'EEEEEEEEEEEEEEEE',
           submitRecoverableDelete: ({required chatGuid, required attemptId}) async => testCase.result,
+          localChatLookup: (_) => chat,
           noticeSink: (title, _, _) => notices.add(title),
         );
-        final chat = _chat('case-chat');
         await service.addChat(chat);
 
         expect(await service.recoverablyDeleteChat(chat), testCase.expected);
@@ -702,6 +704,325 @@ void main() {
 
       expect(loads, 2);
       expect(journal.state, RecoverableDeleteJournalState.ready);
+    });
+
+    test('a different-server recovery runs its own pass after a blocked prior pass', () async {
+      final journal = RecoverableDeleteJournal.testing(_MemoryStore());
+      await journal.hydrate();
+      await _claim(journal, 'server-a-chat', 'UUUUUUUUUUUUUUUU', phase: RecoverableDeleteJournalPhase.accepted);
+      await _claim(
+        journal,
+        'server-b-chat',
+        'VVVVVVVVVVVVVVVV',
+        phase: RecoverableDeleteJournalPhase.accepted,
+        serverIdentity: 'server-b',
+      );
+      var identity = 'server-a';
+      final aDeleteEntered = Completer<void>();
+      final releaseADelete = Completer<void>();
+      final deleted = <String>[];
+      final service = ChatsService(
+        journal: journal,
+        configuredServerIdentity: () => identity,
+        localChatLookup: _chat,
+        localSoftDelete: (chat) async {
+          if (chat.guid == 'server-a-chat') {
+            aDeleteEntered.complete();
+            await releaseADelete.future;
+          }
+          deleted.add(chat.guid);
+        },
+        noticeSink: (_, _, _) {},
+      );
+
+      final recoveryA = service.recoverPendingDeletes();
+      await aDeleteEntered.future;
+      identity = 'server-b';
+      final recoveryB = service.recoverPendingDeletes();
+      releaseADelete.complete();
+      await Future.wait([recoveryA, recoveryB]).timeout(const Duration(seconds: 5));
+
+      expect(deleted, ['server-a-chat', 'server-b-chat']);
+      expect(journal.lookup('server-b', 'server-b-chat'), isNull);
+      expect(journal.lookup('server-a', 'server-a-chat')?.phase, RecoverableDeleteJournalPhase.accepted);
+    });
+
+    for (final path in ['user delete', 'recovery']) {
+      for (final state in [RecoverableDeleteReceiptState.succeeded, RecoverableDeleteReceiptState.definitiveFailure]) {
+        test('server switch before a $path ${state.name} result leaves the old claim and new list untouched', () async {
+          final journal = RecoverableDeleteJournal.testing(_MemoryStore());
+          await journal.hydrate();
+          if (path == 'recovery') await _claim(journal, 'switch-row', 'WWWWWWWWWWWWWWWW');
+          var identity = 'server-a';
+          final network = Completer<RecoverableDeleteAttemptResult>();
+          var deletes = 0;
+          final chat = _chat('switch-row');
+          final service = ChatsService(
+            journal: journal,
+            configuredServerIdentity: () => identity,
+            attemptIdGenerator: () => 'WWWWWWWWWWWWWWWW',
+            submitRecoverableDelete: ({required chatGuid, required attemptId}) => network.future,
+            getRecoverableDelete: (_) => network.future,
+            localChatLookup: (_) => chat,
+            localSoftDelete: (_) async => deletes++,
+            noticeSink: (_, _, _) {},
+          );
+          final Future<Object?> operation;
+          if (path == 'user delete') {
+            await service.addChat(chat);
+            operation = service.recoverablyDeleteChat(chat);
+          } else {
+            operation = service.recoverPendingDeletes();
+          }
+          await Future<void>.delayed(Duration.zero);
+          identity = 'server-b';
+          final replacement = _chat('switch-row');
+          await service.addChat(replacement, immediate: true);
+          network.complete(_receipt(state, 'WWWWWWWWWWWWWWWW'));
+          final result = await operation.timeout(const Duration(seconds: 5));
+
+          if (path == 'user delete') expect(result, isTrue);
+          expect(deletes, 0);
+          expect(journal.lookup('server-a', 'switch-row')?.phase, RecoverableDeleteJournalPhase.submitted);
+          expect(service.chatStates['switch-row']?.chat, same(replacement));
+          expect(service.allChats.where((item) => item.guid == 'switch-row'), hasLength(1));
+        });
+      }
+    }
+
+    test('a different-server init runs after the in-flight init and owns the final state', () async {
+      final journal = RecoverableDeleteJournal.testing(_MemoryStore());
+      await journal.hydrate();
+      await _claim(journal, 'a-claimed', 'XXXXXXXXXXXXXXXX');
+      await _claim(journal, 'b-claimed', 'YYYYYYYYYYYYYYYY', serverIdentity: 'server-b');
+      var identity = 'server-a';
+      final firstLoadEntered = Completer<void>();
+      final releaseFirstLoad = Completer<void>();
+      var loads = 0;
+      final service = ChatsService(
+        journal: journal,
+        configuredServerIdentity: () => identity,
+        initialActiveChatsLoader: () async {
+          loads++;
+          if (loads == 1) {
+            firstLoadEntered.complete();
+            await releaseFirstLoad.future;
+          }
+          return [_chat('a-claimed'), _chat('b-claimed')];
+        },
+        localChatLookup: (_) => null,
+        getRecoverableDelete: (_) async => const RecoverableDeleteAttemptAmbiguous(),
+        noticeSink: (_, _, _) {},
+      );
+
+      final initA = service.init(force: true);
+      await firstLoadEntered.future;
+      identity = 'server-b';
+      final initB = service.init(force: true);
+      releaseFirstLoad.complete();
+      await Future.wait([initA, initB]).timeout(const Duration(seconds: 5));
+
+      expect(loads, 2);
+      expect(service.chatStates.keys, ['a-claimed']);
+      expect(service.isRecoverableDeleteSuppressed('b-claimed'), isTrue);
+      expect(service.isRecoverableDeleteSuppressed('a-claimed'), isFalse);
+    });
+
+    test('init awaits the prior watcher cancellation before loading', () async {
+      final journal = RecoverableDeleteJournal.testing(_MemoryStore());
+      final cancelEntered = Completer<void>();
+      final releaseCancel = Completer<void>();
+      var loads = 0;
+      final controller = StreamController<void>(
+        onCancel: () async {
+          cancelEntered.complete();
+          await releaseCancel.future;
+        },
+      );
+      final service = ChatsService(
+        journal: journal,
+        configuredServerIdentity: () => 'server-a',
+        initialActiveChatsLoader: () async {
+          loads++;
+          return <Chat>[];
+        },
+        noticeSink: (_, _, _) {},
+      );
+      service.countSub = controller.stream.listen((_) {});
+
+      final initialization = service.init(force: true);
+      await cancelEntered.future;
+      await Future<void>.delayed(Duration.zero);
+      expect(loads, 0);
+      releaseCancel.complete();
+      await initialization.timeout(const Duration(seconds: 5));
+
+      expect(loads, 1);
+      await controller.close();
+    });
+
+    for (final clearThrows in [false, true]) {
+      test('claimed re-init clears a remembered active guid by guid (clear throws: $clearThrows)', () async {
+        final journal = RecoverableDeleteJournal.testing(_MemoryStore());
+        await journal.hydrate();
+        await _claim(journal, 'remembered', 'ZZZZZZZZZZZZZZZZ', phase: RecoverableDeleteJournalPhase.accepted);
+        var clears = 0;
+        final deleted = <String>[];
+        final service = ChatsService(
+          journal: journal,
+          configuredServerIdentity: () => 'server-a',
+          initialActiveChatsLoader: () async => [_chat('remembered'), _chat('other')],
+          localChatLookup: (_) => null,
+          localSoftDelete: (chat) async => deleted.add(chat.guid),
+          clearLastOpenedChat: () async {
+            clears++;
+            if (clearThrows) throw StateError('prefs failed');
+          },
+          noticeSink: (_, _, _) {},
+        );
+        service.activeChatGuid.value = 'remembered';
+
+        await service.init(force: true).timeout(const Duration(seconds: 5));
+
+        expect(service.chatStates.keys, ['other']);
+        expect(service.pendingDeletes, isNot(contains('remembered')));
+        expect(service.activeChatGuid.value, isNull);
+        expect(service.activeChat, isNull);
+        expect(clears, 1);
+        expect(journal.lookup('server-a', 'remembered'), isNull);
+      });
+    }
+
+    for (final path in ['user delete', 'recovery']) {
+      for (final fresh in [true, false]) {
+        test('$path definitive failure restores ${fresh ? 'only the fresh live row' : 'nothing for an absent row'}', () async {
+          final journal = RecoverableDeleteJournal.testing(_MemoryStore());
+          await journal.hydrate();
+          if (path == 'recovery') await _claim(journal, 'restore-row', 'abababababababab');
+          final network = Completer<RecoverableDeleteAttemptResult>();
+          final original = _chat('restore-row');
+          final replacement = _chat('restore-row');
+          var lookups = 0;
+          final service = ChatsService(
+            journal: journal,
+            configuredServerIdentity: () => 'server-a',
+            attemptIdGenerator: () => 'abababababababab',
+            submitRecoverableDelete: ({required chatGuid, required attemptId}) => network.future,
+            getRecoverableDelete: (_) => network.future,
+            localChatLookup: (_) => lookups++ == 0 && path == 'recovery' ? original : (fresh ? replacement : null),
+            noticeSink: (_, _, _) {},
+          );
+          final Future<Object?> operation;
+          if (path == 'user delete') {
+            await service.addChat(original);
+            operation = service.recoverablyDeleteChat(original);
+          } else {
+            operation = service.recoverPendingDeletes();
+          }
+          await Future<void>.delayed(Duration.zero);
+          // Fresh: the captured object went stale. Absent: the row is gone though the captured object looks live.
+          if (fresh) original.dateDeleted = DateTime.utc(2026, 1, 2);
+          network.complete(_receipt(RecoverableDeleteReceiptState.definitiveFailure, 'abababababababab'));
+          final result = await operation.timeout(const Duration(seconds: 5));
+
+          if (path == 'user delete') expect(result, isFalse);
+          expect(journal.lookup('server-a', 'restore-row'), isNull);
+          expect(service.pendingDeletes, isNot(contains('restore-row')));
+          if (fresh) {
+            expect(service.chatStates['restore-row']?.chat, same(replacement));
+            expect(service.allChats.where((item) => item.guid == 'restore-row').single, same(replacement));
+          } else {
+            expect(service.chatStates, isNot(contains('restore-row')));
+            expect(service.allChats, isEmpty);
+          }
+        });
+      }
+    }
+
+    for (final scenario in <({String name, bool expected, bool claimed})>[
+      (name: 'last-open clear throws after submitted', expected: true, claimed: true),
+      (name: 'pending notice throws', expected: true, claimed: true),
+      (name: 'submit callback throws', expected: true, claimed: true),
+      (name: 'restore lookup throws', expected: true, claimed: true),
+      (name: 'failure notice throws after restore', expected: false, claimed: false),
+      (name: 'attempt id generation throws before the durable write', expected: false, claimed: false),
+      (name: 'failure notice throws when the durable write fails', expected: false, claimed: false),
+      (name: 'pending notice throws for an existing claim', expected: true, claimed: true),
+    ]) {
+      test('public delete returns ${scenario.expected} when ${scenario.name}', () async {
+        final store = _MemoryStore();
+        final journal = RecoverableDeleteJournal.testing(store);
+        await journal.hydrate();
+        final chat = _chat('boundary');
+        final definitive = scenario.name.contains('restore');
+        if (scenario.name.contains('existing claim')) await _claim(journal, chat.guid, 'cdcdcdcdcdcdcdcd');
+        final service = ChatsService(
+          journal: journal,
+          configuredServerIdentity: () => 'server-a',
+          attemptIdGenerator: () {
+            if (scenario.name.startsWith('attempt id')) throw StateError('id failed');
+            return 'cdcdcdcdcdcdcdcd';
+          },
+          submitRecoverableDelete: ({required chatGuid, required attemptId}) async {
+            if (scenario.name.startsWith('submit')) throw StateError('submit failed');
+            return _receipt(
+              definitive ? RecoverableDeleteReceiptState.definitiveFailure : RecoverableDeleteReceiptState.pending,
+              attemptId,
+            );
+          },
+          getRecoverableDelete: (_) async => const RecoverableDeleteAttemptAmbiguous(),
+          localChatLookup: (_) {
+            if (scenario.name.startsWith('restore lookup')) throw StateError('lookup failed');
+            return chat;
+          },
+          clearLastOpenedChat: () async {
+            if (scenario.name.startsWith('last-open')) throw StateError('prefs failed');
+          },
+          noticeSink: (title, _, _) {
+            if (scenario.name.contains('notice throws')) throw StateError('notice failed');
+          },
+        );
+        await service.addChat(chat);
+        service.activeChatGuid.value = chat.guid;
+        if (scenario.name.contains('durable write fails')) store.failWrites = true;
+
+        final result = await service.recoverablyDeleteChat(chat).timeout(const Duration(seconds: 5));
+
+        expect(result, scenario.expected);
+        expect(journal.lookup('server-a', chat.guid) != null, scenario.claimed);
+        expect(service.chatStates.containsKey(chat.guid), !scenario.claimed);
+        expect(service.pendingDeletes.contains(chat.guid), scenario.claimed);
+      });
+    }
+
+    test('pending notices are neutral info and the failure notice stays an error, once each', () async {
+      final journal = RecoverableDeleteJournal.testing(_MemoryStore());
+      await journal.hydrate();
+      final notices = <String>[];
+      var result = _receipt(RecoverableDeleteReceiptState.pending, 'efefefefefefefef');
+      final pendingChat = _chat('neutral-pending');
+      final failedChat = _chat('neutral-failed');
+      final service = ChatsService(
+        journal: journal,
+        configuredServerIdentity: () => 'server-a',
+        attemptIdGenerator: () => 'efefefefefefefef',
+        submitRecoverableDelete: ({required chatGuid, required attemptId}) async => result,
+        localChatLookup: (guid) => guid == failedChat.guid ? failedChat : null,
+        noticeSink: (title, _, type) => notices.add('$title|${type.name}'),
+      );
+      await service.addChat(pendingChat);
+      await service.addChat(failedChat);
+
+      expect(await service.recoverablyDeleteChat(pendingChat), isTrue);
+      expect(service.canOpenChat(pendingChat.guid, explain: true), isFalse);
+      result = _receipt(RecoverableDeleteReceiptState.definitiveFailure, 'efefefefefefefef');
+      expect(await service.recoverablyDeleteChat(failedChat), isFalse);
+
+      expect(notices, [
+        'Deletion is being confirmed|info',
+        'Deletion is being confirmed|info',
+        'Conversation not deleted|error',
+      ]);
     });
   });
 }
