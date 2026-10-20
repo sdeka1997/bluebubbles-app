@@ -1398,10 +1398,10 @@ class ChatsService {
   ///
   /// Never throws: callers are UI confirm callbacks. An unexpected failure returns
   /// true while a durable claim exists (the chat stays suppressed) and false otherwise.
-  Future<bool> recoverablyDeleteChat(Chat chat) async {
+  Future<bool> recoverablyDeleteChat(Chat chat, {bool notify = true}) async {
     final serverIdentity = _initializedServerIdentity ?? _configuredServerIdentity();
     try {
-      return await _recoverablyDeleteChat(chat, serverIdentity);
+      return await _recoverablyDeleteChat(chat, serverIdentity, notify: notify);
     } on Object catch (error) {
       _logSuppressionCleanupFailure('finish a deletion request', error);
       try {
@@ -1412,25 +1412,27 @@ class ChatsService {
     }
   }
 
-  Future<bool> _recoverablyDeleteChat(Chat chat, String serverIdentity) async {
+  Future<bool> _recoverablyDeleteChat(Chat chat, String serverIdentity, {required bool notify}) async {
     if (kIsWeb || _journal.state != RecoverableDeleteJournalState.ready) {
-      _deliverNotice(
-        'Conversation not deleted',
-        'Deletion is unavailable until recovery storage is ready.',
-        SnackbarType.error,
-      );
+      if (notify) {
+        _deliverNotice(
+          'Conversation not deleted',
+          'Deletion is unavailable until recovery storage is ready.',
+          SnackbarType.error,
+        );
+      }
       return false;
     }
     return _journal.chatLock(serverIdentity, chat.guid).synchronized(() async {
       if (!_isCurrentServer(serverIdentity)) {
         // The list belongs to another server than the one requests now reach.
-        _failureNotice();
+        if (notify) _failureNotice();
         return false;
       }
       final existing = _journal.lookup(serverIdentity, chat.guid);
       if (existing != null) {
         await _suppressChatFromUi(chat.guid);
-        _pendingNotice();
+        if (notify) _pendingNotice();
         return true;
       }
       final attemptId = _attemptIdGenerator();
@@ -1442,11 +1444,13 @@ class ChatsService {
           startedAt: _clock().toUtc(),
         );
       } on Object {
-        _deliverNotice(
-          'Conversation not deleted',
-          'The deletion could not be saved safely. The conversation is still on this device.',
-          SnackbarType.error,
-        );
+        if (notify) {
+          _deliverNotice(
+            'Conversation not deleted',
+            'The deletion could not be saved safely. The conversation is still on this device.',
+            SnackbarType.error,
+          );
+        }
         return false;
       }
       final entry = _journal.lookup(serverIdentity, chat.guid)!;
@@ -1458,7 +1462,7 @@ class ChatsService {
         if (result is RecoverableDeleteAttemptAmbiguous) {
           result = await _safeGet(attemptId);
         }
-        return await _handleAttemptResult(entry, chat, result, allowSameIdResubmit: true, notify: true);
+        return await _handleAttemptResult(entry, chat, result, allowSameIdResubmit: true, notify: notify);
       } finally {
         _releasePendingMark(chat.guid);
       }

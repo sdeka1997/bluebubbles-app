@@ -1237,4 +1237,66 @@ void main() {
       expect(claim?.phase, RecoverableDeleteJournalPhase.submitted);
     });
   });
+
+
+  test('recoverable delete can suppress a pending result notice', () async {
+    final journal = RecoverableDeleteJournal.testing(_MemoryStore());
+    await journal.hydrate();
+    final notices = <String>[];
+    final service = ChatsService(
+      journal: journal,
+      configuredServerIdentity: () => 'server-a',
+      submitRecoverableDelete: ({required chatGuid, required attemptId}) async =>
+          _receipt(RecoverableDeleteReceiptState.pending, attemptId),
+      localChatLookup: (_) => null,
+      noticeSink: (title, _, _) => notices.add(title),
+    );
+
+    final result = await service.recoverablyDeleteChat(_chat('quiet-pending'), notify: false);
+
+    expect(result, isTrue);
+    expect(notices, isEmpty);
+  });
+
+  test('recoverable delete suppresses notices on every early result', () async {
+    final notices = <String>[];
+    final unavailable = ChatsService(
+      journal: RecoverableDeleteJournal.testing(_MemoryStore()),
+      configuredServerIdentity: () => 'server-a',
+      noticeSink: (title, _, _) => notices.add(title),
+    );
+    expect(await unavailable.recoverablyDeleteChat(_chat('unavailable'), notify: false), isFalse);
+
+    final existingJournal = RecoverableDeleteJournal.testing(_MemoryStore());
+    await existingJournal.hydrate();
+    await _claim(existingJournal, 'existing', 'AAAAAAAAAAAAAAAA');
+    final existing = ChatsService(
+      journal: existingJournal,
+      configuredServerIdentity: () => 'server-a',
+      noticeSink: (title, _, _) => notices.add(title),
+    );
+    expect(await existing.recoverablyDeleteChat(_chat('existing'), notify: false), isTrue);
+
+    var identityReads = 0;
+    final switchedJournal = RecoverableDeleteJournal.testing(_MemoryStore());
+    await switchedJournal.hydrate();
+    final switched = ChatsService(
+      journal: switchedJournal,
+      configuredServerIdentity: () => identityReads++ == 0 ? 'server-a' : 'server-b',
+      noticeSink: (title, _, _) => notices.add(title),
+    );
+    expect(await switched.recoverablyDeleteChat(_chat('switched'), notify: false), isFalse);
+
+    final failingStore = _MemoryStore()..failWrites = true;
+    final failingJournal = RecoverableDeleteJournal.testing(failingStore);
+    await failingJournal.hydrate();
+    final unsaved = ChatsService(
+      journal: failingJournal,
+      configuredServerIdentity: () => 'server-a',
+      noticeSink: (title, _, _) => notices.add(title),
+    );
+    expect(await unsaved.recoverablyDeleteChat(_chat('unsaved'), notify: false), isFalse);
+
+    expect(notices, isEmpty);
+  });
 }
