@@ -67,6 +67,16 @@ class Settings {
   final RxInt lastIncrementalSync = 0.obs;
   final RxInt lastIncrementalSyncRowId = 0.obs;
   final RxInt refreshRate = 0.obs;
+
+  /// `CacheService` purge level applied when the app is backgrounded on mobile:
+  /// "off", "light", "moderate" or "aggressive". Starts minor on purpose.
+  final RxString cachePurgeBackgroundLevel = "light".obs;
+
+  /// `CacheService` purge level applied on an OS memory-pressure signal.
+  final RxString cachePurgeMemoryPressureLevel = "moderate".obs;
+
+  /// Comma-separated `ClearableCache.id`s that automatic purges leave alone.
+  final RxString cachePurgeExcludedCaches = "".obs;
   final RxBool colorfulAvatars = false.obs;
   final RxBool colorfulBubbles = false.obs;
   final RxBool hideDividers = false.obs;
@@ -455,6 +465,9 @@ class Settings {
       'lastReviewRequestTimestamp': lastReviewRequestTimestamp.value,
       'serverPrivateAPI': serverPrivateAPI.value,
       'iMessageStatsSource': iMessageStatsSource.value,
+      'cachePurgeBackgroundLevel': cachePurgeBackgroundLevel.value,
+      'cachePurgeMemoryPressureLevel': cachePurgeMemoryPressureLevel.value,
+      'cachePurgeExcludedCaches': cachePurgeExcludedCaches.value,
     };
 
     if (includeAll) {
@@ -477,7 +490,8 @@ class Settings {
     return map;
   }
 
-  static void updateFromMap(Map<String, dynamic> map) {
+  /// Pass [save] false when the values are already persisted (e.g. forwarded from an isolate that saved them).
+  static void updateFromMap(Map<String, dynamic> map, {bool save = true}) {
     SettingsSvc.settings.iCloudAccount.value = map['iCloudAccount'] ?? SettingsSvc.settings.iCloudAccount.value;
     SettingsSvc.settings.serverAddress.value = map['serverAddress'] ?? SettingsSvc.settings.serverAddress.value;
     SettingsSvc.settings.guidAuthKey.value = map['guidAuthKey'] ?? SettingsSvc.settings.guidAuthKey.value;
@@ -627,6 +641,12 @@ class Settings {
     SettingsSvc.settings.serverPrivateAPI.value =
         map['serverPrivateAPI'] ?? SettingsSvc.settings.serverPrivateAPI.value;
     SettingsSvc.settings.iMessageStatsSource.value = (map['iMessageStatsSource'] == 'local') ? 'local' : 'server';
+    SettingsSvc.settings.cachePurgeBackgroundLevel.value =
+        map['cachePurgeBackgroundLevel'] ?? SettingsSvc.settings.cachePurgeBackgroundLevel.value;
+    SettingsSvc.settings.cachePurgeMemoryPressureLevel.value =
+        map['cachePurgeMemoryPressureLevel'] ?? SettingsSvc.settings.cachePurgeMemoryPressureLevel.value;
+    SettingsSvc.settings.cachePurgeExcludedCaches.value =
+        map['cachePurgeExcludedCaches'] ?? SettingsSvc.settings.cachePurgeExcludedCaches.value;
     SettingsSvc.settings.privateSendTypingIndicators.value =
         map['privateSendTypingIndicators'] ?? SettingsSvc.settings.privateSendTypingIndicators.value;
     SettingsSvc.settings.privateMarkChatAsRead.value =
@@ -735,10 +755,9 @@ class Settings {
         map['replaceEmoticonsWithEmoji'] ?? SettingsSvc.settings.replaceEmoticonsWithEmoji.value;
     SettingsSvc.settings.lastReviewRequestTimestamp.value =
         map['lastReviewRequestTimestamp'] ?? SettingsSvc.settings.lastReviewRequestTimestamp.value;
-    SettingsSvc.settings.save();
 
-    if (!isIsolate) {
-      unawaited(PrefsInterface.syncAllSettings());
+    if (!isIsolate && save) {
+      unawaited(SettingsSvc.settings.saveAsync());
       EventDispatcherSvc.emit("theme-update", null);
     }
   }
@@ -836,6 +855,9 @@ class Settings {
     s.enablePrivateAPI.value = map['enablePrivateAPI'] ?? false;
     s.serverPrivateAPI.value = map['serverPrivateAPI'];
     s.iMessageStatsSource.value = (map['iMessageStatsSource'] == 'local') ? 'local' : 'server';
+    s.cachePurgeBackgroundLevel.value = map['cachePurgeBackgroundLevel'] ?? "light";
+    s.cachePurgeMemoryPressureLevel.value = map['cachePurgeMemoryPressureLevel'] ?? "moderate";
+    s.cachePurgeExcludedCaches.value = map['cachePurgeExcludedCaches'] ?? "";
     s.privateSendTypingIndicators.value = map['privateSendTypingIndicators'] ?? false;
     s.privateMarkChatAsRead.value = map['privateMarkChatAsRead'] ?? false;
     s.privateManualMarkAsRead.value = map['privateManualMarkAsRead'] ?? false;

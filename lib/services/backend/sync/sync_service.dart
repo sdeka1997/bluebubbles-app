@@ -7,6 +7,7 @@ import 'package:bluebubbles/helpers/ui/async_task.dart';
 import 'package:bluebubbles/helpers/ui/ui_helpers.dart';
 import 'package:bluebubbles/services/backend/interfaces/contact_v2_interface.dart';
 import 'package:bluebubbles/services/backend/interfaces/sync_interface.dart';
+import 'package:bluebubbles/services/isolates/global_isolate.dart';
 import 'package:bluebubbles/services/isolates/incremental_sync_isolate.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/services/services.dart';
@@ -34,11 +35,12 @@ class SyncService {
 
   void initFullSync() {
     _manager = FullSyncManager(
-        messageCount: numberOfMessagesPerPage.toInt(),
-        skipEmptyChats: skipEmptyChats,
-        saveLogs: saveToDownloads,
-        syncGroupChatIcons: syncGroupChatIcons,
-        syncTimeFilter: syncTimeFilter);
+      messageCount: numberOfMessagesPerPage.toInt(),
+      skipEmptyChats: skipEmptyChats,
+      saveLogs: saveToDownloads,
+      syncGroupChatIcons: syncGroupChatIcons,
+      syncTimeFilter: syncTimeFilter,
+    );
   }
 
   Future<void> startFullSync() async {
@@ -48,7 +50,8 @@ class SyncService {
 
     // Set the last sync date (for incremental, even though this isn't incremental)
     // We won't try an incremental sync until the last (full) sync date is set
-    SettingsSvc.settings.lastIncrementalSync.value = DateTime.now().millisecondsSinceEpoch;
+    SettingsSvc.settings.lastIncrementalSync.value =
+        DateTime.now().millisecondsSinceEpoch;
     await SettingsSvc.settings.saveOneAsync('lastIncrementalSync');
     await _manager!.start();
   }
@@ -58,7 +61,8 @@ class SyncService {
 
     final now = DateTime.now();
     if (_lastIncrementalSyncTimestamp != null &&
-        now.difference(_lastIncrementalSyncTimestamp!) < _incrementalSyncCooldown) {
+        now.difference(_lastIncrementalSyncTimestamp!) <
+            _incrementalSyncCooldown) {
       Logger.debug(
         'Skipping incremental sync... Last ran ${now.difference(_lastIncrementalSyncTimestamp!).inSeconds}s ago '
         '(cooldown: ${_incrementalSyncCooldown.inSeconds}s)',
@@ -73,7 +77,7 @@ class SyncService {
 
     _lastIncrementalSyncTimestamp = now;
     isIncrementalSyncing.value = true;
-    int errors = 0;
+    bool chatSyncFailed = false;
 
     // Per-page tracking: record message IDs and chat subtitle message IDs that were
     // already applied by per-page events so the final return can skip redundant work.
@@ -84,9 +88,12 @@ class SyncService {
     // so a page of up to `batchSize` messages must never be hydrated in one block.
     Future<void> onPageComplete(dynamic data) async {
       if (data is! Map<String, dynamic>) return;
-      final messageIdsByChat =
-          (data['messageIdsByChat'] as Map).map((k, v) => MapEntry(k as String, (v as List).cast<int>()));
-      final latestPerChat = Map<String, int>.from(data['latestMessageIdPerChat'] as Map);
+      final messageIdsByChat = (data['messageIdsByChat'] as Map).map(
+        (k, v) => MapEntry(k as String, (v as List).cast<int>()),
+      );
+      final latestPerChat = Map<String, int>.from(
+        data['latestMessageIdPerChat'] as Map,
+      );
 
       // repositionImmediate: false so a page touching many chats rebuilds the list once.
       for (final entry in latestPerChat.entries) {
@@ -99,7 +106,11 @@ class SyncService {
           final chat = msg.chat.target;
           if (chat != null) await ChatsSvc.addChat(chat, immediate: true);
         }
-        ChatsSvc.updateChatLatestMessage(entry.key, msg, repositionImmediate: false);
+        ChatsSvc.updateChatLatestMessage(
+          entry.key,
+          msg,
+          repositionImmediate: false,
+        );
         processedSubtitleByChat[entry.key] = entry.value;
       }
 
@@ -111,8 +122,14 @@ class SyncService {
           // Re-resolve every chunk: the user can leave this chat between chunks
           final service = maybeFindMessagesSvc(entry.key);
           if (service == null) break;
-          final chunk = entry.value.sublist(i, math.min(i + _dispatchChunkSize, entry.value.length));
-          final messages = await runAsync(() => Database.messages.getMany(chunk).whereType<Message>().toList());
+          final chunk = entry.value.sublist(
+            i,
+            math.min(i + _dispatchChunkSize, entry.value.length),
+          );
+          final messages = await runAsync(
+            () =>
+                Database.messages.getMany(chunk).whereType<Message>().toList(),
+          );
           for (final message in messages) {
             if (message.guid == null) continue;
             await service.addNewMessage(message);
@@ -122,13 +139,24 @@ class SyncService {
       }
     }
 
-    final syncIsolate = GetIt.I<IncrementalSyncIsolate>();
-    syncIsolate.addEventListener(IsolateEvent.incrementalSyncPageComplete, onPageComplete);
+    // Events arrive on the instance that runs the sync, so listen there.
+    final GlobalIsolate syncIsolate = useGlobalIsolate
+        ? GetIt.I<GlobalIsolate>()
+        : GetIt.I<IncrementalSyncIsolate>();
+    syncIsolate.addEventListener(
+      IsolateEvent.incrementalSyncPageComplete,
+      onPageComplete,
+    );
 
     try {
-      Logger.info('Starting incremental chat sync...', tag: 'Incremental Chat Sync');
+      Logger.info(
+        'Starting incremental chat sync...',
+        tag: 'Incremental Chat Sync',
+      );
       final chatStopwatch = Stopwatch()..start();
-      final syncedMessages = await SyncInterface.performIncrementalSync(useGlobalIsolate: useGlobalIsolate);
+      final syncedMessages = await SyncInterface.performIncrementalSync(
+        useGlobalIsolate: useGlobalIsolate,
+      );
       if (syncedMessages.isNotEmpty) {
         // latestMessageIdPerChat is keyed by chat GUID, so syncedMessages already contains
         // at most one message per chat. Deduplicate defensively by keeping the latest
@@ -140,7 +168,8 @@ class SyncService {
           final existing = latestPerChat[chatGuid];
           if (existing == null ||
               (message.dateCreated != null &&
-                  (existing.dateCreated == null || message.dateCreated!.isAfter(existing.dateCreated!)))) {
+                  (existing.dateCreated == null ||
+                      message.dateCreated!.isAfter(existing.dateCreated!)))) {
             latestPerChat[chatGuid] = message;
           }
         }
@@ -150,8 +179,14 @@ class SyncService {
         // Skip chats where the per-page event already applied the same (or newer) message.
         for (final entry in latestPerChat.entries) {
           final message = entry.value;
-          if (message.id != null && processedSubtitleByChat[entry.key] == message.id) continue;
-          ChatsSvc.updateChatLatestMessage(entry.key, message, repositionImmediate: false);
+          if (message.id != null &&
+              processedSubtitleByChat[entry.key] == message.id)
+            continue;
+          ChatsSvc.updateChatLatestMessage(
+            entry.key,
+            message,
+            repositionImmediate: false,
+          );
         }
 
         // Dispatch newly synced messages to any currently active chat view.
@@ -159,45 +194,68 @@ class SyncService {
         // MessagesService.addNewMessage() is a no-op if the message is already present,
         // so this is safe even without the skip, but avoiding the call reduces churn.
         for (final message in syncedMessages) {
-          if (message.id != null && processedMessageIds.contains(message.id)) continue;
+          if (message.id != null && processedMessageIds.contains(message.id))
+            continue;
           final chatGuid = message.chat.target?.guid;
           if (chatGuid == null || message.guid == null) continue;
           if (Get.isRegistered<MessagesService>(tag: chatGuid)) {
-            unawaited(Get.find<MessagesService>(tag: chatGuid).addNewMessage(message));
+            unawaited(
+              Get.find<MessagesService>(tag: chatGuid).addNewMessage(message),
+            );
           }
         }
       }
 
       chatStopwatch.stop();
       Logger.info(
-          'Incremental chat sync completed! Synced ${syncedMessages.length} messages across '
-          '${syncedMessages.map((m) => m.chat.target?.guid).toSet().length} chats '
-          'in ${chatStopwatch.elapsedMilliseconds}ms',
-          tag: 'Incremental Chat Sync');
+        'Incremental chat sync completed! Synced ${syncedMessages.length} messages across '
+        '${syncedMessages.map((m) => m.chat.target?.guid).toSet().length} chats '
+        'in ${chatStopwatch.elapsedMilliseconds}ms',
+        tag: 'Incremental Chat Sync',
+      );
     } catch (e, stack) {
-      Logger.error('Incremental chat sync failed!', error: e, trace: stack, tag: 'Incremental Chat Sync');
-      errors += 1;
+      Logger.error(
+        'Incremental chat sync failed!',
+        error: e,
+        trace: stack,
+        tag: 'Incremental Chat Sync',
+      );
+      chatSyncFailed = true;
     } finally {
-      syncIsolate.removeEventListener(IsolateEvent.incrementalSyncPageComplete, onPageComplete);
+      syncIsolate.removeEventListener(
+        IsolateEvent.incrementalSyncPageComplete,
+        onPageComplete,
+      );
     }
 
-    // Deliberately not counted toward `errors`: this corrects drift rather than
-    // syncing data, and an older server without the endpoint must not make the
-    // user think their sync failed.
+    // A failed chat sync must not consume the cooldown window. Otherwise a sync that
+    // fails on launch blocks the retry triggered by socket reconnect or app resume.
+    if (chatSyncFailed) {
+      _lastIncrementalSyncTimestamp = null;
+    }
+
+    // Deliberately not counted as a sync error: this corrects read/deletion drift,
+    // and an older server without the endpoint must not make the sync appear failed.
     await performChatStateReconcile();
 
     final contactSyncResult = await performContactSyncToHandles();
-    if (!contactSyncResult) {
-      errors += 1;
-    }
-
     final contactUploadResult = await performContactSyncToServer();
-    if (!contactUploadResult) {
-      errors += 1;
-    }
 
-    if (errors > 0) {
+    // The chat sync is the one that matters, so its failure is reported alone and wins over the rest.
+    // Contact failures get their own wording: a missing contacts permission returns early without
+    // throwing, so a refresh failure is a genuine local error, not something a reconnect fixes.
+    if (chatSyncFailed) {
       await showToast("Sync failed. Check your connection.", isError: true);
+    } else if (!contactSyncResult) {
+      await showToast(
+        "Messages synced, but refreshing contacts failed. Check the logs for details.",
+        isError: true,
+      );
+    } else if (!contactUploadResult) {
+      await showToast(
+        "Messages synced, but uploading contacts to the server failed.",
+        isError: true,
+      );
     } else if (SettingsSvc.settings.showIncrementalSync.value) {
       await showToast('Incremental sync complete');
     }
@@ -222,14 +280,22 @@ class SyncService {
       final response = await HttpSvc.server.chatStateSnapshot();
       final payload = response.data?['data'];
       if (payload is! Map) {
-        Logger.warn('Chat state snapshot response had no data payload', tag: 'Chat State Reconcile');
+        Logger.warn(
+          'Chat state snapshot response had no data payload',
+          tag: 'Chat State Reconcile',
+        );
         return false;
       }
 
       await ChatStateReconciler.apply(Map<String, dynamic>.from(payload));
       return true;
     } catch (ex, stack) {
-      Logger.error('Chat state reconcile failed!', error: ex, trace: stack, tag: 'Chat State Reconcile');
+      Logger.error(
+        'Chat state reconcile failed!',
+        error: ex,
+        trace: stack,
+        tag: 'Chat State Reconcile',
+      );
       return false;
     }
   }
@@ -241,8 +307,9 @@ class SyncService {
       final refreshedHandleIds = await ContactsSvcV2.syncContactsToHandles();
       contactStopwatch.stop();
       Logger.info(
-          'Finished contact refresh, refreshed ${refreshedHandleIds.length} handles in ${contactStopwatch.elapsedMilliseconds}ms',
-          tag: 'Incremental Contact Sync');
+        'Finished contact refresh, refreshed ${refreshedHandleIds.length} handles in ${contactStopwatch.elapsedMilliseconds}ms',
+        tag: 'Incremental Contact Sync',
+      );
 
       if (refreshedHandleIds.isNotEmpty) {
         ContactsSvcV2.notifyHandlesUpdated(refreshedHandleIds);
@@ -250,7 +317,12 @@ class SyncService {
 
       return true;
     } catch (ex, stack) {
-      Logger.error('Contacts refresh failed!', error: ex, trace: stack, tag: 'Incremental Contact Sync');
+      Logger.error(
+        'Contacts refresh failed!',
+        error: ex,
+        trace: stack,
+        tag: 'Incremental Contact Sync',
+      );
       return false;
     }
   }
@@ -258,8 +330,12 @@ class SyncService {
   Future<bool> performContactSyncToServer() async {
     try {
       // Auto upload contacts if requested
-      if (Platform.isAndroid && SettingsSvc.settings.syncContactsAutomatically.value) {
-        Logger.debug("Starting contact upload to server...", tag: "Contact Upload");
+      if (Platform.isAndroid &&
+          SettingsSvc.settings.syncContactsAutomatically.value) {
+        Logger.debug(
+          "Starting contact upload to server...",
+          tag: "Contact Upload",
+        );
         final contactUploadStopwatch = Stopwatch()..start();
         // Get all contacts from ContactServiceV2
         final contactsV2 = await ContactsSvcV2.getAllContacts();
@@ -270,13 +346,20 @@ class SyncService {
 
         await ContactV2Interface.uploadContacts(_contacts);
         contactUploadStopwatch.stop();
-        Logger.debug("Contact upload complete in ${contactUploadStopwatch.elapsedMilliseconds}ms",
-            tag: "Contact Upload");
+        Logger.debug(
+          "Contact upload complete in ${contactUploadStopwatch.elapsedMilliseconds}ms",
+          tag: "Contact Upload",
+        );
       }
 
       return true;
     } catch (e, stack) {
-      Logger.error("Failed to upload contacts!", error: e, trace: stack, tag: "Contact Upload");
+      Logger.error(
+        "Failed to upload contacts!",
+        error: e,
+        trace: stack,
+        tag: "Contact Upload",
+      );
       return false;
     }
   }

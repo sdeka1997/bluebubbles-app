@@ -20,14 +20,23 @@ class FindMyFriendListTile extends StatelessWidget {
   final FindMyController controller;
   final bool withLocation;
 
-  const FindMyFriendListTile({super.key, required this.item, required this.controller, this.withLocation = true});
+  const FindMyFriendListTile({
+    super.key,
+    required this.item,
+    required this.controller,
+    this.withLocation = true,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Obx(() {
       final hideContactInfo = shouldRedactFindMyContactInfo();
       final live = item.status == LocationStatus.live;
-      final age = live ? 'Now' : (item.lastUpdated == null ? null : formatFindMyAge(item.lastUpdated!));
+      final age = live
+          ? 'Now'
+          : (item.lastUpdated == null
+                ? null
+                : formatFindMyAge(item.lastUpdated!));
       final refreshProgress = controller.friendRefreshProgress.value;
       final refreshState = refreshProgress.active
           ? findMyFriendRefreshState(
@@ -44,19 +53,27 @@ class FindMyFriendListTile extends StatelessWidget {
         FindMyFriendRefreshState.unavailable => 'Unavailable',
         null => null,
       };
+      final address = controller.addressForFriend(
+        item,
+        preferLong: !withLocation,
+      );
       final displayLocation = hideContactInfo
           ? "Location"
           : withLocation
-          ? joinFindMyParts([item.shortAddress ?? "No location found", age])
-          : (item.longAddress ?? "No location found");
+          ? joinFindMyParts([address ?? "No location found", age])
+          : (address ?? "No location found");
 
-      final handleState = item.handle != null ? HandleSvc.getOrCreateHandleState(item.handle!) : null;
+      final handleState = item.handle != null
+          ? HandleSvc.getOrCreateHandleState(item.handle!)
+          : null;
       final displayName = hideContactInfo
           ? (handleState?.fakeName ?? 'Contact')
           : (item.handle?.displayName ?? item.title ?? "Unknown Friend");
 
       final hasLocation = item.latitude != null && item.longitude != null;
-      final markerPoint = hasLocation ? controller.markerPointForFriend(item) : null;
+      final markerPoint = hasLocation
+          ? controller.markerPointForFriend(item)
+          : null;
       final markerKey = 'friend-${controller.markerIdentityForFriend(item)}';
       final selected = controller.isSelected(markerKey);
       final distance = hasLocation && withLocation
@@ -79,9 +96,16 @@ class FindMyFriendListTile extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: context.theme.colorScheme.primary,
-                    border: Border.all(color: context.theme.colorScheme.surface, width: 2),
+                    border: Border.all(
+                      color: context.theme.colorScheme.surface,
+                      width: 2,
+                    ),
                   ),
-                  child: Icon(Icons.star, size: 11, color: context.theme.colorScheme.onPrimary),
+                  child: Icon(
+                    Icons.star,
+                    size: 11,
+                    color: context.theme.colorScheme.onPrimary,
+                  ),
                 ),
               ),
             ),
@@ -105,7 +129,9 @@ class FindMyFriendListTile extends StatelessWidget {
         alignment: Alignment.topCenter,
         child: selected
             ? FutureBuilder<ContactV2?>(
-                future: hideContactInfo ? Future.value() : controller.nativeContactForFriend(item),
+                future: hideContactInfo
+                    ? Future.value()
+                    : controller.nativeContactForFriend(item),
                 builder: (context, snapshot) {
                   final contact = snapshot.data;
                   return FindMySelectedCard(
@@ -114,22 +140,35 @@ class FindMyFriendListTile extends StatelessWidget {
                     distance: distance,
                     street: hideContactInfo
                         ? 'Location'
-                        : (item.longAddress ?? item.shortAddress ?? 'No location found'),
+                        : (address ?? 'No location found'),
                     status: refreshStatus ?? (live ? 'Live' : age),
                     live: live,
                     onTap: markerPoint == null ? null : select,
                     onLongPress: hideContactInfo ? null : showRawData,
                     onDirections: withLocation && markerPoint != null
-                        ? () => MapsLauncher.launchCoordinates(markerPoint.latitude, markerPoint.longitude)
+                        ? () => MapsLauncher.launchCoordinates(
+                            markerPoint.latitude,
+                            markerPoint.longitude,
+                          )
                         : null,
                     onContact: contact == null
                         ? null
                         : () async {
                             try {
-                              await MethodChannelSvc.actions.viewContactForm(nativeContactId: contact.nativeContactId);
+                              await MethodChannelSvc.actions.viewContactForm(
+                                nativeContactId: contact.nativeContactId,
+                              );
                             } catch (e, s) {
-                              Logger.error("Failed to find contact on device", error: e, trace: s);
-                              showSnackbar("Error", "Failed to find contact on device!", type: SnackbarType.error);
+                              Logger.error(
+                                "Failed to find contact on device",
+                                error: e,
+                                trace: s,
+                              );
+                              showSnackbar(
+                                "Error",
+                                "Failed to find contact on device!",
+                                type: SnackbarType.error,
+                              );
                             }
                           },
                   );
@@ -145,7 +184,10 @@ class FindMyFriendListTile extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [Text(displayLocation), if (refreshStatus != null) Text(refreshStatus)],
+                      children: [
+                        Text(displayLocation),
+                        if (refreshStatus != null) Text(refreshStatus),
+                      ],
                     ),
                   ),
                 ),
@@ -158,17 +200,25 @@ class FindMyFriendListTile extends StatelessWidget {
                     : Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (live) const Icon(CupertinoIcons.largecircle_fill_circle, size: 16),
-                          if (refreshState == FindMyFriendRefreshState.locating ||
-                              (!refreshProgress.active && item.locatingInProgress))
+                          if (live)
+                            const Icon(
+                              CupertinoIcons.largecircle_fill_circle,
+                              size: 16,
+                            ),
+                          if (refreshState ==
+                                  FindMyFriendRefreshState.locating ||
+                              (!refreshProgress.active &&
+                                  item.locatingInProgress))
                             buildProgressIndicator(context),
                           if (distance != null) ...[
                             const SizedBox(width: 6),
                             Text(
                               distance,
-                              style: context.theme.textTheme.bodyMedium!.copyWith(
-                                color: context.theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                              ),
+                              style: context.theme.textTheme.bodyMedium!
+                                  .copyWith(
+                                    color: context.theme.colorScheme.onSurface
+                                        .withValues(alpha: 0.6),
+                                  ),
                             ),
                           ],
                         ],
