@@ -1,7 +1,6 @@
 import 'package:bluebubbles/app/components/avatars/contact_avatar_widget.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_format.dart';
-import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_refresh_progress.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_raw_data_dialog.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_selected_card.dart';
@@ -38,21 +37,11 @@ class FindMyFriendListTile extends StatelessWidget {
                 ? null
                 : formatFindMyAge(item.lastUpdated!));
       final refreshProgress = controller.friendRefreshProgress.value;
-      final refreshState = refreshProgress.active
-          ? findMyFriendRefreshState(
-              refreshProgress,
-              stableId: findMyFriendRefreshIdFor(item),
-              locatingInProgress: item.locatingInProgress,
-              hasUsableLocation: hasUsableFindMyLocation(item),
-            )
-          : null;
-      final refreshStatus = switch (refreshState) {
-        FindMyFriendRefreshState.updated => 'Updated',
-        FindMyFriendRefreshState.locating => 'Locating…',
-        FindMyFriendRefreshState.lastKnownWaiting => 'Last known · waiting',
-        FindMyFriendRefreshState.unavailable => 'Unavailable',
-        null => null,
-      };
+      final spinning = findMyFriendRowSpinning(
+        refreshProgress,
+        stableId: findMyFriendRefreshIdFor(item),
+        locatingInProgress: item.locatingInProgress,
+      );
       final address = controller.addressForFriend(
         item,
         preferLong: !withLocation,
@@ -141,7 +130,7 @@ class FindMyFriendListTile extends StatelessWidget {
                     street: hideContactInfo
                         ? 'Location'
                         : (address ?? 'No location found'),
-                    status: refreshStatus ?? (live ? 'Live' : age),
+                    status: live ? 'Live' : age,
                     live: live,
                     onTap: markerPoint == null ? null : select,
                     onLongPress: hideContactInfo ? null : showRawData,
@@ -178,24 +167,8 @@ class FindMyFriendListTile extends StatelessWidget {
                 mouseCursor: MouseCursor.defer,
                 leading: leading,
                 title: Text(displayName),
-                subtitle: Semantics(
-                  label: joinFindMyParts([displayLocation, refreshStatus]),
-                  child: ExcludeSemantics(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(displayLocation),
-                        if (refreshStatus != null) Text(refreshStatus),
-                      ],
-                    ),
-                  ),
-                ),
-                trailing:
-                    distance == null &&
-                        !live &&
-                        refreshState != FindMyFriendRefreshState.locating &&
-                        (refreshProgress.active || !item.locatingInProgress)
+                subtitle: Text(displayLocation),
+                trailing: distance == null && !live && !spinning
                     ? null
                     : Row(
                         mainAxisSize: MainAxisSize.min,
@@ -205,12 +178,12 @@ class FindMyFriendListTile extends StatelessWidget {
                               CupertinoIcons.largecircle_fill_circle,
                               size: 16,
                             ),
-                          if (refreshState ==
-                                  FindMyFriendRefreshState.locating ||
-                              (!refreshProgress.active &&
-                                  item.locatingInProgress))
-                            buildProgressIndicator(context),
-                          if (distance != null) ...[
+                          if (spinning)
+                            Semantics(
+                              label: "Locating",
+                              child: buildProgressIndicator(context),
+                            )
+                          else if (distance != null) ...[
                             const SizedBox(width: 6),
                             Text(
                               distance,

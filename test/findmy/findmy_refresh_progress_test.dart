@@ -49,27 +49,25 @@ void main() {
     expect(progress.pending, 1);
   });
 
-  test("labels this-cycle friend states without treating cached coordinates as updated", () {
+  test("spins each row until its own location arrives in this refresh", () {
     final progress = FindMyRefreshProgress.start()
-        .withRoster(["updated", "locating", "cached", "missing"])
+        .withRoster(["updated", "locating", "cached"])
         .withUsableEvent("updated");
 
-    expect(
-      findMyFriendRefreshState(progress, stableId: "updated", locatingInProgress: false, hasUsableLocation: true),
-      FindMyFriendRefreshState.updated,
-    );
-    expect(
-      findMyFriendRefreshState(progress, stableId: "locating", locatingInProgress: true, hasUsableLocation: false),
-      FindMyFriendRefreshState.locating,
-    );
-    expect(
-      findMyFriendRefreshState(progress, stableId: "cached", locatingInProgress: false, hasUsableLocation: true),
-      FindMyFriendRefreshState.lastKnownWaiting,
-    );
-    expect(
-      findMyFriendRefreshState(progress, stableId: "missing", locatingInProgress: false, hasUsableLocation: false),
-      FindMyFriendRefreshState.unavailable,
-    );
+    // A stale fix that already arrived this refresh shows its distance, not a spinner.
+    expect(findMyFriendRowSpinning(progress, stableId: "updated", locatingInProgress: false), isFalse);
+    expect(findMyFriendRowSpinning(progress, stableId: "locating", locatingInProgress: true), isTrue);
+    // A saved location from before this refresh still spins until a fresh answer.
+    expect(findMyFriendRowSpinning(progress, stableId: "cached", locatingInProgress: false), isTrue);
+    expect(findMyFriendRowSpinning(progress, stableId: null, locatingInProgress: false), isTrue);
+  });
+
+  test("stops spinning when the refresh window ends unless Apple is still locating", () {
+    final finished = FindMyRefreshProgress.start().withRoster(["alice", "bob"]).withUsableEvent("alice").finish();
+
+    expect(findMyFriendRowSpinning(finished, stableId: "bob", locatingInProgress: false), isFalse);
+    expect(findMyFriendRowSpinning(finished, stableId: "bob", locatingInProgress: true), isTrue);
+    expect(findMyFriendRowSpinning(FindMyRefreshProgress.idle(), stableId: "alice", locatingInProgress: false), isFalse);
   });
 
   test("keeps partial progress until the refresh window finishes", () {
@@ -82,14 +80,6 @@ void main() {
     expect(finished.active, isFalse);
     expect(finished.updated, 1);
     expect(finished.pending, 1);
-  });
-
-  test("formats aggregate progress only after the roster is known", () {
-    expect(findMyUpdatingLabel(FindMyRefreshProgress.start()), "Updating locations…");
-    expect(
-      findMyUpdatingLabel(FindMyRefreshProgress.start().withRoster(["alice", "bob"]).withUsableEvent("alice")),
-      "Updating locations · 1 of 2",
-    );
   });
 
   test("identifies a hydrated friend by its provider address", () {
