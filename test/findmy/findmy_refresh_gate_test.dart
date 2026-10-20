@@ -7,6 +7,7 @@ import "package:bluebubbles/services/network/api/icloud_api.dart";
 import "package:bluebubbles/services/services.dart";
 import "package:bluebubbles/utils/logger/logger.dart";
 import "package:dio/dio.dart";
+import "package:flutter/services.dart" show PlatformException;
 import "package:fake_async/fake_async.dart";
 import "package:flutter_test/flutter_test.dart" hide EventDispatcher;
 import "package:geolocator_platform_interface/geolocator_platform_interface.dart";
@@ -20,6 +21,11 @@ class FakeGeolocator extends GeolocatorPlatform with MockPlatformInterfaceMixin 
 
   @override
   Future<LocationPermission> requestPermission() async => LocationPermission.deniedForever;
+}
+
+class ThrowingGeolocator extends GeolocatorPlatform with MockPlatformInterfaceMixin {
+  @override
+  Future<LocationPermission> checkPermission() async => throw PlatformException(code: "unavailable");
 }
 
 class FakeFindMyPrefs extends SharedPreferencesFindMyActions {
@@ -44,13 +50,13 @@ class FakeICloudApi extends iCloudApi {
     return completer.future;
   }
 
-  void answer(String name) => requests[name]!
+  void answer(String name, {Object data = const []}) => requests[name]!
       .removeAt(0)
       .complete(
         Response(
           requestOptions: RequestOptions(path: ""),
           statusCode: 200,
-          data: {"data": []},
+          data: {"data": data},
         ),
       );
 
@@ -162,6 +168,60 @@ void main() {
       expect(icloud.requests["refreshFriends"], hasLength(1));
       expect(controller.canRefresh.value, isTrue);
       expect(controller.friendRefreshProgress.value.active, isFalse);
+    });
+  });
+
+  test("a friends response that fails to parse still clears the manual refresh and loads devices", () {
+    fakeAsync((async) {
+      final controller = openIdlePage(async);
+
+      controller.refreshing.value = true;
+      controller.refreshing2.value = true;
+      controller.getLocations(refreshDevices: true);
+      async.flushMicrotasks();
+      icloud.answer("refreshFriends", data: "not a list");
+      async.flushMicrotasks();
+
+      expect(controller.refreshing2.value, isFalse);
+      expect(icloud.requests["refreshDevices"], hasLength(1));
+      icloud.answer("refreshDevices");
+      async.flushMicrotasks();
+      expect(controller.refreshing.value, isFalse);
+    });
+  });
+
+  test("a devices response that fails to parse still clears the manual refresh", () {
+    fakeAsync((async) {
+      final controller = openIdlePage(async);
+
+      controller.refreshing.value = true;
+      controller.refreshing2.value = true;
+      controller.getLocations(refreshDevices: true);
+      async.flushMicrotasks();
+      icloud.answer("refreshFriends");
+      async.flushMicrotasks();
+      icloud.answer("refreshDevices", data: "not a list");
+      async.flushMicrotasks();
+
+      expect(controller.refreshing.value, isFalse);
+      expect(controller.refreshing2.value, isFalse);
+    });
+  });
+
+  test("a refresh that throws before reaching the server still clears the manual refresh", () {
+    fakeAsync((async) {
+      final controller = openIdlePage(async);
+      GeolocatorPlatform.instance = ThrowingGeolocator();
+
+      controller.refreshing.value = true;
+      controller.refreshing2.value = true;
+      Object? error;
+      controller.getLocations(refreshDevices: true).catchError((e) => error = e);
+      async.flushMicrotasks();
+
+      expect(error, isA<PlatformException>());
+      expect(controller.refreshing.value, isFalse);
+      expect(controller.refreshing2.value, isFalse);
     });
   });
 }
