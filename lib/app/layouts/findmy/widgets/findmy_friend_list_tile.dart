@@ -178,12 +178,13 @@ class FindMyFriendListTile extends StatelessWidget {
                               CupertinoIcons.largecircle_fill_circle,
                               size: 16,
                             ),
-                          if (spinning)
+                          if (spinning) ...[
+                            if (live) const SizedBox(width: 6),
                             Semantics(
                               label: "Locating",
                               child: buildProgressIndicator(context),
-                            )
-                          else if (distance != null) ...[
+                            ),
+                          ] else if (distance != null) ...[
                             const SizedBox(width: 6),
                             Text(
                               distance,
