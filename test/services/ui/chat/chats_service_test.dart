@@ -1258,6 +1258,31 @@ void main() {
     expect(notices, isEmpty);
   });
 
+  test('recoverable delete suppresses notices for definitive failure and success after dispatch', () async {
+    final notices = <String>[];
+
+    for (final testCase in <({String guid, RecoverableDeleteReceiptState state, bool expected})>[
+      (guid: 'quiet-failure', state: RecoverableDeleteReceiptState.definitiveFailure, expected: false),
+      (guid: 'quiet-success', state: RecoverableDeleteReceiptState.succeeded, expected: true),
+    ]) {
+      final journal = RecoverableDeleteJournal.testing(_MemoryStore());
+      await journal.hydrate();
+      final service = ChatsService(
+        journal: journal,
+        configuredServerIdentity: () => 'server-a',
+        attemptIdGenerator: () => 'BBBBBBBBBBBBBBBB',
+        submitRecoverableDelete: ({required chatGuid, required attemptId}) async =>
+            _receipt(testCase.state, attemptId),
+        localChatLookup: (_) => null,
+        noticeSink: (title, _, _) => notices.add(title),
+      );
+
+      expect(await service.recoverablyDeleteChat(_chat(testCase.guid), notify: false), testCase.expected);
+    }
+
+    expect(notices, isEmpty);
+  });
+
   test('recoverable delete suppresses notices on every early result', () async {
     final notices = <String>[];
     final unavailable = ChatsService(
