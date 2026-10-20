@@ -229,13 +229,17 @@ class SyncService {
     }
 
     // A failed chat sync must not consume the cooldown window. Otherwise a sync that
-    // fails on launch blocks the retry triggered by socket reconnect or app resume.
+    // fails on launch (e.g. no network yet) blocks the retry triggered by the socket
+    // reconnect or app resume that follows, and new messages wait out the cooldown.
+    // Only the chat sync resets it: contact sync failures are usually persistent
+    // (permissions, unsupported server) and shouldn't defeat the throttle.
     if (chatSyncFailed) {
       _lastIncrementalSyncTimestamp = null;
     }
 
-    // Deliberately not counted as a sync error: this corrects read/deletion drift,
-    // and an older server without the endpoint must not make the sync appear failed.
+    // Deliberately not counted toward `errors`: this corrects drift rather than
+    // syncing data, and an older server without the endpoint must not make the
+    // user think their sync failed.
     await performChatStateReconcile();
 
     final contactSyncResult = await performContactSyncToHandles();
