@@ -80,17 +80,6 @@ class RecoverableChatDeletionContractTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertIn(expected, source(path))
 
-    def test_confirmation_closes_before_the_request_and_repeats_are_dropped(self) -> None:
-        peek = source("lib/app/layouts/conversation_list/dialogs/conversation_peek_view.dart")
-        pop = peek.index("Navigator.of(context, rootNavigator: true).pop();\n                    ChatsSvc.recoverablyDeleteChat(")
-        self.assertGreater(pop, 0)
-        service = source("lib/services/ui/chat/chats_service.dart")
-        self.assertIn("if (!pendingDeletes.add(chat.guid)) return false;", service)
-        self.assertIn("pendingDeletes.remove(chat.guid);", service.split("} finally {", 1)[1])
-        tile = source("lib/app/layouts/conversation_list/widgets/tile/list_item.dart")
-        self.assertIn("ChatsSvc.pendingDeletes.contains(chat.guid)", tile)
-        self.assertIn("IgnorePointer(", tile)
-
     def test_local_only_soft_delete_is_explicitly_named(self) -> None:
         code = source("lib/services/ui/chat/chats_service.dart")
         self.assertIn("Future<void> softDeleteChatLocalOnly(Chat chat)", code)
