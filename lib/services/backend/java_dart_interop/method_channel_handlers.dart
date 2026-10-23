@@ -38,6 +38,8 @@ class MethodChannelHandlers {
       MethodChannelInboundMethods.replyChat: _handleReplyChat,
       MethodChannelInboundMethods.markChatRead: _handleMarkChatRead,
       MethodChannelInboundMethods.chatReadStatusChanged: _handleChatReadStatusChanged,
+      MethodChannelInboundMethods.messageDeleted: _handleRecoverableMessageEvent,
+      MethodChannelInboundMethods.messageRestored: _handleRecoverableMessageEvent,
       MethodChannelInboundMethods.mediaColors: _handleMediaColors,
       MethodChannelInboundMethods.incomingFacetime: _handleIncomingFacetime,
       MethodChannelInboundMethods.ftCallStatusChanged: _handleFtCallStatusChanged,
@@ -56,6 +58,10 @@ class MethodChannelHandlers {
     if (handler == null) return _ok();
     return handler(call, arguments);
   }
+
+  /// Whether [method] is claimed by a handler. An unrouted method reports
+  /// success and the event is discarded, so this is worth asserting in tests.
+  bool hasHandlerFor(String method) => _handlers.containsKey(method);
 
   static Future<bool> _ok() => Future.value(true);
   static Future<bool> _retry() => Future.value(false);
@@ -350,6 +356,44 @@ class MethodChannelHandlers {
       }
 
       return await _retry();
+    } catch (e, s) {
+      return Future.error(e, s);
+    }
+  }
+
+  /// Apple moved a single message into, or back out of, Recently Deleted.
+  ///
+  /// Writes straight to the database. The headless DartWorker has no
+  /// MessagesService or ChatsService registered, so touching either would
+  /// throw `GetIt ... not registered` and the push would retry and be
+  /// dropped; when the UI is alive it handles the socket event instead and
+  /// this returns early.
+  /// Whether this isolate should apply the change itself.
+  ///
+  /// [headless] is read FIRST and short-circuits: the headless DartWorker has
+  /// no LifecycleService in GetIt, so evaluating `LifecycleSvc.isAlive` there
+  /// throws "not registered", the push retries five times and is dropped. When
+  /// the UI is alive it has already applied the socket event.
+  static bool shouldApplyInBackground(bool headless, bool Function() isAlive) => headless || !isAlive();
+
+  Future<bool> _handleRecoverableMessageEvent(MethodCall call, Map<String, dynamic>? arguments) async {
+    if (!shouldApplyInBackground(service.headless, () => LifecycleSvc.isAlive)) return _ok();
+    await Database.waitForInit();
+    Logger.info('Received ${call.method} from FCM');
+
+    try {
+      if (isNullOrEmpty(arguments)) return await _retry();
+      final payload = ServerPayload.fromJson(arguments!);
+      final messageGuid = payload.data['messageGuid'];
+      if (messageGuid is! String || messageGuid.isEmpty) return await _retry();
+      if (Message.findOne(guid: messageGuid) == null) return await _ok();
+
+      if (call.method == MethodChannelInboundMethods.messageDeleted) {
+        await Message.softDelete(messageGuid);
+      } else {
+        await Message.restore(messageGuid);
+      }
+      return await _ok();
     } catch (e, s) {
       return Future.error(e, s);
     }

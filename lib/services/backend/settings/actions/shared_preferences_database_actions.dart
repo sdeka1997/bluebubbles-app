@@ -6,6 +6,7 @@ class SharedPreferencesDatabaseActions {
   static const String _themesVersionKey = 'themesVersion';
   static const String _useCustomPathKey = 'use-custom-path';
   static const String _customPathKey = 'custom-path';
+  static const String _recoverableBaselineKey = 'recoverable-message-baseline';
 
   final SharedPreferencesService service;
 
@@ -24,6 +25,14 @@ class SharedPreferencesDatabaseActions {
   bool shouldUseCustomPath() => service.i.getBool(_useCustomPathKey) == true;
 
   String? getCustomPath() => service.i.getString(_customPathKey);
+
+  /// The set of message GUIDs this client last hid because Apple had them
+  /// in Recently Deleted, stored per server address so a different server
+  /// re-seeds instead of inheriting a stale baseline.
+  String? getRecoverableMessageBaseline() => service.i.getString(_recoverableBaselineKey);
+
+  Future<void> setRecoverableMessageBaseline(String value) =>
+      service.i.setString(_recoverableBaselineKey, value);
 
   Future<void> clearCustomPathConfig() async {
     await service.i.remove(_useCustomPathKey);
