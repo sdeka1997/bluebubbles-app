@@ -201,6 +201,7 @@ class ActionHandler extends GetxService {
 
         await ChatsSvc.softDeleteChat(deletedChat);
         Logger.info("Applied server chat deletion for $chatGuid", tag: "ActionHandler");
+        return;
       case "message-deleted":
       case "message-restored":
         // Apple moved a single message into, or back out of, Recently Deleted.
