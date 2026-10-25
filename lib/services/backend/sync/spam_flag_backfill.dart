@@ -65,7 +65,9 @@ class SpamFlagBackfill {
       var updated = 0;
 
       while (true) {
-        final response = await HttpSvc.chat.query(offset: offset, limit: pageSize, sort: "lastmessage");
+        // No sort: the server orders by ROWID unless lastMessage is requested, and
+        // a fixed ROWID order is the stable key for paging a changing list.
+        final response = await HttpSvc.chat.query(offset: offset, limit: pageSize);
         final rows = response.data['data'];
         if (rows is! List || rows.isEmpty) break;
 
@@ -78,19 +80,24 @@ class SpamFlagBackfill {
         // avoids paging the entire chat list to learn nothing.
         if (offset == 0 && serverChats.every((chat) => chat.isFilteredAsSpam == null)) {
           Logger.info("Server does not report the Spam flag; skipping backfill", tag: "SpamFlagBackfill");
+          _completedThisSession = true;
           return;
         }
 
-        final stored = <Chat>[];
-        for (final chat in serverChats) {
-          final existing = Chat.findOne(guid: chat.guid);
-          if (existing != null) stored.add(existing);
-        }
+        // One lookup per page, not one per chat.
+        final guids = serverChats.map((chat) => chat.guid).toList();
+        final query = Database.chats.query(Chat_.guid.oneOf(guids)).build();
+        final stored = query.find();
+        query.close();
 
         final changed = applySpamFlagsFromServer(stored: stored, serverChats: serverChats);
         if (changed.isNotEmpty) {
-          Database.chats.putMany(changed);
+          // Persist only the flag, through the same isolate path every other
+          // chat write uses. putMany here would rewrite each whole row from a
+          // copy read moments earlier, racing the DB isolate's own updates
+          // (unread, pin, latest message) and silently reverting them.
           for (final chat in changed) {
+            await chat.saveAsync(updateIsFilteredAsSpam: true);
             ChatsSvc.updateChat(chat);
           }
           updated += changed.length;
