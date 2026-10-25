@@ -609,7 +609,12 @@ class ChatsService {
 
   /// Recalculate the global unread count based on all chat states
   void _recalculateUnreadCount() {
-    final count = chatStates.values.where((state) => state.hasUnreadMessage.value).length;
+    // Spam chats live only in the Spam list and never notify, so they must not
+    // feed the badge either; a spam text would raise it with nothing visible
+    // in the main list to clear it.
+    final count = chatStates.values
+        .where((state) => state.hasUnreadMessage.value && state.chat.isFilteredAsSpam != true)
+        .length;
     if (unreadCount.value != count) {
       unreadCount.value = count;
     }
