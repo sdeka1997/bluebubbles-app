@@ -119,7 +119,7 @@ android {
         }
         alpha {
             dimension "app"
-            resValue "string", "app_name_en", "BlueBubbles (Alpha)"
+            resValue "string", "app_name_en", "BlueBubbles+"
             resValue "color", "ic_launcher_background", "#49dbde"
             resValue "string", "file_provider", "com.bluebubbles.messaging.alpha.fileprovider"
             applicationId "com.bluebubbles.messaging.alpha"
