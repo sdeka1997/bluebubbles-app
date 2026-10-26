@@ -127,6 +127,8 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
 
   bool get minBigSur => widget.serverDetails.minBigSur;
 
+  bool get minSequoia => widget.serverDetails.minSequoia;
+
   bool get supportsOriginalDownload => widget.serverDetails.supportsOriginalDownload;
 
   BuildContext get widthContext => widget.widthContext.call() ?? context;
@@ -366,7 +368,7 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
                                           return Row(
                                             mainAxisSize: MainAxisSize.min,
                                             mainAxisAlignment: MainAxisAlignment.start,
-                                            children: [...ReactionTypes.toList(), "+"]
+                                            children: ReactionTypes.pickerTypes(allowCustomEmoji: minSequoia)
                                                 .slice(narrowScreen && index == 1 ? 4 : 0,
                                                     narrowScreen && index == 0 ? 4 : null)
                                                 .map((e) {

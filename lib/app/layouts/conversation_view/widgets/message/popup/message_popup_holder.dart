@@ -61,6 +61,7 @@ class _MessagePopupHolderState extends State<MessagePopupHolder> with ThemeHelpe
     final version = serverDetails.serverVersionCode;
     final minSierra = serverDetails.isMinSierra;
     final minBigSur = serverDetails.isMinBigSur;
+    final minSequoia = serverDetails.isMinSequoia;
     if (!iOS) {
       widget.cvController.selected.add(message);
     }
@@ -147,7 +148,10 @@ class _MessagePopupHolderState extends State<MessagePopupHolder> with ThemeHelpe
                     controller: widget.controller,
                     cvController: widget.cvController,
                     serverDetails: MessagePopupServerDetails(
-                        minSierra: minSierra, minBigSur: minBigSur, supportsOriginalDownload: version > 100),
+                        minSierra: minSierra,
+                        minBigSur: minBigSur,
+                        minSequoia: minSequoia,
+                        supportsOriginalDownload: version > 100),
                     sendTapback: sendTapback,
                     widthContext: () => mounted ? context : null,
                     child: effectiveChild,

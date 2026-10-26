@@ -1,4 +1,6 @@
 import 'package:bluebubbles/database/models.dart' hide Entity;
+import 'package:bluebubbles/helpers/types/constants.dart';
+import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart';
 
 class ReactionTypes {
@@ -59,11 +61,16 @@ class ReactionTypes {
     "❓": QUESTION,
   };
 
+  static List<String> pickerTypes({required bool allowCustomEmoji}) {
+    return [...toList(), if (allowCustomEmoji) "+"];
+  }
+
   static bool checkReactionType(String? type) {
-    if (type == null) return false;
-    String clean = type.replaceAll("-", "");
+    if (type == null || type.isEmpty) return false;
+    final clean = type.startsWith("-") ? type.substring(1) : type;
+    if (clean.isEmpty) return false;
     if (toList().contains(clean)) return true;
-    return RegExp(r'(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])').hasMatch(clean);
+    return clean.characters.length == 1 && emojiRegex.hasMatch(clean);
   }
 
   static String emojiForReaction(String? type) {
