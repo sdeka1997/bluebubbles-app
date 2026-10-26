@@ -783,7 +783,11 @@ class ChatsService {
       if (sortOrderChanged || override) {
         _repositionChat(state.chat, immediate: immediate);
       }
-      if (spamChanged) _scheduleListVersionUpdate(immediate: true);
+      if (spamChanged) {
+        _scheduleListVersionUpdate(immediate: true);
+        // The badge excludes spam, and its listener only fires on unread changes.
+        _recalculateUnreadCount();
+      }
 
       return true;
     }

@@ -98,7 +98,10 @@ class SpamFlagBackfill {
           // (unread, pin, latest message) and silently reverting them.
           for (final chat in changed) {
             await chat.saveAsync(updateIsFilteredAsSpam: true);
-            ChatsSvc.updateChat(chat);
+            // Hand the UI the stored row, not this copy: the user may have
+            // pinned, muted or read the chat while the save was awaited, and
+            // updateChat copies every field across.
+            ChatsSvc.updateChat(Chat.findOne(guid: chat.guid) ?? chat);
           }
           updated += changed.length;
         }
