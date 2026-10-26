@@ -6,12 +6,15 @@
 enum ChatServiceType {
   iMessage(label: 'iMessage', isVisible: true),
   sms(label: 'SMS', isVisible: true),
-  rcs(label: 'RCS', isVisible: false);
+  rcs(label: 'RCS', isVisible: true);
 
   const ChatServiceType({required this.label, required this.isVisible});
 
   final String label;
   final bool isVisible;
+
+  /// Apple supports Tapbacks in iMessage, RCS and SMS conversations.
+  bool get supportsTapbacks => true;
 
   /// Returns the server-side method string for this service type.
   String get method {
@@ -27,6 +30,21 @@ enum ChatServiceType {
 
   /// Whether chats of this type are iMessage chats.
   bool get isIMessageService => this == ChatServiceType.iMessage;
+
+  /// Uses the service reported by Messages, falling back to the legacy GUID
+  /// prefix for older servers or an unknown future service.
+  static ChatServiceType fromServer(String? serviceName, String guid) {
+    switch (serviceName?.toUpperCase()) {
+      case 'IMESSAGE':
+        return ChatServiceType.iMessage;
+      case 'SMS':
+        return ChatServiceType.sms;
+      case 'RCS':
+        return ChatServiceType.rcs;
+      default:
+        return fromGuid(guid);
+    }
+  }
 
   /// Parses the service type from a chat GUID by inspecting the prefix
   /// before the first `;-;` or `;+;` separator.

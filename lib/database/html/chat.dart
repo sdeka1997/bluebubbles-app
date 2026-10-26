@@ -50,6 +50,7 @@ class Chat {
   int? id;
   String guid;
   String? chatIdentifier;
+  String? serviceName;
   bool? isArchived;
   String? muteType;
   String? muteArgs;
@@ -104,6 +105,7 @@ class Chat {
     this.id,
     required this.guid,
     this.chatIdentifier,
+    this.serviceName,
     this.isArchived = false,
     this.isPinned = false,
     this.muteType,
@@ -141,6 +143,7 @@ class Chat {
       id: json["ROWID"] ?? json["id"],
       guid: json["guid"],
       chatIdentifier: json["chatIdentifier"],
+      serviceName: json["serviceName"],
       isArchived: json['isArchived'] ?? false,
       muteType: json["muteType"],
       muteArgs: json["muteArgs"],
@@ -500,11 +503,15 @@ class Chat {
     return;
   }
 
-  bool get isTextForwarding => guid.startsWith("SMS");
+  ChatServiceType get service => ChatServiceType.fromServer(serviceName, guid);
 
-  bool get isSMS => false;
+  bool get isTextForwarding => service == ChatServiceType.sms;
 
-  bool get isIMessage => !isTextForwarding && !isSMS;
+  bool get isSMS => service == ChatServiceType.sms;
+
+  bool get isIMessage => service == ChatServiceType.iMessage;
+
+  String get composerLabel => isIMessage ? 'iMessage' : 'Text Message • ${service.label}';
 
   bool get isGroup => participants.length > 1 || style == 43;
 
@@ -563,6 +570,7 @@ class Chat {
         "ROWID": id,
         "guid": guid,
         "chatIdentifier": chatIdentifier,
+        "serviceName": serviceName,
         "isArchived": isArchived!,
         "muteType": muteType,
         "muteArgs": muteArgs,
