@@ -147,7 +147,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(3, 9017250848141753702),
     name: 'Chat',
-    lastPropertyId: const obx_int.IdUid(40, 4145108034201044011),
+    lastPropertyId: const obx_int.IdUid(41, 5675833880148348025),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -326,6 +326,12 @@ final _entities = <obx_int.ModelEntity>[
         id: const obx_int.IdUid(40, 4145108034201044011),
         name: 'isFilteredAsSpam',
         type: 1,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(41, 5675833880148348025),
+        name: 'serviceName',
+        type: 9,
         flags: 0,
       ),
     ],
@@ -1472,7 +1478,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
             object.dynamicWallpaperConfig == null
             ? null
             : fbb.writeString(object.dynamicWallpaperConfig!);
-        fbb.startTable(41);
+        final serviceNameOffset = object.serviceName == null
+            ? null
+            : fbb.writeString(object.serviceName!);
+        fbb.startTable(42);
         fbb.addInt64(0, object.id ?? 0);
         fbb.addOffset(2, guidOffset);
         fbb.addOffset(4, chatIdentifierOffset);
@@ -1505,6 +1514,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addOffset(37, dynamicWallpaperIdOffset);
         fbb.addOffset(38, dynamicWallpaperConfigOffset);
         fbb.addBool(39, object.isFilteredAsSpam);
+        fbb.addOffset(40, serviceNameOffset);
         fbb.finish(fbb.endTable());
         return object.id ?? 0;
       },
@@ -1529,6 +1539,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final chatIdentifierParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGetNullable(buffer, rootOffset, 12);
+        final serviceNameParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGetNullable(buffer, rootOffset, 84);
         final isArchivedParam = const fb.BoolReader().vTableGetNullable(
           buffer,
           rootOffset,
@@ -1612,6 +1625,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
                 id: idParam,
                 guid: guidParam,
                 chatIdentifier: chatIdentifierParam,
+                serviceName: serviceNameParam,
                 isArchived: isArchivedParam,
                 isPinned: isPinnedParam,
                 muteType: muteTypeParam,
@@ -2890,6 +2904,11 @@ class Chat_ {
   /// See [Chat.isFilteredAsSpam].
   static final isFilteredAsSpam = obx.QueryBooleanProperty<Chat>(
     _entities[1].properties[28],
+  );
+
+  /// See [Chat.serviceName].
+  static final serviceName = obx.QueryStringProperty<Chat>(
+    _entities[1].properties[29],
   );
 
   /// see [Chat.handles]
