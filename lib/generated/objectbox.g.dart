@@ -147,7 +147,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(3, 9017250848141753702),
     name: 'Chat',
-    lastPropertyId: const obx_int.IdUid(39, 738307263391205523),
+    lastPropertyId: const obx_int.IdUid(40, 5675833880148348025),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -319,6 +319,12 @@ final _entities = <obx_int.ModelEntity>[
       obx_int.ModelProperty(
         id: const obx_int.IdUid(39, 738307263391205523),
         name: 'dynamicWallpaperConfig',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(40, 5675833880148348025),
+        name: 'serviceName',
         type: 9,
         flags: 0,
       ),
@@ -1466,7 +1472,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
             object.dynamicWallpaperConfig == null
             ? null
             : fbb.writeString(object.dynamicWallpaperConfig!);
-        fbb.startTable(40);
+        final serviceNameOffset = object.serviceName == null
+            ? null
+            : fbb.writeString(object.serviceName!);
+        fbb.startTable(41);
         fbb.addInt64(0, object.id ?? 0);
         fbb.addOffset(2, guidOffset);
         fbb.addOffset(4, chatIdentifierOffset);
@@ -1498,6 +1507,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addOffset(36, wallpaperTypeOffset);
         fbb.addOffset(37, dynamicWallpaperIdOffset);
         fbb.addOffset(38, dynamicWallpaperConfigOffset);
+        fbb.addOffset(39, serviceNameOffset);
         fbb.finish(fbb.endTable());
         return object.id ?? 0;
       },
@@ -1522,6 +1532,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final chatIdentifierParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGetNullable(buffer, rootOffset, 12);
+        final serviceNameParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGetNullable(buffer, rootOffset, 82);
         final isArchivedParam = const fb.BoolReader().vTableGetNullable(
           buffer,
           rootOffset,
@@ -1600,6 +1613,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
                 id: idParam,
                 guid: guidParam,
                 chatIdentifier: chatIdentifierParam,
+                serviceName: serviceNameParam,
                 isArchived: isArchivedParam,
                 isPinned: isPinnedParam,
                 muteType: muteTypeParam,
@@ -2872,6 +2886,11 @@ class Chat_ {
   /// See [Chat.dynamicWallpaperConfig].
   static final dynamicWallpaperConfig = obx.QueryStringProperty<Chat>(
     _entities[1].properties[27],
+  );
+
+  /// See [Chat.serviceName].
+  static final serviceName = obx.QueryStringProperty<Chat>(
+    _entities[1].properties[28],
   );
 
   /// see [Chat.handles]

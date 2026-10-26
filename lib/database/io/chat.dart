@@ -25,6 +25,7 @@ class Chat {
   String guid;
 
   String? chatIdentifier;
+  String? serviceName;
   bool? isArchived;
   String? muteType;
   String? muteArgs;
@@ -118,6 +119,7 @@ class Chat {
     this.id,
     required this.guid,
     this.chatIdentifier,
+    this.serviceName,
     this.isArchived = false,
     this.isPinned = false,
     this.muteType,
@@ -157,6 +159,7 @@ class Chat {
       id: json["ROWID"] ?? json["id"],
       guid: json["guid"],
       chatIdentifier: json["chatIdentifier"],
+      serviceName: json["serviceName"],
       participants:
           (json['participants'] as List? ?? []).map((e) => Handle.fromMap(e!.cast<String, Object>())).toList(),
       isArchived: json['isArchived'] ?? false,
@@ -776,14 +779,17 @@ class Chat {
     );
   }
 
-  /// The messaging service this chat belongs to, derived from the GUID prefix.
-  ChatServiceType get service => ChatServiceType.fromGuid(guid);
+  /// The messaging service reported by Messages, with the legacy GUID prefix
+  /// retained as a fallback for older servers.
+  ChatServiceType get service => ChatServiceType.fromServer(serviceName, guid);
 
   bool get isTextForwarding => service == ChatServiceType.sms;
 
   bool get isSMS => service == ChatServiceType.sms;
 
   bool get isIMessage => service == ChatServiceType.iMessage;
+
+  String get composerLabel => isIMessage ? 'iMessage' : 'Text Message • ${service.label}';
 
   // Check style first so handles isn't required to be evaluated, which will incur a DB lookup.
   bool get isGroup => style == 43 || handles.length > 1;
@@ -800,6 +806,7 @@ class Chat {
       textFieldAttachments.addAll(other.textFieldAttachments);
     }
     chatIdentifier ??= other.chatIdentifier;
+    serviceName = other.serviceName ?? serviceName;
     displayName ??= other.displayName;
     if (handles.isEmpty) {
       handles.addAll(other.handles);
@@ -876,6 +883,7 @@ class Chat {
       "ROWID": id,
       "guid": guid,
       "chatIdentifier": chatIdentifier,
+      "serviceName": serviceName,
       "isArchived": isArchived!,
       "muteType": muteType,
       "muteArgs": muteArgs,

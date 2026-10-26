@@ -226,14 +226,14 @@ class _MessagePopupHolderState extends State<MessagePopupHolder> with ThemeHelpe
             ? null
             : SettingsSvc.settings.doubleTapForDetails.value || isTempMessage
                 ? () => openPopup()
-                : SettingsSvc.settings.enableQuickTapback.value && widget.cvController.chat.isIMessage
+                : SettingsSvc.settings.enableQuickTapback.value && widget.cvController.chat.service.supportsTapbacks
                     ? () => sendTapback(null, _effectivePartIndex)
                     : null,
         onLongPress: widget.isEditing
             ? null
             : SettingsSvc.settings.doubleTapForDetails.value &&
                     SettingsSvc.settings.enableQuickTapback.value &&
-                    widget.cvController.chat.isIMessage &&
+                    widget.cvController.chat.service.supportsTapbacks &&
                     !isTempMessage
                 ? () => sendTapback(null, _effectivePartIndex)
                 : () => openPopup(),
