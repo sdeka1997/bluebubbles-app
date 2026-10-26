@@ -12,6 +12,7 @@ import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
 import 'package:bluebubbles/services/backend/notifications/desktop_notification.dart';
+import 'package:bluebubbles/services/backend/sync/spam_flag_backfill.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:collection/collection.dart';
@@ -139,18 +140,27 @@ class ChatsService {
     return sortedChats[index];
   }
 
-  /// Get filtered chats (archived, unknown senders, pinned)
+  /// Get filtered chats (archived, unknown senders, spam, pinned)
   List<Chat> getFilteredChats({
     bool? showArchived,
     bool? showUnknown,
+    bool? showSpam,
     bool? pinnedOnly,
     bool? excludePinned,
     ChatListFilters? filters,
   }) {
     var chats = allChats;
 
+    // Chats Messages filed under Spam appear only in the Spam list, archived or
+    // not, like the iPhone's Spam folder.
+    if (showSpam == true) {
+      chats = chats.where((e) => e.isFilteredAsSpam == true).toList();
+    } else {
+      chats = chats.where((e) => e.isFilteredAsSpam != true).toList();
+    }
+
     // Apply archived filter
-    if (showArchived != null) {
+    if (showArchived != null && showSpam != true) {
       if (showArchived) {
         chats = chats.where((e) => e.isArchived ?? false).toList();
       } else {
@@ -159,7 +169,7 @@ class ChatsService {
     }
 
     // Apply unknown senders filter
-    if (showUnknown != null && SettingsSvc.settings.filterUnknownSenders.value) {
+    if (showUnknown != null && showSpam != true && SettingsSvc.settings.filterUnknownSenders.value) {
       if (showUnknown) {
         chats = chats.where((e) => !e.isGroup && e.handles.firstOrNull?.contactsV2.isEmpty != false).toList();
       } else {
@@ -393,6 +403,12 @@ class ChatsService {
     // Initialize watchers AFTER loading all chats to avoid duplicates
     initDbWatchers();
 
+    // Chats stored before the server started reporting Messages' Spam
+    // verdict keep a null flag until something else fetches them, which
+    // leaves the Spam list empty. Backfill in the background: the list is
+    // already on screen by this point, and the pass only writes the flag.
+    unawaited(SpamFlagBackfill.run());
+
     // Set up global listeners for redacted mode settings
     _setupRedactedModeListeners();
 
@@ -598,7 +614,12 @@ class ChatsService {
 
   /// Recalculate the global unread count based on all chat states
   void _recalculateUnreadCount() {
-    final count = chatStates.values.where((state) => state.hasUnreadMessage.value).length;
+    // Spam chats live only in the Spam list and never notify, so they must not
+    // feed the badge either; a spam text would raise it with nothing visible
+    // in the main list to clear it.
+    final count = chatStates.values
+        .where((state) => state.hasUnreadMessage.value && state.chat.isFilteredAsSpam != true)
+        .length;
     if (unreadCount.value != count) {
       unreadCount.value = count;
     }
@@ -756,6 +777,9 @@ class ChatsService {
       final isPinnedChanged = (updated.isPinned ?? false) != currentIsPinned;
       final sortOrderChanged =
           latestMessageChanged || latestMessageTimestampChanged || pinIndexChanged || isPinnedChanged;
+      // Moving into or out of Spam changes which list shows the chat, not its order.
+      final spamChanged =
+          updated.isFilteredAsSpam != null && updated.isFilteredAsSpam != state.chat.isFilteredAsSpam;
 
       if (updated != state.chat || override) {
         state.updateFromChat(updated);
@@ -763,6 +787,11 @@ class ChatsService {
 
       if (sortOrderChanged || override) {
         _repositionChat(state.chat, immediate: immediate);
+      }
+      if (spamChanged) {
+        _scheduleListVersionUpdate(immediate: true);
+        // The badge excludes spam, and its listener only fires on unread changes.
+        _recalculateUnreadCount();
       }
 
       return true;
