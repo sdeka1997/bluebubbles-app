@@ -1,4 +1,6 @@
 import 'package:bluebubbles/database/models.dart' hide Entity;
+import 'package:bluebubbles/helpers/types/constants.dart';
+import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart';
 
 class ReactionTypes {
@@ -58,6 +60,34 @@ class ReactionTypes {
     "❗": EMPHASIZE,
     "❓": QUESTION,
   };
+
+  static List<String> pickerTypes({required bool allowCustomEmoji}) {
+    return [...toList(), if (allowCustomEmoji) "+"];
+  }
+
+  static bool checkReactionType(String? type) {
+    if (type == null || type.isEmpty) return false;
+    final clean = type.startsWith("-") ? type.substring(1) : type;
+    if (clean.isEmpty) return false;
+    if (toList().contains(clean)) return true;
+    return clean.characters.length == 1 && emojiRegex.hasMatch(clean);
+  }
+
+  static String emojiForReaction(String? type) {
+    if (type == null) return "X";
+    String clean = type.replaceAll("-", "");
+    if (reactionToEmoji.containsKey(clean)) return reactionToEmoji[clean]!;
+    if (checkReactionType(clean)) return clean;
+    return "X";
+  }
+
+  static String verbForReaction(String? type) {
+    if (type == null) return "reacted to";
+    if (reactionToVerb.containsKey(type)) return reactionToVerb[type]!;
+    bool isRemoval = type.startsWith("-");
+    String emoji = type.replaceAll("-", "");
+    return isRemoval ? "removed $emoji from" : "reacted with $emoji to";
+  }
 }
 
 List<Message> getUniqueReactionMessages(List<Message> messages) {

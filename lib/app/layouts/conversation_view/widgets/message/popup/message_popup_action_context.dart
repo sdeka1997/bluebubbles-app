@@ -9,11 +9,13 @@ import 'package:flutter/widgets.dart';
 class MessagePopupServerDetails {
   final bool minSierra;
   final bool minBigSur;
+  final bool minSequoia;
   final bool supportsOriginalDownload;
 
   const MessagePopupServerDetails({
     required this.minSierra,
     required this.minBigSur,
+    required this.minSequoia,
     required this.supportsOriginalDownload,
   });
 }
