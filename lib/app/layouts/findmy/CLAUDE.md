@@ -5,6 +5,7 @@
 - `findmy_controller.dart` — state and logic: location polling, device/friend tracking
 - `findmy_friend_sort.dart` — coordinate validation and deterministic nearest-first friend ordering
 - `findmy_contact.dart` — safe phone/email extraction for native-contact fallback matching
+- `findmy_device_glyph.dart` — icon/emoji for a device or item, shared by map pins and list rows
 - `findmy_scroll.dart` — post-animation selected-row positioning
 - `findmy_location_clipper.dart` — custom `CustomClipper` for location shape
 - `findmy_pin_clipper.dart` — custom `CustomClipper` for map pin shape

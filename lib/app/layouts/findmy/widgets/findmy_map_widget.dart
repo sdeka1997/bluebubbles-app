@@ -1,5 +1,6 @@
 import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_device_glyph.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_items_tab_view.dart';
 import 'package:bluebubbles/app/wrappers/trackpad_bug_wrapper.dart';
@@ -193,21 +194,11 @@ class FindMyMapWidget extends StatelessWidget {
     final id = markerKey.substring('device-'.length);
     final item = controller.devices.firstWhereOrNull((device) => device.id == id);
     if (item == null) return const Icon(Icons.devices, color: Colors.black, size: 22);
-    final isAirPods = item.isAppleAudioAccessory || (item.modelDisplayName?.toLowerCase().contains('airpods') ?? false);
-    if (isAirPods) return const Icon(Icons.headphones, color: Colors.black, size: 22);
-    final emoji = item.role?['emoji'] as String?;
-    if (emoji != null) {
-      return Text(emoji, style: context.theme.textTheme.titleMedium!.copyWith(fontFamily: 'Apple Color Emoji'));
+    final glyph = findMyGlyph(item);
+    if (glyph.emoji != null) {
+      return Text(glyph.emoji!, style: context.theme.textTheme.titleMedium!.copyWith(fontFamily: 'Apple Color Emoji'));
     }
-    return Icon(
-      (item.isMac ?? false)
-          ? Icons.computer
-          : item.isConsideredAccessory
-          ? Icons.headphones
-          : Icons.phone_iphone,
-      color: Colors.black,
-      size: 22,
-    );
+    return Icon(glyph.icon, color: Colors.black, size: 22);
   }
 
   static String _markerKey(Marker marker) => (marker.key as ValueKey?)?.value as String? ?? '';

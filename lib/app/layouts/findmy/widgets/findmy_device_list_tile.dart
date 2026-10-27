@@ -1,4 +1,5 @@
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_device_glyph.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_format.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_raw_data_dialog.dart';
@@ -82,6 +83,7 @@ class FindMyDeviceListTile extends StatelessWidget {
               )
             : ListTile(
                 mouseCursor: MouseCursor.defer,
+                leading: _FindMyGlyphAvatar(glyph: findMyGlyph(item)),
                 title: Text(displayName),
                 subtitle: Text(subtitle),
                 trailing: distance == null
@@ -97,5 +99,22 @@ class FindMyDeviceListTile extends StatelessWidget {
               ),
       );
     });
+  }
+}
+
+class _FindMyGlyphAvatar extends StatelessWidget {
+  final FindMyGlyph glyph;
+
+  const _FindMyGlyphAvatar({required this.glyph});
+
+  @override
+  Widget build(BuildContext context) {
+    return CircleAvatar(
+      radius: 20,
+      backgroundColor: context.theme.colorScheme.surfaceContainerHighest,
+      child: glyph.emoji != null
+          ? Text(glyph.emoji!, style: const TextStyle(fontSize: 20, fontFamily: 'Apple Color Emoji'))
+          : Icon(glyph.icon, size: 22, color: context.theme.colorScheme.onSurfaceVariant),
+    );
   }
 }
