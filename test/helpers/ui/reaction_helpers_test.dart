@@ -29,5 +29,14 @@ void main() {
     test('adds the custom emoji picker on Sequoia', () {
       expect(ReactionTypes.pickerTypes(allowCustomEmoji: true), [...ReactionTypes.toList(), '+']);
     });
+
+    test('shows my current custom emoji before the picker so it can be tapped to remove', () {
+      expect(ReactionTypes.pickerTypes(allowCustomEmoji: true, selfReaction: '🥪'),
+          [...ReactionTypes.toList(), '🥪', '+']);
+    });
+
+    test('does not repeat a standard Tapback as a custom slot', () {
+      expect(ReactionTypes.pickerTypes(allowCustomEmoji: true, selfReaction: 'love'), [...ReactionTypes.toList(), '+']);
+    });
   });
 }

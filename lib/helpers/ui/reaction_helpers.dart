@@ -61,8 +61,12 @@ class ReactionTypes {
     "❓": QUESTION,
   };
 
-  static List<String> pickerTypes({required bool allowCustomEmoji}) {
-    return [...toList(), if (allowCustomEmoji) "+"];
+  /// Tapback row entries. On Sequoia my current custom emoji sits before "+",
+  /// like iOS, so tapping it again removes it.
+  static List<String> pickerTypes({required bool allowCustomEmoji, String? selfReaction}) {
+    final custom = allowCustomEmoji && selfReaction != null && !toList().contains(selfReaction) &&
+        checkReactionType(selfReaction) && !selfReaction.startsWith("-");
+    return [...toList(), if (custom) selfReaction, if (allowCustomEmoji) "+"];
   }
 
   static bool checkReactionType(String? type) {
