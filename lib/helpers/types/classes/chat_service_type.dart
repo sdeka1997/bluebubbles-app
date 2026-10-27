@@ -31,6 +31,25 @@ enum ChatServiceType {
   /// Whether chats of this type are iMessage chats.
   bool get isIMessageService => this == ChatServiceType.iMessage;
 
+  /// Placeholder shown in the message composer.
+  String get composerLabel => isIMessageService ? 'iMessage' : 'Text Message • $label';
+
+  /// The service the conversation is using now. Messages can file a message in
+  /// another service's record for the same contact (RCS messages in an older SMS
+  /// chat), so the newest message's service wins over the chat's own.
+  static ChatServiceType current(ChatServiceType chatService, {String? latestMessageService}) {
+    switch (latestMessageService?.toUpperCase()) {
+      case 'IMESSAGE':
+        return ChatServiceType.iMessage;
+      case 'SMS':
+        return ChatServiceType.sms;
+      case 'RCS':
+        return ChatServiceType.rcs;
+      default:
+        return chatService;
+    }
+  }
+
   /// Uses the service reported by Messages, falling back to the legacy GUID
   /// prefix for older servers or an unknown future service.
   static ChatServiceType fromServer(String? serviceName, String guid) {

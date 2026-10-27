@@ -20,6 +20,25 @@ void main() {
     });
   });
 
+  group('ChatServiceType.current', () {
+    test('uses the newest message service when Messages filed it in another service record', () {
+      // Messages stores RCS messages in an older SMS chat record for the same contact.
+      expect(ChatServiceType.current(ChatServiceType.sms, latestMessageService: 'RCS'), ChatServiceType.rcs);
+      expect(ChatServiceType.current(ChatServiceType.sms, latestMessageService: 'iMessage'), ChatServiceType.iMessage);
+    });
+
+    test('keeps the chat service without a usable newest message service', () {
+      expect(ChatServiceType.current(ChatServiceType.rcs), ChatServiceType.rcs);
+      expect(ChatServiceType.current(ChatServiceType.sms, latestMessageService: 'future-service'), ChatServiceType.sms);
+    });
+  });
+
+  test('composer label names the text service', () {
+    expect(ChatServiceType.iMessage.composerLabel, 'iMessage');
+    expect(ChatServiceType.rcs.composerLabel, 'Text Message • RCS');
+    expect(ChatServiceType.sms.composerLabel, 'Text Message • SMS');
+  });
+
   test('all Apple chat services support Tapbacks', () {
     expect(ChatServiceType.iMessage.supportsTapbacks, isTrue);
     expect(ChatServiceType.sms.supportsTapbacks, isTrue);
