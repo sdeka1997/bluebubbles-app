@@ -323,7 +323,7 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
                         child: reactions.isNotEmpty ? ReactionDetails(reactions: reactions) : const SizedBox.shrink(),
                       ),
                     ),
-                  if (SettingsSvc.settings.enablePrivateAPI.value && isSent && minSierra && chat.isIMessage)
+                  if (SettingsSvc.settings.enablePrivateAPI.value && isSent && minSierra && chat.service.supportsTapbacks)
                     Positioned(
                       bottom: (iOS
                               ? itemHeight * numberToShow + 35 + (_measuredChildHeight ?? widget.size.height)

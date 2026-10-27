@@ -104,7 +104,7 @@
     },
     {
       "id": "3:9017250848141753702",
-      "lastPropertyId": "40:4145108034201044011",
+      "lastPropertyId": "41:5675833880148348025",
       "name": "Chat",
       "properties": [
         {
@@ -257,6 +257,11 @@
           "id": "40:4145108034201044011",
           "name": "isFilteredAsSpam",
           "type": 1
+        },
+        {
+          "id": "41:5675833880148348025",
+          "name": "serviceName",
+          "type": 9
         }
       ],
       "relations": [
