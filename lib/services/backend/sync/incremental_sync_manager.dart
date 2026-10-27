@@ -389,17 +389,19 @@ class IncrementalSyncManager extends SyncManager {
       final latest = syncResult.messages
           .where((m) => m.id != null && m.dateCreated != null)
           .fold<Message?>(null, (prev, m) => prev == null || m.dateCreated!.isAfter(prev.dateCreated!) ? m : prev);
+      // A service twin's messages are filed under the thread it was folded into.
+      final threadGuid = latest?.chat.target?.guid ?? item.key;
       if (latest != null) {
-        latestMessageIdPerChat[item.key] = latest.id!;
+        latestMessageIdPerChat[threadGuid] = latest.id!;
       }
 
       // Grouped by chat so the main thread can skip hydrating messages for closed chats.
       final ids = syncResult.messages.where((m) => m.id != null).map((m) => m.id!).toList();
       if (ids.isNotEmpty) {
-        pageMessageIdsByChat[item.key] = ids;
+        pageMessageIdsByChat[threadGuid] = [...?pageMessageIdsByChat[threadGuid], ...ids];
       }
       if (latest != null) {
-        pageLatestMessageIdPerChat[item.key] = latest.id!;
+        pageLatestMessageIdPerChat[threadGuid] = latest.id!;
       }
     }
 

@@ -59,9 +59,8 @@ List<String> findGuidsToMarkRead(String guid) {
 /// Moves the messages of every folded twin in [chats] to its thread. Must run
 /// inside a write transaction. Returns each folded twin's guid mapped to its thread.
 Map<String, Chat> foldServiceTwins(Iterable<Chat> chats) {
-  _shareGroupIds(chats);
   final folded = <String, Chat>{};
-  for (final twin in chats) {
+  for (final twin in [...chats, ..._shareGroupIds(chats)]) {
     final canonical = findCanonicalTwin(twin);
     if (canonical == null) continue;
     folded[twin.guid] = canonical;
@@ -80,7 +79,9 @@ Map<String, Chat> foldServiceTwins(Iterable<Chat> chats) {
 
 /// Chats stored before the app kept group ids don't have one yet. Twins share
 /// their chat identifier, so they pick up the group id of a twin as it syncs.
-void _shareGroupIds(Iterable<Chat> chats) {
+/// Returns the chats that got one.
+List<Chat> _shareGroupIds(Iterable<Chat> chats) {
+  final updated = <Chat>[];
   for (final chat in chats) {
     if ((chat.groupId?.isEmpty ?? true) || chat.chatIdentifier == null) continue;
     final query = Database.chats
@@ -93,5 +94,7 @@ void _shareGroupIds(Iterable<Chat> chats) {
       twin.groupId = chat.groupId;
     }
     Database.chats.putMany(twins);
+    updated.addAll(twins);
   }
+  return updated;
 }
