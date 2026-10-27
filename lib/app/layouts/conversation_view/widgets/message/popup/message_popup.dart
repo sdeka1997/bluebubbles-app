@@ -14,6 +14,7 @@ import 'package:bluebubbles/app/layouts/conversation_view/widgets/message/popup/
 import 'package:bluebubbles/app/layouts/conversation_view/widgets/message/popup/reaction_picker_clipper.dart';
 import 'package:bluebubbles/app/layouts/conversation_view/widgets/message/popup/widgets/reaction_details.dart';
 import 'package:bluebubbles/app/layouts/conversation_view/widgets/message/popup/widgets/emoji_picker_popup.dart';
+import 'package:bluebubbles/helpers/ui/edit_unsend_window.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_pin_clipper.dart';
 import 'package:bluebubbles/app/wrappers/bb_app_bar.dart';
 import 'package:bluebubbles/app/wrappers/bb_scaffold.dart';
@@ -559,8 +560,8 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
   }
 
   List<DetailsMenuActionWidget> get _allActions {
-    final canEdit = (message.dateCreated?.toUtc().isWithin(DateTime.now().toUtc(), minutes: 15) ?? false);
-    final canUnsend = (message.dateCreated?.toUtc().isWithin(DateTime.now().toUtc(), minutes: 2) ?? false);
+    final canEdit = canEditSent(message.dateCreated);
+    final canUnsend = canUndoSend(message.dateCreated);
     return [
       if (SettingsSvc.settings.enablePrivateAPI.value && minBigSur && chat.isIMessage && isSent)
         DetailsMenuActionWidget(
@@ -652,11 +653,10 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
       if (SettingsSvc.serverDetails.isMinVentura &&
           message.isFromMe! &&
           !widget.controller.isSending.value &&
-          SettingsSvc.serverDetails.supportsEditAndUnsend)
+          SettingsSvc.serverDetails.supportsEditAndUnsend &&
+          canUnsend)
         DetailsMenuActionWidget(
           onTap: () => popup_message_actions.unsend(_buildActionContext(DetailsMenuAction.UndoSend)),
-          customTitle: canUnsend ? 'Undo Send' : 'Undo Send (too old)',
-          shouldDisableBtn: !canUnsend,
           action: DetailsMenuAction.UndoSend,
         ),
       if (message.isFromMe! && widget.controller.isSending.value && OutgoingMsgHandler.hasPendingMessage(message.guid!))
@@ -668,11 +668,10 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
           message.isFromMe! &&
           !widget.controller.isSending.value &&
           SettingsSvc.serverDetails.supportsEditAndUnsend &&
-          (part.text?.isNotEmpty ?? false))
+          (part.text?.isNotEmpty ?? false) &&
+          canEdit)
         DetailsMenuActionWidget(
           onTap: () => popup_message_actions.edit(_buildActionContext(DetailsMenuAction.Edit)),
-          customTitle: canEdit ? 'Edit' : 'Edit (too old)',
-          shouldDisableBtn: !canEdit,
           action: DetailsMenuAction.Edit,
         ),
       if (!LifecycleSvc.isBubble && !message.isInteractive)
@@ -764,19 +763,11 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
 
     return [
       ...allActions.slice(0, numberToShow - 1).map((action) {
-        bool isDisabled = false;
-        if (action.action == DetailsMenuAction.Edit) {
-          isDisabled = !((message.dateCreated?.toUtc().isWithin(DateTime.now().toUtc(), minutes: 15) ?? false));
-        }
-
-        Color color = isDisabled
-            ? context.theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5)
-            : context.theme.colorScheme.onSurfaceVariant;
         return Padding(
             padding: EdgeInsets.only(top: kIsDesktop ? 20 : 0),
             child: IconButton(
-              icon: Icon(action.nonIosIcon, color: color),
-              onPressed: isDisabled ? null : action.onTap,
+              icon: Icon(action.nonIosIcon, color: context.theme.colorScheme.onSurfaceVariant),
+              onPressed: action.onTap,
               tooltip: action.title,
             ));
       }),
