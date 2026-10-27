@@ -50,7 +50,9 @@ class ChatActions {
           await HttpSvc.chat.markRead(guid);
         }
       } else {
-        await HttpSvc.chat.markUnread(chatGuid);
+        for (final guid in findGuidsToMarkRead(chatGuid)) {
+          await HttpSvc.chat.markUnread(guid);
+        }
       }
     }
   }

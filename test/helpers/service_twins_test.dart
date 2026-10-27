@@ -51,4 +51,42 @@ void main() {
       expect(guidsToMarkRead(legacy.guid, local), [legacy.guid]);
     });
   });
+
+  group('carryOverThreadSettings', () {
+    test('the thread takes over pin, mute, archive and a custom name from a folded twin', () {
+      final thread = Chat(id: 1, guid: 'SMS;-;+155****1111', groupId: 'G1');
+      final twin = Chat(
+        id: 2,
+        guid: 'RCS;-;+155****1111',
+        groupId: 'G1',
+        isPinned: true,
+        muteType: 'mute',
+        isArchived: true,
+        displayName: 'Karan',
+        lockChatName: true,
+      )..pinIndex = 3;
+      expect(carryOverThreadSettings(thread, [twin]), isTrue);
+      expect(thread.isPinned, isTrue);
+      expect(thread.pinIndex, 3);
+      expect(thread.muteType, 'mute');
+      expect(thread.isArchived, isTrue);
+      expect(thread.displayName, 'Karan');
+      expect(thread.lockChatName, isTrue);
+    });
+
+    test("never overrides what the thread already has", () {
+      final thread = Chat(id: 1, guid: 'SMS;-;+155****1111', groupId: 'G1', muteType: 'temporary_mute', displayName: 'Mine', lockChatName: true);
+      final twin = Chat(id: 2, guid: 'RCS;-;+155****1111', groupId: 'G1', muteType: 'mute', displayName: 'Theirs', lockChatName: true);
+      expect(carryOverThreadSettings(thread, [twin]), isFalse);
+      expect(thread.muteType, 'temporary_mute');
+      expect(thread.displayName, 'Mine');
+    });
+
+    test('nothing to carry over leaves the thread unchanged', () {
+      final thread = Chat(id: 1, guid: 'SMS;-;+155****1111', groupId: 'G1');
+      expect(carryOverThreadSettings(thread, [Chat(id: 2, guid: 'RCS;-;+155****1111', groupId: 'G1')]), isFalse);
+      expect(thread.isPinned, isFalse);
+      expect(thread.muteType, isNull);
+    });
+  });
 }
