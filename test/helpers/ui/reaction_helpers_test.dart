@@ -38,5 +38,35 @@ void main() {
     test('does not repeat a standard Tapback as a custom slot', () {
       expect(ReactionTypes.pickerTypes(allowCustomEmoji: true, selfReaction: 'love'), [...ReactionTypes.toList(), '+']);
     });
+
+    test('shows recent emoji after my custom emoji and before the picker', () {
+      expect(ReactionTypes.pickerTypes(allowCustomEmoji: true, selfReaction: '🥪', recentEmojis: ['🔥', '🎉']),
+          [...ReactionTypes.toList(), '🥪', '🔥', '🎉', '+']);
+    });
+
+    test('shows at most two recent emoji', () {
+      expect(ReactionTypes.pickerTypes(allowCustomEmoji: true, recentEmojis: ['🔥', '🎉', '🙏']),
+          [...ReactionTypes.toList(), '🔥', '🎉', '+']);
+    });
+
+    test('skips recent emoji that repeat a standard Tapback or my custom emoji', () {
+      expect(ReactionTypes.pickerTypes(allowCustomEmoji: true, selfReaction: '🥪', recentEmojis: ['👍', '🥪', '❤️', '🔥', '🎉']),
+          [...ReactionTypes.toList(), '🥪', '🔥', '🎉', '+']);
+    });
+
+    test('shows no recent emoji before Sequoia', () {
+      expect(ReactionTypes.pickerTypes(allowCustomEmoji: false, recentEmojis: ['🔥']), ReactionTypes.toList());
+    });
+  });
+
+  group('ReactionTypes.pickerWrapsToTwoRows', () {
+    test('wraps a row too wide for the screen before Sequoia', () {
+      expect(ReactionTypes.pickerWrapsToTwoRows(allowCustomEmoji: false, contentWidth: 400, availableWidth: 300), isTrue);
+      expect(ReactionTypes.pickerWrapsToTwoRows(allowCustomEmoji: false, contentWidth: 250, availableWidth: 300), isFalse);
+    });
+
+    test('keeps one scrolling row on Sequoia however wide it is', () {
+      expect(ReactionTypes.pickerWrapsToTwoRows(allowCustomEmoji: true, contentWidth: 400, availableWidth: 300), isFalse);
+    });
   });
 }
