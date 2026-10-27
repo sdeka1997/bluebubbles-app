@@ -41,6 +41,7 @@ class Chat {
 
   String? chatIdentifier;
   String? serviceName;
+  String? groupId;
   bool? isArchived;
   String? muteType;
   String? muteArgs;
@@ -145,6 +146,7 @@ class Chat {
     required this.guid,
     this.chatIdentifier,
     this.serviceName,
+    this.groupId,
     this.isArchived = false,
     this.isPinned = false,
     this.muteType,
@@ -186,6 +188,7 @@ class Chat {
       guid: json["guid"],
       chatIdentifier: json["chatIdentifier"],
       serviceName: json["serviceName"],
+      groupId: json["groupId"],
       participants:
           (json['participants'] as List? ?? []).map((e) => Handle.fromMap(e!.cast<String, Object>())).toList(),
       isArchived: json['isArchived'] ?? false,
@@ -848,6 +851,7 @@ class Chat {
     }
     chatIdentifier ??= other.chatIdentifier;
     serviceName = other.serviceName ?? serviceName;
+    groupId = other.groupId ?? groupId;
     displayName ??= other.displayName;
     isFilteredAsSpam ??= other.isFilteredAsSpam;
     if (handles.isEmpty) {
@@ -935,6 +939,7 @@ class Chat {
       "guid": guid,
       "chatIdentifier": chatIdentifier,
       "serviceName": serviceName,
+      "groupId": groupId,
       "isArchived": isArchived!,
       "muteType": muteType,
       "muteArgs": muteArgs,

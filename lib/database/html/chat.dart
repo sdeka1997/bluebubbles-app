@@ -51,6 +51,7 @@ class Chat {
   String guid;
   String? chatIdentifier;
   String? serviceName;
+  String? groupId;
   bool? isArchived;
   String? muteType;
   String? muteArgs;
@@ -106,6 +107,7 @@ class Chat {
     required this.guid,
     this.chatIdentifier,
     this.serviceName,
+    this.groupId,
     this.isArchived = false,
     this.isPinned = false,
     this.muteType,
@@ -144,6 +146,7 @@ class Chat {
       guid: json["guid"],
       chatIdentifier: json["chatIdentifier"],
       serviceName: json["serviceName"],
+      groupId: json["groupId"],
       isArchived: json['isArchived'] ?? false,
       muteType: json["muteType"],
       muteArgs: json["muteArgs"],
@@ -526,6 +529,7 @@ class Chat {
       textFieldAttachments.addAll(other.textFieldAttachments);
     }
     chatIdentifier ??= other.chatIdentifier;
+    groupId = other.groupId ?? groupId;
     displayName ??= other.displayName;
     if (handles.isEmpty) {
       handles.addAll(other.handles);
@@ -571,6 +575,7 @@ class Chat {
         "guid": guid,
         "chatIdentifier": chatIdentifier,
         "serviceName": serviceName,
+        "groupId": groupId,
         "isArchived": isArchived!,
         "muteType": muteType,
         "muteArgs": muteArgs,

@@ -1,6 +1,7 @@
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
+import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/services/backend/interfaces/contact_v2_interface.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -31,7 +32,9 @@ class ChatActions {
         SettingsSvc.settings.enablePrivateAPI.value &&
         SettingsSvc.settings.privateMarkChatAsRead.value) {
       for (final c in chats) {
-        await HttpSvc.chat.markRead(c.guid);
+        for (final guid in findGuidsToMarkRead(c.guid)) {
+          await HttpSvc.chat.markRead(guid);
+        }
       }
     }
   }
@@ -43,7 +46,9 @@ class ChatActions {
 
     if (shouldMarkOnServer && SettingsSvc.settings.enablePrivateAPI.value) {
       if (markAsRead) {
-        await HttpSvc.chat.markRead(chatGuid);
+        for (final guid in findGuidsToMarkRead(chatGuid)) {
+          await HttpSvc.chat.markRead(guid);
+        }
       } else {
         await HttpSvc.chat.markUnread(chatGuid);
       }
@@ -665,6 +670,7 @@ class ChatActions {
             chatToSave.displayName = inputChat.displayName;
           }
           chatToSave.mergeSpamFlag(inputChat);
+          chatToSave.groupId = inputChat.groupId ?? chatToSave.groupId;
         }
 
         // Prepare handles to link (collect them for later)
@@ -697,6 +703,8 @@ class ChatActions {
           }
         }
       }
+
+      foldServiceTwins(chatsToSave);
 
       // Return just the IDs for efficient transfer across isolates
       return chatsToSave.map((e) => e.id!).toList();

@@ -9,6 +9,7 @@ import 'package:bluebubbles/app/layouts/conversation_list/widgets/filters/chat_l
 import 'package:bluebubbles/app/state/chat_state.dart';
 import 'package:bluebubbles/helpers/backend/startup_tasks.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
+import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
 import 'package:bluebubbles/services/backend/notifications/desktop_notification.dart';
@@ -344,9 +345,19 @@ class ChatsService {
       _sortedChats.clear();
     }
 
+    // Service twins are shown as the thread they were folded into.
+    var foldedTwins = const <String>{};
+    if (!kIsWeb) {
+      final twinsQuery = Database.chats.query(Chat_.groupId.notNull()).build();
+      foldedTwins = foldedTwinGuids(twinsQuery.find());
+      twinsQuery.close();
+    }
+
     final batches = (currentCount / batchSize).ceil();
     for (int i = 0; i < batches; i++) {
-      final chatBatch = await Chat.getChatsAsync(limit: batchSize, offset: i * batchSize);
+      final chatBatch = (await Chat.getChatsAsync(limit: batchSize, offset: i * batchSize))
+          .where((c) => !foldedTwins.contains(c.guid))
+          .toList();
       if (kIsWeb) {
         webCachedHandles.addAll(chatBatch.map((e) => e.handles).flattened.toList());
         final ids = webCachedHandles.map((e) => e.address).toSet();
@@ -792,6 +803,11 @@ class ChatsService {
 
   Future<void> addChat(Chat toAdd, {bool immediate = false}) async {
     if (headless) return;
+    // A service twin is shown as the thread it was folded into.
+    if (!kIsWeb && findCanonicalTwin(toAdd) != null) {
+      if (chatStates.containsKey(toAdd.guid)) removeChat(toAdd);
+      return;
+    }
     // Check if chat already exists
     if (chatStates.containsKey(toAdd.guid)) {
       // Update existing chat instead (debounced during init, immediate for new chats)
