@@ -199,8 +199,10 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
         ? screenWidth - reactionPickerEdgeMargin - reactionPickerEdgeMargin
         : screenWidth - (widget.childPosition.dx + 10) - reactionPickerEdgeMargin;
     final double reactionItemWidth = iOS ? 47.0 : 44.0; // icon/emoji + its fixed padding, see item build below
+    final List<String> reactionTypes =
+        ReactionTypes.pickerTypes(allowCustomEmoji: minSequoia, selfReaction: selfReaction);
     // + container padding
-    final double reactionRowContentWidth = reactionItemWidth * ReactionTypes.toList().length + 10;
+    final double reactionRowContentWidth = reactionItemWidth * reactionTypes.length + 10;
     bool narrowScreen = reactionRowContentWidth > reactionPickerAvailableWidth;
 
     return Theme(
@@ -368,7 +370,7 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
                                           return Row(
                                             mainAxisSize: MainAxisSize.min,
                                             mainAxisAlignment: MainAxisAlignment.start,
-                                            children: ReactionTypes.pickerTypes(allowCustomEmoji: minSequoia)
+                                            children: reactionTypes
                                                 .slice(narrowScreen && index == 1 ? 4 : 0,
                                                     narrowScreen && index == 0 ? 4 : null)
                                                 .map((e) {
@@ -418,7 +420,7 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
                                                                   size: 20,
                                                                 ),
                                                               )
-                                                            : (iOS
+                                                            : (iOS && ReactionTypes.toList().contains(e)
                                                                 ? SvgPicture.asset(
                                                                     'assets/reactions/$e-black.svg',
                                                                     colorFilter: ColorFilter.mode(
