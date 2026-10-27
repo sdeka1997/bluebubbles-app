@@ -11,6 +11,51 @@ import 'package:flutter/widgets.dart';
 import 'package:objectbox/objectbox.dart';
 import 'package:bluebubbles/models/models.dart' show HandleLookupKey;
 
+/// The Apple ROWID a handle carries, if it came straight from the server.
+///
+/// A handle rebuilt from the local database (it has a local id) may hold a
+/// ROWID left over from a previous Apple database, so it reports nothing.
+int? serverReportedRowId(Handle handle) => handle.id == null ? handle.originalROWID : null;
+
+/// Points each local handle at the ROWID the server reported for it, and clears
+/// that ROWID from any other handle in [holders] still using it.
+///
+/// ROWIDs are only unique within one Apple chat.db, so once the server's
+/// database is replaced a local handle can hold a ROWID that now belongs to
+/// someone else. Messages are never relinked here: older ones legitimately
+/// carry ROWIDs from the previous database. Returns the handles to save.
+List<Handle> adoptServerRowIds(List<(Handle, int)> reported, List<Handle> holders) {
+  final changed = <String, Handle>{};
+  final rowIdByHandle = <String, int>{};
+  for (final (handle, rowId) in reported) {
+    rowIdByHandle[handle.uniqueAddressAndService] = rowId;
+    if (handle.originalROWID != rowId) {
+      handle.originalROWID = rowId;
+      changed[handle.uniqueAddressAndService] = handle;
+    }
+  }
+  final reportedRowIds = rowIdByHandle.values.toSet();
+  for (final holder in holders) {
+    final rowId = holder.originalROWID;
+    if (rowId == null || !reportedRowIds.contains(rowId)) continue;
+    if (rowIdByHandle.containsKey(holder.uniqueAddressAndService)) continue;
+    holder.originalROWID = null;
+    changed[holder.uniqueAddressAndService] = holder;
+  }
+  return changed.values.toList();
+}
+
+/// Runs [adoptServerRowIds] against the handles in [box] holding a reported
+/// ROWID and saves every handle it changed. Must run inside a write transaction.
+void adoptServerRowIdsInBox(Box<Handle> box, List<(Handle, int)> reported) {
+  if (reported.isEmpty) return;
+  final query = box.query(Handle_.originalROWID.oneOf(reported.map((r) => r.$2).toList())).build();
+  final holders = query.find();
+  query.close();
+  final changed = adoptServerRowIds(reported, holders);
+  if (changed.isNotEmpty) box.putMany(changed);
+}
+
 @Entity()
 class Handle {
   int? id;

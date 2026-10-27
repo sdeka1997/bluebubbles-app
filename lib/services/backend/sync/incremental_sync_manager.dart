@@ -9,6 +9,14 @@ import 'package:bluebubbles/services/backend/interfaces/sync_interface.dart';
 import 'package:bluebubbles/services/isolates/global_isolate.dart';
 import 'package:dio/dio.dart' as dio;
 
+/// Whether a saved ROWID bookmark points past the newest message on the server.
+///
+/// ROWIDs restart when the server's Messages database is replaced (e.g. a macOS
+/// upgrade with a fresh chat.db), so a bookmark from the old database matches
+/// nothing in the new one and the ROWID sync would find no messages forever.
+bool isStaleRowIdBookmark(int startRowId, int? newestServerRowId) =>
+    newestServerRowId != null && newestServerRowId < startRowId;
+
 class IncrementalSyncManager extends SyncManager {
   final tag = 'IncrementalSyncManager';
 
@@ -158,7 +166,23 @@ class IncrementalSyncManager extends SyncManager {
     // If no new updated messages, complete the sync
     int total = messagesRes.data['metadata']['total'];
     addToOutput('Found $total message(s) to sync...');
-    if (total == 0) return;
+    if (total == 0) {
+      // Nothing after the bookmark can also mean the server's database was
+      // replaced, so check the bookmark against the newest message it has.
+      // The server sorts by date, so this is the newest ROWID only nearly
+      // always; a false positive just syncs by date once.
+      final newestRes = await HttpSvc.message.query(limit: 1);
+      final newest = (newestRes.data['data'] as List).firstOrNull;
+      final int? newestRowId = newest?['originalROWID'];
+      if (isStaleRowIdBookmark(startRowId!, newestRowId) && (startTimestamp ?? 0) > 0) {
+        addToOutput('Last synced ROWID $startRowId is past the newest server message ($newestRowId), '
+            'syncing by date instead...', level: LogLevel.WARN);
+        // Saved as the new bookmark unless a synced message has a higher ROWID
+        lastSyncedRowId = newestRowId;
+        await startMin_1_2_0();
+      }
+      return;
+    }
 
     // Sync the page we just fetched
     await syncMessages(messagesRes.data['data'], total);
