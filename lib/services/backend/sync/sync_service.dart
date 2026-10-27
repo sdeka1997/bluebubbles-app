@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/ui/async_task.dart';
+import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/helpers/ui/ui_helpers.dart';
 import 'package:bluebubbles/services/backend/interfaces/contact_v2_interface.dart';
 import 'package:bluebubbles/services/backend/interfaces/sync_interface.dart';
@@ -12,6 +13,7 @@ import 'package:bluebubbles/services/isolates/incremental_sync_isolate.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/services/backend/sync/apple_state_catch_up.dart';
 import 'package:bluebubbles/services/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart' hide Response;
 import 'package:get_it/get_it.dart';
 import 'package:universal_io/universal_io.dart';
@@ -55,6 +57,53 @@ class SyncService {
     await _manager!.start();
   }
 
+  Future<void> _refreshServiceTwinGroups() async {
+    if (kIsWeb) return;
+    try {
+      const pageSize = 1000;
+      var offset = 0;
+      final remoteChats = <Map<String, dynamic>>[];
+      while (true) {
+        final response = await HttpSvc.chat.query(offset: offset, limit: pageSize);
+        if (response.statusCode != 200) {
+          throw StateError('chat metadata query returned ${response.statusCode}');
+        }
+        final payload = response.data as Map<String, dynamic>;
+        final page = (payload['data'] as List)
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+        remoteChats.addAll(page);
+        offset += page.length;
+        final total = (payload['metadata'] as Map?)?['total'] as num?;
+        if (page.isEmpty || (total != null && offset >= total.toInt()) || page.length < pageSize) break;
+      }
+
+      final localChats = Database.chats.getAll();
+      late Map<String, Chat> folded;
+      var updated = 0;
+      Database.runInTransaction(TxMode.write, () {
+        final changed = updateGroupIdsFromRemote(localChats, remoteChats);
+        updated = changed.length;
+        if (changed.isNotEmpty) Database.chats.putMany(changed);
+        folded = foldServiceTwins(localChats);
+      });
+
+      for (final entry in folded.entries) {
+        final twin = localChats.where((chat) => chat.guid == entry.key).firstOrNull;
+        if (twin != null) ChatsSvc.removeChat(twin);
+        await ChatsSvc.addChat(entry.value, immediate: true);
+      }
+      Logger.info(
+        'Refreshed group ids for $updated chats; folded ${folded.length} service twins',
+        tag: 'Service Twins',
+      );
+    } catch (e, stack) {
+      // Metadata refresh is additive. A transient failure must never block the
+      // ordinary incremental message sync that follows it.
+      Logger.warn('Could not refresh service-twin group ids', error: e, trace: stack, tag: 'Service Twins');
+    }
+  }
+
   Future<void> startIncrementalSync({bool useGlobalIsolate = false}) async {
     if (isIncrementalSyncing.value) return;
 
@@ -76,6 +125,12 @@ class SyncService {
     _lastIncrementalSyncTimestamp = now;
     isIncrementalSyncing.value = true;
     bool chatSyncFailed = false;
+
+    // Existing chats predate group-id support. Refresh only server-owned grouping
+    // metadata on every real startup/resume sync, then fold any newly discovered
+    // service twins. This is intentionally not a full chat resync: local names,
+    // pinning, mute, archive and other app-owned settings remain untouched.
+    await _refreshServiceTwinGroups();
 
     // Per-page tracking: record message IDs and chat subtitle message IDs that were
     // already applied by per-page events so the final return can skip redundant work.

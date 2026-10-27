@@ -2,6 +2,26 @@ import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:collection/collection.dart';
 
+/// Applies group ids returned by a group-id-aware server to matching local chats.
+/// A missing key means an older server and is deliberately ignored; an explicit
+/// null means Messages removed the chat from a group and is applied.
+List<Chat> updateGroupIdsFromRemote(Iterable<Chat> localChats, Iterable<Map<String, dynamic>> remoteChats) {
+  final localByGuid = {for (final chat in localChats) chat.guid: chat};
+  final changed = <Chat>[];
+  for (final remote in remoteChats) {
+    if (!remote.containsKey('groupId')) continue;
+    final guid = remote['guid'];
+    if (guid is! String) continue;
+    final local = localByGuid[guid];
+    if (local == null) continue;
+    final groupId = remote['groupId'] as String?;
+    if (local.groupId == groupId) continue;
+    local.groupId = groupId;
+    changed.add(local);
+  }
+  return changed;
+}
+
 // macOS Messages keeps one chat per service (iMessage, SMS, RCS) for the same
 // conversation and ties them together with a shared group id. iPhone and Mac
 // show them as one thread, and so does the app: the first of them stored
