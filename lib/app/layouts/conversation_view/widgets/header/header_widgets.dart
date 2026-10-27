@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/app/layouts/chat_creator/new_chat_creator.dart';
 import 'package:bluebubbles/app/state/chat_state_scope.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
@@ -71,10 +72,12 @@ class ManualMarkState extends State<ManualMark> with ThemeHelpers {
               setState(() {
                 marking = true;
               });
-              if (!marked) {
-                await HttpSvc.chat.markRead(chat.guid);
-              } else {
-                await HttpSvc.chat.markUnread(chat.guid);
+              for (final guid in findGuidsToMarkRead(chat.guid)) {
+                if (!marked) {
+                  await HttpSvc.chat.markRead(guid);
+                } else {
+                  await HttpSvc.chat.markUnread(guid);
+                }
               }
               setState(() {
                 marking = false;

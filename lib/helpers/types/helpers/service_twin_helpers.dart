@@ -56,6 +56,35 @@ List<String> findGuidsToMarkRead(String guid) {
   return guidsToMarkRead(guid, chat == null ? const [] : _chatsInGroup(chat.groupId));
 }
 
+/// Pin, mute, archive and a custom name set on a twin before it was folded
+/// carry over to its thread, without overriding anything the thread has.
+/// Returns whether [thread] changed.
+bool carryOverThreadSettings(Chat thread, Iterable<Chat> twins) {
+  var changed = false;
+  for (final twin in twins) {
+    if ((twin.isPinned ?? false) && !(thread.isPinned ?? false)) {
+      thread.isPinned = true;
+      thread.pinIndex = twin.pinIndex;
+      changed = true;
+    }
+    if (twin.muteType != null && thread.muteType == null) {
+      thread.muteType = twin.muteType;
+      thread.muteArgs = twin.muteArgs;
+      changed = true;
+    }
+    if ((twin.isArchived ?? false) && !(thread.isArchived ?? false)) {
+      thread.isArchived = true;
+      changed = true;
+    }
+    if (twin.lockChatName && !thread.lockChatName) {
+      thread.displayName = twin.displayName;
+      thread.lockChatName = true;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 /// Moves the messages of every folded twin in [chats] to its thread. Must run
 /// inside a write transaction. Returns each folded twin's guid mapped to its thread.
 Map<String, Chat> foldServiceTwins(Iterable<Chat> chats) {
@@ -64,6 +93,7 @@ Map<String, Chat> foldServiceTwins(Iterable<Chat> chats) {
     final canonical = findCanonicalTwin(twin);
     if (canonical == null) continue;
     folded[twin.guid] = canonical;
+    if (carryOverThreadSettings(canonical, [twin])) Database.chats.put(canonical);
 
     final query = (Database.messages.query()..link(Message_.chat, Chat_.id.equals(twin.id!))).build();
     final messages = query.find();
