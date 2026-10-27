@@ -125,6 +125,7 @@ class MessageApi {
     String? selectedMessageGuid,
     int? partIndex,
     bool? ddScan,
+    Map<String, dynamic>? chatLookup,
     CancelToken? cancelToken,
   }) async {
     return _svc.runApiGuarded(() async {
@@ -140,6 +141,7 @@ class MessageApi {
         "subject": subject,
         "selectedMessageGuid": selectedMessageGuid,
         "partIndex": partIndex,
+        ...?chatLookup,
       });
 
       if (SettingsSvc.settings.enablePrivateAPI.value &&
@@ -172,6 +174,7 @@ class MessageApi {
     String? selectedMessageGuid,
     int? partIndex,
     bool? isAudioMessage,
+    Map<String, dynamic>? chatLookup,
     CancelToken? cancelToken,
   }) async {
     return _svc.runApiGuarded(() async {
@@ -193,10 +196,15 @@ class MessageApi {
           "selectedMessageGuid": selectedMessageGuid,
           "partIndex": partIndex,
           "isAudioMessage": isAudioMessage,
+          "groupId": chatLookup?["groupId"],
+          "service": chatLookup?["service"],
         };
 
         papiData.removeWhere((key, value) => value == null);
         formData.fields.addAll(papiData.entries.map((entry) => MapEntry(entry.key, entry.value.toString())));
+        for (final address in chatLookup?["participants"] ?? []) {
+          formData.fields.add(MapEntry("participants", address));
+        }
       }
 
       final response = await _svc.dio.post(
@@ -227,6 +235,7 @@ class MessageApi {
     String? selectedMessageGuid,
     int? partIndex,
     bool? ddScan,
+    Map<String, dynamic>? chatLookup,
     CancelToken? cancelToken,
   }) async {
     return _svc.runApiGuarded(() async {
@@ -238,6 +247,7 @@ class MessageApi {
         "selectedMessageGuid": selectedMessageGuid,
         "partIndex": partIndex,
         "parts": parts,
+        ...?chatLookup,
       };
 
       if (SettingsSvc.serverDetails.isMinVentura) {
@@ -263,6 +273,7 @@ class MessageApi {
     String selectedMessageGuid,
     String reaction, {
     int? partIndex,
+    Map<String, dynamic>? chatLookup,
     CancelToken? cancelToken,
   }) async {
     return _svc.runApiGuarded(() async {
@@ -275,6 +286,7 @@ class MessageApi {
           "selectedMessageGuid": selectedMessageGuid,
           "reaction": reaction,
           "partIndex": partIndex,
+          ...?chatLookup,
         },
         cancelToken: cancelToken,
       );
