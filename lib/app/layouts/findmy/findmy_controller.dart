@@ -1,3 +1,4 @@
+import 'package:bluebubbles/app/layouts/findmy/findmy_device_glyph.dart';
 import 'dart:async';
 
 import 'package:bluebubbles/database/models.dart';
@@ -680,22 +681,12 @@ class FindMyController extends GetxController {
             child: Center(
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 5.0),
-                child: (e.isAppleAudioAccessory || (e.modelDisplayName?.toLowerCase().contains('airpods') ?? false))
-                    ? const Icon(Icons.headphones, color: Colors.black, size: 20)
-                    : e.role?['emoji'] != null
+                child: findMyGlyph(e).emoji != null
                     ? Text(
-                        e.role!['emoji'],
+                        findMyGlyph(e).emoji!,
                         style: Get.context!.theme.textTheme.bodyLarge!.copyWith(fontFamily: 'Apple Color Emoji'),
                       )
-                    : Icon(
-                        (e.isMac ?? false)
-                            ? Icons.computer
-                            : e.isConsideredAccessory
-                            ? Icons.headphones
-                            : Icons.phone_iphone,
-                        color: Colors.black,
-                        size: 20,
-                      ),
+                    : Icon(findMyGlyph(e).icon, color: Colors.black, size: 20),
               ),
             ),
           ),
