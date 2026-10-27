@@ -9,6 +9,7 @@ Renders the tapback emoji row that appears above or below a message bubble.
 | `reaction.dart` | `ReactionWidget` — single tapback emoji with skin-specific styling |
 | `reaction_holder.dart` | Horizontal row container for all reactions on a message part |
 | `reaction_clipper.dart` | `CustomClipper` for the pill-shaped reaction bubble |
+| `reaction_glyph.dart` | `ReactionGlyph` — icon or custom emoji inside an iOS-skin Tapback bubble |
 
 ## Data Source
 
