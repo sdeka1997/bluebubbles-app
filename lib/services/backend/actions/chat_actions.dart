@@ -261,6 +261,7 @@ class ChatActions {
       // 1:1 chats, mislinked the RECIPIENT's handle as the message's sender.
       final bool hasSenderHandle = !(inputMessage.isFromMe ?? false) && (inputMessage.handleId ?? 0) != 0;
       Handle? handleToLink;
+      int? reportedRowId;
       if (inputMessage.handle == null && hasSenderHandle) {
         final handleQuery = handleBox.query(Handle_.originalROWID.equals(inputMessage.handleId!)).build();
         handleQuery.limit = 1;
@@ -293,6 +294,9 @@ class ChatActions {
           }
         }
       } else if (inputMessage.handle != null) {
+        // Only a handle from the server payload carries a trustworthy ROWID
+        reportedRowId = serverReportedRowId(inputMessage.handle!);
+
         // Try and find existing handle by unique address
         final existingHandleQuery = handleBox
             .query(Handle_.uniqueAddressAndService.equals(inputMessage.handle!.uniqueAddressAndService))
@@ -308,6 +312,10 @@ class ChatActions {
           final handleId = handleBox.put(inputMessage.handle!);
           inputMessage.handle!.id = handleId;
           handleToLink = inputMessage.handle;
+        }
+
+        if (reportedRowId != null) {
+          adoptServerRowIdsInBox(handleBox, [(handleToLink!, reportedRowId)]);
         }
       }
 
@@ -366,8 +374,13 @@ class ChatActions {
         if (dbMessage != null) {
           bool needsUpdate = false;
 
-          // Set handle relationship if needed
-          if (handleToLink != null && dbMessage.handleRelation.target == null) {
+          // Set handle relationship if needed. The sender the server reported
+          // replaces one saved through a stale ROWID.
+          if (shouldLinkSender(
+            linked: dbMessage.handleRelation.target,
+            resolved: handleToLink,
+            fromPayload: hasSenderHandle && reportedRowId != null,
+          )) {
             dbMessage.handleRelation.target = handleToLink;
             needsUpdate = true;
           }
@@ -598,7 +611,10 @@ class ChatActions {
 
       // Prepare handles to save
       final List<Handle> handlesToSave = [];
+      final List<(Handle, int)> reportedRowIds = [];
       for (final inputHandle in inputHandlesMap.values) {
+        final reportedRowId = serverReportedRowId(inputHandle);
+        if (reportedRowId != null) reportedRowIds.add((inputHandle, reportedRowId));
         final existing = existingHandlesMap[inputHandle.uniqueAddressAndService];
         if (existing != null) {
           inputHandle.id = existing.id;
@@ -613,6 +629,9 @@ class ChatActions {
 
       // Save handles to DB
       handleBox.putMany(handlesToSave);
+
+      // Clear their new ROWIDs from handles still holding them from a previous Apple chat.db
+      adoptServerRowIdsInBox(handleBox, reportedRowIds);
 
       // Re-map valid handles with IDs for linking
       final Map<String, Handle> validHandles = {};

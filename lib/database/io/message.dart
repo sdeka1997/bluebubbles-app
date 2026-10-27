@@ -17,6 +17,18 @@ import 'package:get/get.dart' hide Condition;
 // ignore: unnecessary_import
 import 'package:objectbox/objectbox.dart';
 
+/// Whether a saved message's sender should be set to [resolved].
+///
+/// A message with no sender takes whatever was resolved. One that has a sender
+/// only changes it to a different handle the server named in the payload
+/// ([fromPayload]): a sender saved through a stale ROWID is then corrected on
+/// re-sync, while a ROWID-only lookup never overrides an existing sender.
+bool shouldLinkSender({required Handle? linked, required Handle? resolved, required bool fromPayload}) {
+  if (resolved == null) return false;
+  if (linked == null) return true;
+  return fromPayload && linked.uniqueAddressAndService != resolved.uniqueAddressAndService;
+}
+
 @Entity()
 class Message {
   int? id;
@@ -1013,7 +1025,9 @@ class Message {
       "associatedMessagePart": associatedMessagePart,
       "associatedMessageType": associatedMessageType,
       "expressiveSendStyleId": expressiveSendStyleId,
-      "handle": getHandle()?.toMap(),
+      // A message from the server carries its sender, which must win over a
+      // lookup by handleId: ROWIDs change when the server gets a new chat.db.
+      "handle": (handleRelation.target ?? handle ?? getHandle())?.toMap(),
       "hasAttachments": hasAttachments,
       "attachments": dbAttachments.map((a) => a.toMap()).toList(),
       "hasReactions": hasReactions,

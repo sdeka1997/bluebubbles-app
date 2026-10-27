@@ -5,6 +5,14 @@ import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:flutter/foundation.dart';
 
+/// The `uniqueAddressAndService` of the sender a server message payload names,
+/// or null for a message from me or a payload without a sender.
+String? payloadSenderKey(Map<String, dynamic> msgData) {
+  final handle = msgData['handle'];
+  if (msgData['isFromMe'] == true || handle is! Map) return null;
+  return Handle.fromMap(handle.cast<String, dynamic>()).uniqueAddressAndService;
+}
+
 class SyncActions {
   // ---------------------------------------------------------------------------
   // Unified sync entrypoint
@@ -29,12 +37,16 @@ class SyncActions {
     // (async I/O cannot happen inside a DB transaction)
     // -------------------------------------------------------------------------
     final Map<String, Map<String, dynamic>> uniqueHandleMapsByKey = {};
+    // Apple ROWIDs reported by the server, keyed like uniqueHandleMapsByKey
+    final Map<String, int> reportedRowIds = {};
 
     void collectParticipants(List<dynamic>? participants) {
       for (final raw in (participants ?? const []).whereType<Map>()) {
         final h = raw.cast<String, dynamic>();
         final key = _handleKey(h);
         uniqueHandleMapsByKey[key] ??= h;
+        final rowId = serverReportedRowId(Handle.fromMap(h));
+        if (rowId != null) reportedRowIds[key] = rowId;
       }
     }
 
@@ -79,6 +91,13 @@ class SyncActions {
       final messageBox = Database.messages;
       final attachmentBox = Database.attachments;
 
+      // Handles the server reported take its current ROWIDs, so a ROWID left
+      // over from a previous Apple chat.db doesn't resolve to the wrong person.
+      adoptServerRowIdsInBox(handleBox, [
+        for (final entry in reportedRowIds.entries)
+          if (handlesMap[entry.key]?.id != null) (handlesMap[entry.key]!, entry.value),
+      ]);
+
       // Build lookup for message→handle wiring (by originalROWID).
       // Fetch all DB handles so we don't miss handles from previous syncs.
       final allHandles = handleBox.getAll();
@@ -92,7 +111,7 @@ class SyncActions {
 
       // Step 2 – Sync messages → (savedMessages, messagesByGuid)
       final (savedMessages, messagesByGuid) =
-          _syncMessagesInTx(messagesData, chatData, chatsMap, handlesByRowId, messageBox);
+          _syncMessagesInTx(messagesData, chatData, chatsMap, handlesMap, handlesByRowId, messageBox);
 
       // Step 3 – Sync attachments (via Attachment.message.target — no applyToDb needed)
       _syncAttachmentsInTx(messagesData, messagesByGuid, attachmentBox, messageBox);
@@ -223,6 +242,7 @@ class SyncActions {
     List<Map<String, dynamic>> messagesData,
     Map<String, dynamic>? topLevelChatData,
     Map<String, Chat> chatsMap,
+    Map<String, Handle> handlesMap,
     Map<int, Handle> handlesByRowId,
     Box<Message> messageBox,
   ) {
@@ -267,8 +287,15 @@ class SyncActions {
       }
       if (chat != null) msgToSave.chat.target = chat;
 
-      // Wire to handle (by server originalROWID).
-      if (!msgToSave.handleRelation.hasValue && msgToSave.handleId != null && msgToSave.handleId! > 0) {
+      // Wire to handle. The sender the server reported wins, and replaces one
+      // saved through a ROWID from a previous Apple chat.db.
+      final payloadHandle = handlesMap[payloadSenderKey(msgData)];
+      if (payloadHandle?.id != null &&
+          shouldLinkSender(linked: msgToSave.handleRelation.target, resolved: payloadHandle, fromPayload: true)) {
+        msgToSave.handleRelation.target = payloadHandle;
+        msgToSave.handle = payloadHandle;
+      } else if (!msgToSave.handleRelation.hasValue && msgToSave.handleId != null && msgToSave.handleId! > 0) {
+        // Otherwise by server originalROWID
         final handle = handlesByRowId[msgToSave.handleId];
         if (handle != null) {
           msgToSave.handleRelation.target = handle;
