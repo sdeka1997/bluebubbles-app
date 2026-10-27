@@ -459,12 +459,9 @@ class IncrementalSyncManager extends SyncManager {
     // Use addChat for chats we haven't seen locally yet — updateChat is a no-op
     // when no ChatState exists, which leaves brand-new chats invisible in the
     // list (and their latestMessage unset) until the app restarts.
+    // addChat updates chats it already has, and drops service twins folded during the sync.
     for (var chat in syncedChats.values) {
-      if (ChatsSvc.getChatState(chat.guid) == null) {
-        await ChatsSvc.addChat(chat, immediate: true);
-      } else {
-        ChatsSvc.updateChat(chat, override: true);
-      }
+      await ChatsSvc.addChat(chat, immediate: true);
     }
 
     // Apply group photo changes detected during the sync.

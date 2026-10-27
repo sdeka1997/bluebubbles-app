@@ -1,6 +1,7 @@
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
+import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:flutter/foundation.dart';
@@ -215,7 +216,7 @@ class SyncActions {
       }
     }
 
-    return {for (final c in chatsToSave) c.guid: c};
+    return {for (final c in chatsToSave) c.guid: c, ...foldServiceTwins(chatsToSave)};
   }
 
   /// Upsert messages, wire them to chats and handles, and update hasReactions.

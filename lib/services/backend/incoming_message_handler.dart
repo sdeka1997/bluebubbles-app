@@ -6,6 +6,7 @@ import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
+import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -524,12 +525,14 @@ class IncomingMessageHandler {
     } else {
       // If we have a local copy and the local copy has participants, use it — no need to fetch.
       final local = Chat.findOne(guid: partial.guid);
-      if (local != null && local.handles.isNotEmpty) {
-        return (chat: local, affectedHandleIds: <int>[]);
+      // A chat stored before the app kept group ids is fetched once more so a
+      // service twin can be recognised (notification payloads omit the group id).
+      if (local != null && local.handles.isNotEmpty && local.groupId != null) {
+        return (chat: findCanonicalTwin(local) ?? local, affectedHandleIds: <int>[]);
         // Cases to fetch from the server:
-        // * Local chat exists but has no participants (incomplete data).
+        // * Local chat exists but has no participants (incomplete data) or group id.
         // * Local chat doesn't exist at all (new chat).
-      } else if ((local != null && local.handles.isEmpty) || local == null) {
+      } else {
         partial = (await ChatsSvc.fetchChat(partial.guid)) ?? partial;
       }
     }
@@ -540,7 +543,8 @@ class IncomingMessageHandler {
     if (synced.id == null) {
       Logger.warn('Failed to sync new chat ${partial.guid} for message ${m.guid}', tag: _tag);
     }
-    return (chat: synced, affectedHandleIds: result.affectedHandleIds);
+    // File a service twin's messages under the thread it was folded into.
+    return (chat: findCanonicalTwin(synced) ?? synced, affectedHandleIds: result.affectedHandleIds);
   }
 
   // ── DB helpers ──────────────────────────────────────────────────────────

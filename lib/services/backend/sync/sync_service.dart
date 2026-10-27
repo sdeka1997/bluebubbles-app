@@ -96,7 +96,8 @@ class SyncService {
           final chat = msg.chat.target;
           if (chat != null) await ChatsSvc.addChat(chat, immediate: true);
         }
-        ChatsSvc.updateChatLatestMessage(entry.key, msg, repositionImmediate: false);
+        // A service twin's messages are filed under the thread it was folded into.
+        ChatsSvc.updateChatLatestMessage(msg.chat.target?.guid ?? entry.key, msg, repositionImmediate: false);
         processedSubtitleByChat[entry.key] = entry.value;
       }
 
