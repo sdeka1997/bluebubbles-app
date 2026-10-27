@@ -62,11 +62,24 @@ class ReactionTypes {
   };
 
   /// Tapback row entries. On Sequoia my current custom emoji sits before "+",
-  /// like iOS, so tapping it again removes it.
-  static List<String> pickerTypes({required bool allowCustomEmoji, String? selfReaction}) {
+  /// like iOS, so tapping it again removes it, followed by up to two recently
+  /// used emoji that aren't already in the row.
+  static List<String> pickerTypes(
+      {required bool allowCustomEmoji, String? selfReaction, List<String> recentEmojis = const []}) {
     final custom = allowCustomEmoji && selfReaction != null && !toList().contains(selfReaction) &&
         checkReactionType(selfReaction) && !selfReaction.startsWith("-");
-    return [...toList(), if (custom) selfReaction, if (allowCustomEmoji) "+"];
+    final shown = {...toList(), ...reactionToEmoji.values, if (custom) selfReaction};
+    final recents = allowCustomEmoji
+        ? recentEmojis.where((e) => checkReactionType(e) && !e.startsWith("-") && shown.add(e)).take(2)
+        : const <String>[];
+    return [...toList(), if (custom) selfReaction, ...recents, if (allowCustomEmoji) "+"];
+  }
+
+  /// Whether the Tapback row wraps onto a second line. On Sequoia it stays one
+  /// row that scrolls sideways, like iOS.
+  static bool pickerWrapsToTwoRows(
+      {required bool allowCustomEmoji, required double contentWidth, required double availableWidth}) {
+    return !allowCustomEmoji && contentWidth > availableWidth;
   }
 
   static bool checkReactionType(String? type) {

@@ -24,6 +24,7 @@ import 'package:bluebubbles/app/layouts/conversation_view/widgets/message/shared
 import 'package:bluebubbles/app/state/message_state_scope.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:collection/collection.dart';
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart' show EmojiPickerUtils;
 import 'package:flutter/cupertino.dart' as cupertino;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide BackButton;
@@ -87,6 +88,7 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
       !chat.isGroup &&
       chat.handles.firstWhereOrNull((handle) => handle.address == message.handleRelation.target?.address) != null);
   String? selfReaction;
+  List<String> recentEmojis = [];
   String? currentlySelectedReaction = "init";
   final GlobalKey _childKey = GlobalKey();
   double? _measuredChildHeight;
@@ -145,6 +147,14 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
       numberToShow = 5;
     }
 
+    // The row shows without them first and updates once the picker's recents load
+    if (minSequoia) {
+      EmojiPickerUtils().getRecentEmojis().then((recents) {
+        if (!mounted) return;
+        setState(() => recentEmojis = recents.map((e) => e.emoji.emoji).toList());
+      }, onError: (_) {});
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final measuredHeight = _childKey.currentContext?.size?.height;
       currentlySelectedReaction = null;
@@ -199,11 +209,21 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
         ? screenWidth - reactionPickerEdgeMargin - reactionPickerEdgeMargin
         : screenWidth - (widget.childPosition.dx + 10) - reactionPickerEdgeMargin;
     final double reactionItemWidth = iOS ? 47.0 : 44.0; // icon/emoji + its fixed padding, see item build below
-    final List<String> reactionTypes =
-        ReactionTypes.pickerTypes(allowCustomEmoji: minSequoia, selfReaction: selfReaction);
+    final List<String> reactionTypes = ReactionTypes.pickerTypes(
+        allowCustomEmoji: minSequoia, selfReaction: selfReaction, recentEmojis: recentEmojis);
     // + container padding
     final double reactionRowContentWidth = reactionItemWidth * reactionTypes.length + 10;
-    bool narrowScreen = reactionRowContentWidth > reactionPickerAvailableWidth;
+    bool narrowScreen = ReactionTypes.pickerWrapsToTwoRows(
+        allowCustomEmoji: minSequoia,
+        contentWidth: reactionRowContentWidth,
+        availableWidth: reactionPickerAvailableWidth);
+    // On Sequoia the row stays on one line and scrolls past the available width
+    Widget scrollOnSequoia(Widget row) => minSequoia
+        ? ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: max(0.0, reactionPickerAvailableWidth - 10)),
+            child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: row),
+          )
+        : row;
 
     return Theme(
       data: context.theme.copyWith(
@@ -364,7 +384,7 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
                                     color: context.theme.colorScheme.surfaceContainerHighest
                                         .withAlpha(iOS ? 150 : 255)
                                         .lightenOrDarken(iOS ? 0 : 10),
-                                    child: Column(
+                                    child: scrollOnSequoia(Column(
                                         mainAxisSize: MainAxisSize.min,
                                         children: List.generate(narrowScreen ? 2 : 1, (index) {
                                           return Row(
@@ -457,7 +477,7 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
                                               );
                                             }).toList(),
                                           );
-                                        })),
+                                        }))),
                                   ),
                                 ),
                               ),
