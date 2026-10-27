@@ -759,6 +759,7 @@ class OutgoingMessageHandler {
               subject: m.subject,
               partIndex: int.tryParse(m.threadOriginatorPart?.split(':').firstOrNull ?? ''),
               ddScan: !SettingsSvc.serverDetails.isMinSonoma && m.text!.hasUrl,
+              chatLookup: SendMessageInterface.chatLookup(c),
             )
           : SendMessageInterface.sendTapback(
               chatGuid: c.guid,
@@ -766,6 +767,7 @@ class OutgoingMessageHandler {
               selectedMessageGuid: selected.guid!,
               reaction: r,
               partIndex: m.associatedMessagePart,
+              chatLookup: SendMessageInterface.chatLookup(c),
             ),
       onSuccess: (data) => _finalizeOutgoingSuccess(
         c, tempGuid, data,
@@ -840,6 +842,7 @@ class OutgoingMessageHandler {
         effectId: m.expressiveSendStyleId,
         partIndex: int.tryParse(m.threadOriginatorPart?.split(':').firstOrNull ?? ''),
         ddScan: !SettingsSvc.serverDetails.isMinSonoma && parts.any((e) => e['text'].toString().hasUrl),
+        chatLookup: SendMessageInterface.chatLookup(c),
       ),
       onSuccess: (data) => _finalizeOutgoingSuccess(c, tempGuid, data),
       onError: (error, stack) => _finalizeOutgoingFailure(
@@ -894,6 +897,7 @@ class OutgoingMessageHandler {
         effectId: m.expressiveSendStyleId,
         partIndex: int.tryParse(m.threadOriginatorPart?.split(':').firstOrNull ?? ''),
         isAudioMessage: isAudioMessage,
+        chatLookup: SendMessageInterface.chatLookup(c),
       ),
       onSuccess: (Map<String, dynamic> data) async {
         final newMessage = Message.fromMap(data['data']);

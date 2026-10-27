@@ -1,3 +1,4 @@
+import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/services/backend/actions/send_message_actions.dart';
 import 'package:bluebubbles/services/isolates/global_isolate.dart';
@@ -9,6 +10,18 @@ import 'package:get_it/get_it.dart';
 /// in-flight sends survive the app being backgrounded.  When already running
 /// inside the isolate, calls the action directly.
 class SendMessageInterface {
+  /// Hints that let the server find [chat] when the Mac doesn't know its GUID (e.g. after
+  /// a new Mac or a chat.db reset): the Messages group id, the service and, for 1:1 chats
+  /// only, the participant's address.
+  static Map<String, dynamic> chatLookup(Chat chat) {
+    final addresses = (chat.handles.isEmpty ? chat.participants : chat.handles).map((h) => h.address).toList();
+    return {
+      if (chat.groupId?.isNotEmpty ?? false) 'groupId': chat.groupId,
+      if (chat.guid.contains(';-;') && addresses.length == 1) 'participants': addresses,
+      'service': chat.service.method,
+    };
+  }
+
   /// Sends a text message and returns the decoded server response body.
   static Future<Map<String, dynamic>> sendTextMessage({
     required String chatGuid,
@@ -20,6 +33,7 @@ class SendMessageInterface {
     String? selectedMessageGuid,
     int? partIndex,
     bool? ddScan,
+    Map<String, dynamic>? chatLookup,
   }) async {
     final data = {
       'chatGuid': chatGuid,
@@ -31,6 +45,7 @@ class SendMessageInterface {
       'selectedMessageGuid': selectedMessageGuid,
       'partIndex': partIndex,
       'ddScan': ddScan,
+      'chatLookup': chatLookup,
     };
     if (isIsolate) {
       return await SendMessageActions.sendTextMessage(data);
@@ -45,6 +60,7 @@ class SendMessageInterface {
     required String selectedMessageGuid,
     required String reaction,
     int? partIndex,
+    Map<String, dynamic>? chatLookup,
   }) async {
     final data = {
       'chatGuid': chatGuid,
@@ -52,6 +68,7 @@ class SendMessageInterface {
       'selectedMessageGuid': selectedMessageGuid,
       'reaction': reaction,
       'partIndex': partIndex,
+      'chatLookup': chatLookup,
     };
     if (isIsolate) {
       return await SendMessageActions.sendTapback(data);
@@ -70,6 +87,7 @@ class SendMessageInterface {
     String? selectedMessageGuid,
     int? partIndex,
     bool? ddScan,
+    Map<String, dynamic>? chatLookup,
   }) async {
     final data = {
       'chatGuid': chatGuid,
@@ -80,6 +98,7 @@ class SendMessageInterface {
       'selectedMessageGuid': selectedMessageGuid,
       'partIndex': partIndex,
       'ddScan': ddScan,
+      'chatLookup': chatLookup,
     };
     if (isIsolate) {
       return await SendMessageActions.sendMultipartMessage(data);
@@ -104,6 +123,7 @@ class SendMessageInterface {
     String? selectedMessageGuid,
     int? partIndex,
     bool? isAudioMessage,
+    Map<String, dynamic>? chatLookup,
   }) async {
     final data = {
       'chatGuid': chatGuid,
@@ -117,6 +137,7 @@ class SendMessageInterface {
       'selectedMessageGuid': selectedMessageGuid,
       'partIndex': partIndex,
       'isAudioMessage': isAudioMessage ?? false,
+      'chatLookup': chatLookup,
     };
     if (isIsolate) {
       return await SendMessageActions.sendAttachmentMessage(data);

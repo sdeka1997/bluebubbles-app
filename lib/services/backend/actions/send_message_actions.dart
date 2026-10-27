@@ -21,6 +21,7 @@ class SendMessageActions {
     final selectedMessageGuid = map['selectedMessageGuid'] as String?;
     final partIndex = map['partIndex'] as int?;
     final ddScan = map['ddScan'] as bool?;
+    final chatLookup = (map['chatLookup'] as Map?)?.cast<String, dynamic>();
 
     final response = await HttpSvc.message.sendText(
       chatGuid,
@@ -32,6 +33,7 @@ class SendMessageActions {
       selectedMessageGuid: selectedMessageGuid,
       partIndex: partIndex,
       ddScan: ddScan,
+      chatLookup: chatLookup,
     );
     return response.data as Map<String, dynamic>;
   }
@@ -44,6 +46,7 @@ class SendMessageActions {
     final selectedMessageGuid = map['selectedMessageGuid'] as String;
     final reaction = map['reaction'] as String;
     final partIndex = map['partIndex'] as int?;
+    final chatLookup = (map['chatLookup'] as Map?)?.cast<String, dynamic>();
 
     final response = await HttpSvc.message.sendTapback(
       chatGuid,
@@ -51,6 +54,7 @@ class SendMessageActions {
       selectedMessageGuid,
       reaction,
       partIndex: partIndex,
+      chatLookup: chatLookup,
     );
     return response.data as Map<String, dynamic>;
   }
@@ -66,6 +70,7 @@ class SendMessageActions {
     final selectedMessageGuid = map['selectedMessageGuid'] as String?;
     final partIndex = map['partIndex'] as int?;
     final ddScan = map['ddScan'] as bool?;
+    final chatLookup = (map['chatLookup'] as Map?)?.cast<String, dynamic>();
 
     final response = await HttpSvc.message.sendMultipart(
       chatGuid,
@@ -76,6 +81,7 @@ class SendMessageActions {
       selectedMessageGuid: selectedMessageGuid,
       partIndex: partIndex,
       ddScan: ddScan,
+      chatLookup: chatLookup,
     );
     return response.data as Map<String, dynamic>;
   }
@@ -97,6 +103,7 @@ class SendMessageActions {
     final selectedMessageGuid = map['selectedMessageGuid'] as String?;
     final partIndex = map['partIndex'] as int?;
     final isAudioMessage = map['isAudioMessage'] as bool? ?? false;
+    final chatLookup = (map['chatLookup'] as Map?)?.cast<String, dynamic>();
 
     final response = await HttpSvc.message.sendAttachment(
       chatGuid,
@@ -112,6 +119,7 @@ class SendMessageActions {
       selectedMessageGuid: selectedMessageGuid,
       partIndex: partIndex,
       isAudioMessage: isAudioMessage,
+      chatLookup: chatLookup,
       onSendProgress: (count, total) {
         if (total <= 0) return;
         IsolateEventEmitter.emit(
