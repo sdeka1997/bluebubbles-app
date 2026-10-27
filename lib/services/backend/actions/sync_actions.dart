@@ -184,6 +184,7 @@ class SyncActions {
           chatToSave.displayName = inputChat.displayName;
         }
         chatToSave.chatIdentifier ??= inputChat.chatIdentifier;
+        chatToSave.groupId = inputChat.groupId ?? chatToSave.groupId;
         chatToSave.style ??= inputChat.style;
         if (inputChat.isArchived == true) chatToSave.isArchived = true;
       }

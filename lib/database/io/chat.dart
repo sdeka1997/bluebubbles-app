@@ -25,6 +25,7 @@ class Chat {
   String guid;
 
   String? chatIdentifier;
+  String? groupId;
   bool? isArchived;
   String? muteType;
   String? muteArgs;
@@ -118,6 +119,7 @@ class Chat {
     this.id,
     required this.guid,
     this.chatIdentifier,
+    this.groupId,
     this.isArchived = false,
     this.isPinned = false,
     this.muteType,
@@ -157,6 +159,7 @@ class Chat {
       id: json["ROWID"] ?? json["id"],
       guid: json["guid"],
       chatIdentifier: json["chatIdentifier"],
+      groupId: json["groupId"],
       participants:
           (json['participants'] as List? ?? []).map((e) => Handle.fromMap(e!.cast<String, Object>())).toList(),
       isArchived: json['isArchived'] ?? false,
@@ -800,6 +803,7 @@ class Chat {
       textFieldAttachments.addAll(other.textFieldAttachments);
     }
     chatIdentifier ??= other.chatIdentifier;
+    groupId = other.groupId ?? groupId;
     displayName ??= other.displayName;
     if (handles.isEmpty) {
       handles.addAll(other.handles);
@@ -876,6 +880,7 @@ class Chat {
       "ROWID": id,
       "guid": guid,
       "chatIdentifier": chatIdentifier,
+      "groupId": groupId,
       "isArchived": isArchived!,
       "muteType": muteType,
       "muteArgs": muteArgs,

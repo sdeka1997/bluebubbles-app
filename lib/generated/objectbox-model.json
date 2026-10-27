@@ -104,7 +104,7 @@
     },
     {
       "id": "3:9017250848141753702",
-      "lastPropertyId": "39:738307263391205523",
+      "lastPropertyId": "40:1919316201223924951",
       "name": "Chat",
       "properties": [
         {
@@ -251,6 +251,11 @@
         {
           "id": "39:738307263391205523",
           "name": "dynamicWallpaperConfig",
+          "type": 9
+        },
+        {
+          "id": "40:1919316201223924951",
+          "name": "groupId",
           "type": 9
         }
       ],

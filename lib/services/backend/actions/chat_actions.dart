@@ -654,6 +654,7 @@ class ChatActions {
           if (!chatToSave.lockChatName) {
             chatToSave.displayName = inputChat.displayName;
           }
+          chatToSave.groupId = inputChat.groupId ?? chatToSave.groupId;
         }
 
         // Prepare handles to link (collect them for later)
