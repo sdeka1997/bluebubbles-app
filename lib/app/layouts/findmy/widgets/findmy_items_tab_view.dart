@@ -13,16 +13,13 @@ bool _hasDisplayLocation(FindMyDevice item) {
   return (label?.isNotEmpty ?? false) || (address?.isNotEmpty ?? false);
 }
 
-const _audioPartRoles = {'left', 'right', 'case', 'single'};
-
-String? _audioPartRole(FindMyDevice item) {
-  final role = item.name?.trim().toLowerCase();
+bool _isAppleAudioComponent(FindMyDevice item) {
   final isHawkeye = item.deviceModel == 'hawkeye' || item.deviceClass == 'hawkeye';
-  return item.isAppleAudioAccessory && isHawkeye && _audioPartRoles.contains(role) ? role : null;
+  return item.isAppleAudioAccessory && isHawkeye;
 }
 
 String? _componentGroupId(FindMyDevice item) {
-  if (_audioPartRole(item) == null || !(item.groupName?.trim().isNotEmpty ?? false)) return null;
+  if (!_isAppleAudioComponent(item) || !(item.groupName?.trim().isNotEmpty ?? false)) return null;
   final id = item.groupIdentifier?.trim();
   return (id?.isNotEmpty ?? false) ? id : null;
 }
@@ -62,7 +59,7 @@ List<FindMyDevice> collapseFindMyAccessoryComponents(List<FindMyDevice> items) {
     groupsByName.putIfAbsent(name, () => []).add(entry.key);
   }
   final parentsByName = <String, List<FindMyDevice>>{};
-  for (final item in items.where((item) => _audioPartRole(item) == null && item.deviceClass == 'Accessory')) {
+  for (final item in items.where((item) => !_isAppleAudioComponent(item) && item.deviceClass == 'Accessory')) {
     final name = item.name?.trim().toLowerCase();
     if (name?.isNotEmpty ?? false) parentsByName.putIfAbsent(name!, () => []).add(item);
   }
@@ -84,11 +81,10 @@ List<FindMyDevice> collapseFindMyAccessoryComponents(List<FindMyDevice> items) {
       continue;
     }
 
-    final role = _audioPartRole(item);
     final suffix = _serialSuffix(item);
     final product = item.productIdentifier?.trim();
     final isWeakOrphan =
-        role != null &&
+        _isAppleAudioComponent(item) &&
         (item.groupIdentifier?.isNotEmpty ?? false) &&
         !(item.groupName?.isNotEmpty ?? false) &&
         _locationQuality(item) == 0 &&
@@ -97,7 +93,7 @@ List<FindMyDevice> collapseFindMyAccessoryComponents(List<FindMyDevice> items) {
     if (isWeakOrphan) {
       final matches = activeComponents.where(
         (candidate) =>
-            _audioPartRole(candidate) == role &&
+            _isAppleAudioComponent(candidate) &&
             candidate.productIdentifier?.trim() == product &&
             _serialSuffix(candidate) == suffix,
       );
