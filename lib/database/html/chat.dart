@@ -511,7 +511,10 @@ class Chat {
 
   bool get isIMessage => service == ChatServiceType.iMessage;
 
-  String get composerLabel => isIMessage ? 'iMessage' : 'Text Message • ${service.label}';
+  /// Composer placeholder for the service the conversation is using now: the
+  /// newest message's sender service when known, otherwise this chat's own.
+  String composerLabel([Message? latestMessage]) =>
+      ChatServiceType.current(service, latestMessageService: latestMessage?.getHandle()?.service).composerLabel;
 
   bool get isGroup => participants.length > 1 || style == 43;
 

@@ -269,8 +269,8 @@ class TextFieldComponentState extends State<TextFieldComponent> {
                         color: context.theme.colorScheme.surfaceContainerHighest,
                       ),
                     Obx(() {
-                      final chatTitle =
-                          chat == null ? null : (ChatsSvc.getChatState(chat!.guid)?.title.value ?? chat!.getTitle());
+                      final chatState = chat == null ? null : ChatsSvc.getChatState(chat!.guid);
+                      final chatTitle = chat == null ? null : (chatState?.title.value ?? chat!.getTitle());
                       return TextField(
                         textCapitalization: TextCapitalization.sentences,
                         focusNode: controller?.focusNode ?? focusNode,
@@ -299,7 +299,7 @@ class TextFieldComponentState extends State<TextFieldComponent> {
                                       ? ""
                                       : chatTitle ?? ""
                                   : !isRecording
-                                      ? chat!.composerLabel
+                                      ? chat!.composerLabel(chatState?.latestMessage.value ?? chat!.dbLatestMessage.target)
                                       : "",
                           enabledBorder: InputBorder.none,
                           border: InputBorder.none,
