@@ -52,6 +52,57 @@ void main() {
     });
   });
 
+  group('updateGroupIdsFromRemote', () {
+    test('updates only group ids returned by a new server', () {
+      final first = Chat(id: 1, guid: 'SMS;-;+155****1111');
+      final second = Chat(id: 2, guid: 'RCS;-;+155****1111', groupId: 'old');
+      final untouched = Chat(id: 3, guid: 'iMessage;-;+155****2222', groupId: 'keep');
+
+      final changed = updateGroupIdsFromRemote(
+        [first, second, untouched],
+        [
+          {'guid': first.guid, 'groupId': 'G1'},
+          {'guid': second.guid, 'groupId': 'G1'},
+          {'guid': untouched.guid},
+          {'guid': 'missing-locally', 'groupId': 'G2'},
+        ],
+      );
+
+      expect(changed, [first, second]);
+      expect(first.groupId, 'G1');
+      expect(second.groupId, 'G1');
+      expect(untouched.groupId, 'keep');
+    });
+
+    test('does not write when the group id is unchanged', () {
+      final chat = Chat(id: 1, guid: 'SMS;-;+155****1111', groupId: 'G1');
+      expect(
+        updateGroupIdsFromRemote(
+          [chat],
+          [
+            {'guid': chat.guid, 'groupId': 'G1'},
+          ],
+        ),
+        isEmpty,
+      );
+    });
+
+    test('accepts a real null from a capable server but ignores old servers that omit the field', () {
+      final cleared = Chat(id: 1, guid: 'SMS;-;+155****1111', groupId: 'G1');
+      final legacy = Chat(id: 2, guid: 'SMS;-;+155****2222', groupId: 'G2');
+      final changed = updateGroupIdsFromRemote(
+        [cleared, legacy],
+        [
+          {'guid': cleared.guid, 'groupId': null},
+          {'guid': legacy.guid},
+        ],
+      );
+      expect(changed, [cleared]);
+      expect(cleared.groupId, isNull);
+      expect(legacy.groupId, 'G2');
+    });
+  });
+
   group('carryOverThreadSettings', () {
     test('the thread takes over pin, mute, archive and a custom name from a folded twin', () {
       final thread = Chat(id: 1, guid: 'SMS;-;+155****1111', groupId: 'G1');
@@ -75,8 +126,22 @@ void main() {
     });
 
     test("never overrides what the thread already has", () {
-      final thread = Chat(id: 1, guid: 'SMS;-;+155****1111', groupId: 'G1', muteType: 'temporary_mute', displayName: 'Mine', lockChatName: true);
-      final twin = Chat(id: 2, guid: 'RCS;-;+155****1111', groupId: 'G1', muteType: 'mute', displayName: 'Theirs', lockChatName: true);
+      final thread = Chat(
+        id: 1,
+        guid: 'SMS;-;+155****1111',
+        groupId: 'G1',
+        muteType: 'temporary_mute',
+        displayName: 'Mine',
+        lockChatName: true,
+      );
+      final twin = Chat(
+        id: 2,
+        guid: 'RCS;-;+155****1111',
+        groupId: 'G1',
+        muteType: 'mute',
+        displayName: 'Theirs',
+        lockChatName: true,
+      );
       expect(carryOverThreadSettings(thread, [twin]), isFalse);
       expect(thread.muteType, 'temporary_mute');
       expect(thread.displayName, 'Mine');
