@@ -1,4 +1,5 @@
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/helpers/types/helpers/chat_metadata_helpers.dart';
 import 'package:bluebubbles/services/backend/settings/settings_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get_it/get_it.dart';
@@ -53,6 +54,42 @@ void main() {
 
       expect(chat.mergeSpamFlag(Chat.fromMap({'guid': 'chat', 'isFilteredAsSpam': true})), isTrue);
       expect(chat.isFilteredAsSpam, isTrue);
+    });
+  });
+
+  group('refreshing stored verdicts from the server chat list', () {
+    test('updates true and false verdicts but ignores omitted flags', () {
+      final spam = Chat(guid: 'spam');
+      final restored = Chat(guid: 'restored', isFilteredAsSpam: true);
+      final legacy = Chat(guid: 'legacy', isFilteredAsSpam: true);
+
+      final changed = updateSpamFlagsFromRemote(
+        [spam, restored, legacy],
+        [
+          {'guid': 'spam', 'isFilteredAsSpam': true},
+          {'guid': 'restored', 'isFilteredAsSpam': false},
+          {'guid': 'legacy'},
+          {'guid': 'not-local', 'isFilteredAsSpam': true},
+        ],
+      );
+
+      expect(changed, [spam, restored]);
+      expect(spam.isFilteredAsSpam, isTrue);
+      expect(restored.isFilteredAsSpam, isFalse);
+      expect(legacy.isFilteredAsSpam, isTrue);
+    });
+
+    test('does not write an unchanged verdict', () {
+      final chat = Chat(guid: 'chat', isFilteredAsSpam: true);
+      expect(
+        updateSpamFlagsFromRemote(
+          [chat],
+          [
+            {'guid': 'chat', 'isFilteredAsSpam': true},
+          ],
+        ),
+        isEmpty,
+      );
     });
   });
 

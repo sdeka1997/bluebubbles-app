@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/ui/async_task.dart';
+import 'package:bluebubbles/helpers/types/helpers/chat_metadata_helpers.dart';
 import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/helpers/ui/ui_helpers.dart';
 import 'package:bluebubbles/services/backend/interfaces/contact_v2_interface.dart';
@@ -57,7 +58,7 @@ class SyncService {
     await _manager!.start();
   }
 
-  Future<void> _refreshServiceTwinGroups() async {
+  Future<void> _refreshServerChatMetadata() async {
     if (kIsWeb) return;
     try {
       const pageSize = 1000;
@@ -80,27 +81,38 @@ class SyncService {
 
       final localChats = Database.chats.getAll();
       late Map<String, Chat> folded;
-      var updated = 0;
+      late List<Chat> changed;
       Database.runInTransaction(TxMode.write, () {
-        final changed = updateGroupIdsFromRemote(localChats, remoteChats);
-        updated = changed.length;
+        changed = {
+          ...updateGroupIdsFromRemote(localChats, remoteChats),
+          ...updateSpamFlagsFromRemote(localChats, remoteChats),
+        }.toList();
         if (changed.isNotEmpty) Database.chats.putMany(changed);
         folded = foldServiceTwins(localChats);
       });
 
+      // Apply spam changes to the live list immediately. addChat also refuses
+      // folded twins, so restored non-spam chats return without exposing twins.
+      for (final chat in changed) {
+        if (chat.isFilteredAsSpam == true) {
+          ChatsSvc.removeChat(chat);
+        } else {
+          await ChatsSvc.addChat(chat, immediate: true);
+        }
+      }
       for (final entry in folded.entries) {
         final twin = localChats.where((chat) => chat.guid == entry.key).firstOrNull;
         if (twin != null) ChatsSvc.removeChat(twin);
         await ChatsSvc.addChat(entry.value, immediate: true);
       }
       Logger.info(
-        'Refreshed group ids for $updated chats; folded ${folded.length} service twins',
+        'Refreshed metadata for ${changed.length} chats; folded ${folded.length} service twins',
         tag: 'Service Twins',
       );
     } catch (e, stack) {
       // Metadata refresh is additive. A transient failure must never block the
       // ordinary incremental message sync that follows it.
-      Logger.warn('Could not refresh service-twin group ids', error: e, trace: stack, tag: 'Service Twins');
+      Logger.warn('Could not refresh server chat metadata', error: e, trace: stack, tag: 'Service Twins');
     }
   }
 
@@ -130,7 +142,7 @@ class SyncService {
     // metadata on every real startup/resume sync, then fold any newly discovered
     // service twins. This is intentionally not a full chat resync: local names,
     // pinning, mute, archive and other app-owned settings remain untouched.
-    await _refreshServiceTwinGroups();
+    await _refreshServerChatMetadata();
 
     // Per-page tracking: record message IDs and chat subtitle message IDs that were
     // already applied by per-page events so the final return can skip redundant work.
