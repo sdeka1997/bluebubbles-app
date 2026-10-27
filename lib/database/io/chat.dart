@@ -792,7 +792,7 @@ class Chat {
   /// Composer placeholder for the service the conversation is using now: the
   /// newest message's sender service when known, otherwise this chat's own.
   String composerLabel([Message? latestMessage]) =>
-      ChatServiceType.current(service, latestMessageService: latestMessage?.getHandle()?.service).composerLabel;
+      ChatServiceType.current(service, latestMessageService: latestMessage?.service ?? latestMessage?.getHandle()?.service).composerLabel;
 
   // Check style first so handles isn't required to be evaluated, which will incur a DB lookup.
   bool get isGroup => style == 43 || handles.length > 1;

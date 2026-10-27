@@ -23,6 +23,7 @@ class Message {
   String? text;
   String? subject;
   String? country;
+  String? service;
   DateTime? dateCreated;
   bool? isFromMe;
   // Data detector results
@@ -82,6 +83,7 @@ class Message {
     this.text,
     this.subject,
     this.country,
+    this.service,
     int? error,
     this.dateCreated,
     DateTime? dateRead,
@@ -174,6 +176,7 @@ class Message {
       text: sanitizeString(json["text"] ?? attributedBody.firstOrNull?.string),
       subject: json["subject"],
       country: json["country"],
+      service: json["service"],
       error: json["_error"] ?? 0,
       dateCreated: parseDate(json["dateCreated"]),
       dateRead: parseDate(json["dateRead"]),
@@ -509,6 +512,7 @@ class Message {
   static Message merge(Message existing, Message newMessage) {
     existing.id ??= newMessage.id;
     existing.guid ??= newMessage.guid;
+    existing.service ??= newMessage.service;
 
     // Update date created
     if ((existing.dateCreated == null && newMessage.dateCreated != null) ||
@@ -631,6 +635,7 @@ class Message {
       "text": sanitizeString(text),
       "subject": subject,
       "country": country,
+      "service": service,
       "_error": _error.value,
       "dateCreated": dateCreated?.millisecondsSinceEpoch,
       "dateRead": _dateRead.value?.millisecondsSinceEpoch,

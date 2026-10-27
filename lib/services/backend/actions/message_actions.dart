@@ -42,6 +42,7 @@ class MessageActions {
       if (inputNewMessage.text != null) {
         existing.text = inputNewMessage.text;
       }
+      existing.service ??= inputNewMessage.service;
 
       existing.dateDelivered = inputNewMessage.dateDelivered ?? existing.dateDelivered;
       existing.isDelivered = inputNewMessage.isDelivered;
@@ -160,6 +161,7 @@ class MessageActions {
       if (existing != null) {
         inputMessage.id = existing.id;
         inputMessage.text ??= existing.text;
+        inputMessage.service ??= existing.service;
 
         // Preserve existing handleRelation if available
         if (existing.handleRelation.hasValue && !inputMessage.handleRelation.hasValue) {

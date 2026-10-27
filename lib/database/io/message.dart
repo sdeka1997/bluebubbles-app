@@ -32,6 +32,9 @@ class Message {
   String? subject;
   String? country;
 
+  /// The service Messages sent this message over (iMessage, SMS or RCS).
+  String? service;
+
   @Index()
   DateTime? dateCreated;
 
@@ -155,6 +158,7 @@ class Message {
     this.text,
     this.subject,
     this.country,
+    this.service,
     int? error,
     this.errorMessage,
     this.dateCreated,
@@ -250,6 +254,7 @@ class Message {
       text: sanitizeString(attributedBody.firstOrNull?.string ?? json["text"]),
       subject: json["subject"],
       country: json["country"],
+      service: json["service"],
       error: json["error"] ?? json["_error"] ?? 0,
       errorMessage: json['errorMessage'] as String?,
       dateCreated: parseDate(json["dateCreated"]),
@@ -295,6 +300,7 @@ class Message {
       if (existing != null) {
         id = existing.id;
         text ??= existing.text;
+        service ??= existing.service;
 
         // Phase 2: Preserve the handle relationship from existing message
         if (existing.handleRelation.hasValue) {
@@ -813,6 +819,7 @@ class Message {
   static Message merge(Message existing, Message newMessage) {
     existing.id ??= newMessage.id;
     existing.guid ??= newMessage.guid;
+    existing.service ??= newMessage.service;
 
     // Update date created
     if ((existing.dateCreated == null && newMessage.dateCreated != null) ||
@@ -996,6 +1003,7 @@ class Message {
       "text": sanitizeString(text),
       "subject": subject,
       "country": country,
+      "service": service,
       "_error": _error.value,
       "errorMessage": errorMessage,
       "dateCreated": dateCreated?.millisecondsSinceEpoch,
