@@ -3,10 +3,16 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 
-/// Delays before each quiet retry of a failed incremental sync. A Wi-Fi to
-/// cellular handoff drops DNS and open connections for a few seconds; the
-/// socket is usually back well inside this window.
-const List<Duration> syncRetryDelays = [Duration(seconds: 3), Duration(seconds: 10)];
+/// Delays before each quiet retry of a failed incremental sync, about two
+/// minutes in all. A Wi-Fi to cellular handoff drops DNS for a few seconds,
+/// and a quick tunnel's freshly issued hostname can fail to resolve for well
+/// over a minute, so a short window still ends in the error toast.
+const List<Duration> syncRetryDelays = [
+  Duration(seconds: 5),
+  Duration(seconds: 15),
+  Duration(seconds: 30),
+  Duration(seconds: 60),
+];
 
 /// Whether [error] is a network blip worth retrying rather than reporting.
 /// Errors from the sync isolate arrive as their `toString()`, so strings are
@@ -35,17 +41,19 @@ bool isTransientSyncError(Object error) {
 }
 
 /// Runs [attempt], retrying after each of [syncRetryDelays] while it fails
-/// with a transient network error. Any other error, or the last transient
-/// one, is rethrown.
+/// with a transient network error, and telling [onRetry] before each wait.
+/// Any other error, or the last transient one, is rethrown.
 Future<T> retryTransientSync<T>(
   Future<T> Function() attempt, {
   Future<void> Function(Duration delay) wait = _wait,
+  void Function(Object error, Duration delay)? onRetry,
 }) async {
   for (final delay in syncRetryDelays) {
     try {
       return await attempt();
     } catch (e) {
       if (!isTransientSyncError(e)) rethrow;
+      onRetry?.call(e, delay);
     }
     await wait(delay);
   }

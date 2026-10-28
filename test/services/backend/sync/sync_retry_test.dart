@@ -71,10 +71,10 @@ void main() {
 
       expect(result, 'synced');
       expect(attempts, 2);
-      expect(waits, [const Duration(seconds: 3)]);
+      expect(waits, [const Duration(seconds: 5)]);
     });
 
-    test('a sync that keeps failing surfaces the error once after both retries', () async {
+    test('a sync that keeps failing surfaces the error once, after about two minutes of retries', () async {
       var attempts = 0;
       await expectLater(
         retryTransientSync<void>(() async {
@@ -84,8 +84,24 @@ void main() {
         throwsA(isA<SocketException>()),
       );
 
-      expect(attempts, 3);
-      expect(waits, [const Duration(seconds: 3), const Duration(seconds: 10)]);
+      // A quick tunnel's new hostname can fail to resolve for well over the
+      // 13 s the first version waited; six lookups failed inside it live.
+      expect(attempts, 5);
+      expect(waits, const [Duration(seconds: 5), Duration(seconds: 15), Duration(seconds: 30), Duration(seconds: 60)]);
+      expect(waits.fold<Duration>(Duration.zero, (a, b) => a + b), const Duration(seconds: 110));
+    });
+
+    test('each quiet retry is reported so the log shows why a sync was slow', () async {
+      final retries = <String>[];
+      var attempts = 0;
+      await retryTransientSync(() async {
+        if (++attempts < 3) throw const SocketException("Failed host lookup: 'x.trycloudflare.com'");
+        return 'synced';
+      }, wait: noWait, onRetry: (error, delay) => retries.add('${delay.inSeconds}s: $error'));
+
+      expect(retries, hasLength(2));
+      expect(retries.first, startsWith('5s: SocketException: Failed host lookup'));
+      expect(retries.last, startsWith('15s: '));
     });
 
     test('a non-network failure surfaces immediately', () async {

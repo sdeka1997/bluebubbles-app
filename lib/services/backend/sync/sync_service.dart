@@ -131,7 +131,11 @@ class SyncService {
       // Retried inside this guarded call so a reconnect-triggered sync can't
       // overlap it; only a failure that outlasts the retries reaches the toast.
       final syncedMessages =
-          await retryTransientSync(() => SyncInterface.performIncrementalSync(useGlobalIsolate: useGlobalIsolate));
+          await retryTransientSync(
+        () => SyncInterface.performIncrementalSync(useGlobalIsolate: useGlobalIsolate),
+        onRetry: (error, delay) => Logger.warn('Incremental sync hit a network error, retrying in ${delay.inSeconds}s',
+            error: error, tag: 'Incremental Chat Sync'),
+      );
       if (syncedMessages.isNotEmpty) {
         // latestMessageIdPerChat is keyed by chat GUID, so syncedMessages already contains
         // at most one message per chat. Deduplicate defensively by keeping the latest
