@@ -13,7 +13,6 @@ Sub-widgets for the new conversation creation UI.
 | `chat_list_section.dart` | Section showing existing chats matching the search query |
 | `chat_creator_tile.dart` | Single existing-chat row item in chat_list_section |
 | `message_type_toggle.dart` | iMessage / SMS toggle switch |
-| `service_type_picker.dart` | Picker for selecting message service type (iMessage, SMS, RCS) |
 
 ## Related
 - Parent view: `../CLAUDE.md` (chat_creator)

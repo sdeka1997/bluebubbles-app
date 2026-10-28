@@ -36,6 +36,7 @@ class ChatCreatorController extends StatefulController {
   final RxList<Chat> filteredChats = <Chat>[].obs;
   final RxList<ContactV2> filteredContacts = <ContactV2>[].obs;
   final Rxn<ConversationViewController> activeController = Rxn(null);
+  /// Derived from the recipients' iMessage availability; never picked by hand.
   final Rx<ChatServiceType> selectedService = ChatServiceType.iMessage.obs;
   final RxBool isHeaderVisible = true.obs;
 
@@ -53,10 +54,16 @@ class ChatCreatorController extends StatefulController {
   Timer? _debounce;
   MessagesService? messagesService;
   Completer<void>? _createCompleter;
+  final Map<String, Future<void>> _availabilityChecks = {};
   final RxString currentQuery = ''.obs;
   final RxBool isSending = false.obs;
 
   bool get canCreateGroupChats => SettingsSvc.canCreateGroupChatSync();
+
+  /// Picks the chat on [service] among chats matching the recipients, else the
+  /// first match — a folded service twin can be the only thread left.
+  static Chat? preferredMatch(Iterable<Chat> matches, ChatServiceType service) =>
+      matches.where((c) => c.isIMessage == service.isIMessageService).firstOrNull ?? matches.firstOrNull;
 
   @override
   void onInit() {
@@ -66,11 +73,8 @@ class ChatCreatorController extends StatefulController {
 
     selectedContacts.addAll(initialSelected);
 
-    // Auto-select service based on pre-selected contacts' known iMessage status.
-    // If any initial contact is explicitly non-iMessage, start on SMS.
-    if (initialSelected.any((c) => c.serviceType.value == ChatServiceType.sms)) {
-      selectedService.value = ChatServiceType.sms;
-    }
+    // Pre-selected contacts may already know their iMessage status.
+    _updateService();
 
     _loadData();
 
@@ -112,11 +116,10 @@ class ChatCreatorController extends StatefulController {
     final selectedAddresses = selectedContacts.map((c) => c.address.toLowerCase()).toSet();
 
     bool contactNotFullySelected(ContactV2 e) {
-      // "Fully selected" means every address valid for the current service is
-      // already in selectedContacts. Keep the contact visible if at least one
-      // valid address remains un-selected.
+      // "Fully selected" means every address is already in selectedContacts.
+      // Keep the contact visible if at least one address remains un-selected.
       final validAddresses = [
-        if (selectedService.value == ChatServiceType.iMessage) ...e.emailAddresses.map((a) => a.address.toLowerCase()),
+        ...e.emailAddresses.map((a) => a.address.toLowerCase()),
         ...e.phoneNumbers.map((p) => p.number.toLowerCase()),
       ];
       if (validAddresses.isEmpty) return false;
@@ -124,23 +127,21 @@ class ChatCreatorController extends StatefulController {
     }
 
     if (query.isEmpty && selectedContacts.isNotEmpty) {
-      // Show all chats for current service type while contacts are selected;
-      // actual matching is done in findExistingChat.
-      final chats = _allChats.where(_chatMatchesService).toList();
-      return _SearchResult(chats: chats, contacts: []);
+      // Show all chats while contacts are selected; actual matching is done in
+      // findExistingChat.
+      return _SearchResult(chats: List.of(_allChats), contacts: []);
     }
 
     if (query.isEmpty) {
       return _SearchResult(
-        chats: _allChats.where(_chatMatchesService).toList(),
-        contacts: _allContacts.where((e) => _contactHasAddressForService(e) && contactNotFullySelected(e)).toList(),
+        chats: List.of(_allChats),
+        contacts: _allContacts.where(contactNotFullySelected).toList(),
       );
     }
 
     final q = query.toLowerCase();
     final contacts = _allContacts
         .where((e) =>
-            _contactHasAddressForService(e) &&
             contactNotFullySelected(e) &&
             (e.computedDisplayName.toLowerCase().contains(q) ||
                 (e.nickname?.toLowerCase().contains(q) ?? false) ||
@@ -150,35 +151,11 @@ class ChatCreatorController extends StatefulController {
         .toList();
 
     final chats = _allChats.where((e) {
-      if (!_chatMatchesService(e)) return false;
       return e.getTitle().toLowerCase().contains(q) ||
           e.handles.firstWhereOrNull((h) => h.address.contains(q) || h.displayName.toLowerCase().contains(q)) != null;
     }).toList();
 
     return _SearchResult(chats: chats, contacts: contacts);
-  }
-
-  bool _chatMatchesService(Chat c) {
-    switch (selectedService.value) {
-      case ChatServiceType.iMessage:
-        return c.isIMessage;
-      case ChatServiceType.sms:
-        return !c.isIMessage;
-      case ChatServiceType.rcs:
-        return false;
-    }
-  }
-
-  /// Returns true if [c] has at least one address type valid for the selected service.
-  /// SMS/RCS only support phone numbers; iMessage supports both phone and email.
-  bool _contactHasAddressForService(ContactV2 c) {
-    switch (selectedService.value) {
-      case ChatServiceType.iMessage:
-        return c.phoneNumbers.isNotEmpty || c.emailAddresses.isNotEmpty;
-      case ChatServiceType.sms:
-      case ChatServiceType.rcs:
-        return c.phoneNumbers.isNotEmpty;
-    }
   }
 
   Future<void> _loadData() async {
@@ -196,8 +173,9 @@ class ChatCreatorController extends StatefulController {
     }
 
     // Populate initial filtered state
-    filteredChats.value = _allChats.where(_chatMatchesService).toList();
-    filteredContacts.value = _allContacts.where(_contactHasAddressForService).toList();
+    filteredChats.value = List.of(_allChats);
+    filteredContacts.value =
+        _allContacts.where((c) => c.phoneNumbers.isNotEmpty || c.emailAddresses.isNotEmpty).toList();
 
     // If we already have pre-selected contacts, try to find a matching chat
     if (selectedContacts.isNotEmpty) {
@@ -225,13 +203,44 @@ class ChatCreatorController extends StatefulController {
     filteredChats.value = result.chats;
     filteredContacts.value = result.contacts;
 
-    // Async iMessage status check for chip color
-    unawaited(_fetchIMessageState(contact));
+    // Async iMessage status check for chip color and service
+    _checkAvailability(contact);
 
     await findExistingChat();
 
     // Keep focus on the address field so the user can keep adding recipients.
     addressNode.requestFocus();
+  }
+
+  /// Asks the Mac whether [contact] is on iMessage; the answer decides the service.
+  void _checkAvailability(SelectedContact contact) {
+    _availabilityChecks[contact.address] = _fetchIMessageState(contact)
+        .then((_) => _onAvailability())
+        .catchError(
+          (e, s) => Logger.warn("Failed to apply iMessage availability", error: e, trace: s, tag: 'ChatCreatorController'),
+        );
+  }
+
+  /// Re-matches the chat only when an answer changed the service.
+  Future<void> _onAvailability() async {
+    if (!_updateService()) return;
+    if (selectedContacts.isNotEmpty && addressController.text.isEmpty) await findExistingChat();
+  }
+
+  /// Re-derives [selectedService] from the recipients; returns whether it changed.
+  bool _updateService() {
+    final service = ChatServiceType.forNewChat(
+        selectedContacts.map((c) => (address: c.address, status: c.serviceType.value)));
+    if (service == selectedService.value) return false;
+    selectedService.value = service;
+    return true;
+  }
+
+  /// Waits briefly for answers still in flight so a new chat starts on the
+  /// service the Mac picks; a recipient still unknown stays on iMessage.
+  Future<void> _awaitAvailability() async {
+    final pending = selectedContacts.map((c) => _availabilityChecks[c.address]).nonNulls;
+    await Future.wait(pending).timeout(const Duration(seconds: 5), onTimeout: () => []);
   }
 
   Future<void> _fetchIMessageState(SelectedContact contact) async {
@@ -253,7 +262,7 @@ class ChatCreatorController extends StatefulController {
     for (final c in contacts) {
       if (selectedContacts.firstWhereOrNull((s) => s.address == c.address) == null) {
         selectedContacts.add(c);
-        unawaited(_fetchIMessageState(c));
+        _checkAvailability(c);
       }
     }
     addressController.text = '';
@@ -289,43 +298,49 @@ class ChatCreatorController extends StatefulController {
   }
 
   // ---------------------------------------------------------------------------
-  // Service type toggle
-  // ---------------------------------------------------------------------------
-
-  Future<void> onServiceChanged(ChatServiceType service) async {
-    if (selectedService.value == service) return;
-    selectedService.value = service;
-    selectedContacts.clear();
-    addressController.text = '';
-    currentQuery.value = '';
-    await deactivateExistingChat();
-    filteredChats.value = _allChats.where(_chatMatchesService).toList();
-    filteredContacts.value = _allContacts.where(_contactHasAddressForService).toList();
-  }
-
-  // ---------------------------------------------------------------------------
   // Chat resolution
   // ---------------------------------------------------------------------------
 
   Future<Chat?> findExistingChat({bool checkDeleted = false, bool update = true}) async {
+    _updateService();
     if (selectedContacts.isEmpty) {
       await deactivateExistingChat();
       return null;
     }
 
-    // Auto-update service type based on selected contact iMessage status
-    final hasSmsContact = selectedContacts.firstWhereOrNull((c) => c.serviceType.value == ChatServiceType.sms) != null;
-    if (hasSmsContact) {
-      selectedService.value = ChatServiceType.sms;
-    } else {
-      selectedService.value = ChatServiceType.iMessage;
-    }
-    filteredChats.value = _allChats.where(_chatMatchesService).toList();
-
     Chat? existingChat;
 
-    // Single contact: try by chatIdentifier
-    if (selectedContacts.length == 1) {
+    // Match by participant handles, preferring the chat on the derived service.
+    // Always use the complete list here — filteredChats is narrowed by the
+    // current search query and would miss valid chats.
+    final searchList = checkDeleted ? ChatsSvc.allChats : _allChats;
+    final matched = <Chat>[];
+    for (final c in searchList) {
+      if (c.handles.length != selectedContacts.length) continue;
+      int matches = 0;
+      for (final contact in selectedContacts) {
+        for (final participant in c.handles) {
+          if (contact.address.isEmail && !participant.address.isEmail) continue;
+          if (contact.address == participant.address) {
+            matches++;
+            break;
+          }
+          final matchLengths = [15, 14, 13, 12, 11, 10, 9, 8, 7];
+          final numeric = contact.address.numericOnly();
+          if (matchLengths.contains(numeric.length) && cleansePhoneNumber(participant.address).endsWith(numeric)) {
+            matches++;
+            break;
+          }
+        }
+      }
+      if (matches == selectedContacts.length) matched.add(c);
+    }
+    // One person's 1:1 thread wins over a group with only them in it.
+    final oneToOne = selectedContacts.length == 1 ? matched.where((c) => !c.isGroup).toList() : const <Chat>[];
+    existingChat = preferredMatch(oneToOne.isNotEmpty ? oneToOne : matched, selectedService.value);
+
+    // Single contact: fall back to the chatIdentifier
+    if (existingChat == null && selectedContacts.length == 1) {
       final address = selectedContacts.first.address;
       try {
         if (kIsWeb) {
@@ -334,36 +349,6 @@ class ChatCreatorController extends StatefulController {
           existingChat = Chat.findOne(chatIdentifier: slugify(address, delimiter: ''));
         }
       } catch (_) {}
-    }
-
-    // Multi-contact: match by participant handles.
-    // Always use the complete service-filtered list here — filteredChats is
-    // narrowed by the current search query and would miss valid chats.
-    if (existingChat == null) {
-      final searchList = checkDeleted ? ChatsSvc.allChats : _allChats.where(_chatMatchesService).toList();
-      for (final c in searchList) {
-        if (c.handles.length != selectedContacts.length) continue;
-        int matches = 0;
-        for (final contact in selectedContacts) {
-          for (final participant in c.handles) {
-            if (contact.address.isEmail && !participant.address.isEmail) continue;
-            if (contact.address == participant.address) {
-              matches++;
-              break;
-            }
-            final matchLengths = [15, 14, 13, 12, 11, 10, 9, 8, 7];
-            final numeric = contact.address.numericOnly();
-            if (matchLengths.contains(numeric.length) && cleansePhoneNumber(participant.address).endsWith(numeric)) {
-              matches++;
-              break;
-            }
-          }
-        }
-        if (matches == selectedContacts.length) {
-          existingChat = c;
-          break;
-        }
-      }
     }
 
     if (update) {
@@ -479,6 +464,8 @@ class ChatCreatorController extends StatefulController {
     // recipient — do nothing instead of crashing trying to create a chat
     // with an empty participants list.
     if (selectedContacts.isEmpty && activeController.value == null) return;
+
+    if (activeController.value == null) await _awaitAvailability();
 
     // Re-check for an existing chat in case the debounce hasn't fired yet.
     Chat? resolvedChat = activeController.value?.chat ?? await findExistingChat(checkDeleted: true, update: false);

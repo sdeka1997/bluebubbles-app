@@ -33,6 +33,46 @@ void main() {
     });
   });
 
+  group('ChatServiceType.forNewChat', () {
+    test('starts on iMessage with no recipients', () {
+      expect(ChatServiceType.forNewChat(const []), ChatServiceType.iMessage);
+    });
+
+    test('uses iMessage when the Mac reports every recipient on iMessage', () {
+      expect(
+        ChatServiceType.forNewChat(const [
+          (address: '+15550000001', status: ChatServiceType.iMessage),
+          (address: '+15550000002', status: ChatServiceType.iMessage),
+        ]),
+        ChatServiceType.iMessage,
+      );
+    });
+
+    test('texts when the Mac reports any recipient off iMessage', () {
+      expect(
+        ChatServiceType.forNewChat(const [
+          (address: '+15550000001', status: ChatServiceType.iMessage),
+          (address: '+15550000002', status: ChatServiceType.sms),
+        ]),
+        ChatServiceType.sms,
+      );
+    });
+
+    test('keeps an email recipient on iMessage', () {
+      expect(
+        ChatServiceType.forNewChat(const [(address: 'a@example.com', status: ChatServiceType.sms)]),
+        ChatServiceType.iMessage,
+      );
+    });
+
+    test('uses iMessage while a recipient\'s status is unknown', () {
+      expect(
+        ChatServiceType.forNewChat(const [(address: '+15550000001', status: null)]),
+        ChatServiceType.iMessage,
+      );
+    });
+  });
+
   test('composer label names the text service', () {
     expect(ChatServiceType.iMessage.composerLabel, 'iMessage');
     expect(ChatServiceType.rcs.composerLabel, 'Text Message • RCS');
