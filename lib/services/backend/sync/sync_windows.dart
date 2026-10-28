@@ -54,6 +54,15 @@ String syncProgressLabel({required int seen, required int total}) =>
 
 String _thousands(int n) => n.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
 
+/// Progress across the whole catch-up, so a sync resumed after a pause keeps
+/// counting instead of showing "0 of what is left". [saved] is the size the
+/// catch-up began with (null for a new one); [remainingThisRun] is what was
+/// left when this run started. Messages arriving meanwhile grow the total.
+({int done, int total}) catchUpProgress({required int? saved, required int seenThisRun, required int remainingThisRun}) {
+  final total = saved != null && saved > remainingThisRun ? saved : remainingThisRun;
+  return (done: total - remainingThisRun + seenThisRun, total: total);
+}
+
 /// The progress bar is for long catch-ups only; a single batch finishes in moments.
 bool showSyncProgressBar({required int total, required int batchSize}) => total > batchSize;
 

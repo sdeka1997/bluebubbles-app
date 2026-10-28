@@ -168,6 +168,7 @@ class IncrementalSyncManager extends SyncManager {
     // A single page holds everything: no need to walk windows.
     if (total <= batchSize) {
       await syncMessages(messagesRes.data['data'], total);
+      if (saveMarker && SettingsSvc.settings.incrementalCatchUpTotal.value != 0) await saveCatchUpTotal(0);
       return;
     }
 
@@ -183,6 +184,11 @@ class IncrementalSyncManager extends SyncManager {
     int cursor = startRowId!;
     int seen = 0;
     int emptyRun = 0;
+
+    // Carry the bar across pauses: measure against the size the catch-up began with.
+    final savedTotal = SettingsSvc.settings.incrementalCatchUpTotal.value;
+    final overall = catchUpProgress(saved: savedTotal > 0 ? savedTotal : null, seenThisRun: 0, remainingThisRun: total);
+    if (saveMarker && overall.total != savedTotal) await saveCatchUpTotal(overall.total);
     while (!syncWindowsDone(
         seen: seen, total: total, cursor: cursor, emptyRun: emptyRun, endRowId: endRowId, paused: syncPausedForBackground)) {
       final window = nextSyncWindow(cursor: cursor, batchSize: batchSize, endRowId: endRowId);
@@ -203,19 +209,30 @@ class IncrementalSyncManager extends SyncManager {
       }
       cursor = window.upTo;
       await saveCheckpoint(cursor);
-      if (isIsolate) IsolateEventEmitter.emit(IsolateEvent.incrementalSyncProgress, {'seen': seen, 'total': total});
+      if (isIsolate) {
+        final progress =
+            catchUpProgress(saved: overall.total, seenThisRun: seen, remainingThisRun: total);
+        IsolateEventEmitter.emit(IsolateEvent.incrementalSyncProgress, {'seen': progress.done, 'total': progress.total});
+      }
     }
 
     if (syncPausedForBackground && seen < total) {
       addToOutput('Paused at ROWID $cursor ($seen of $total) because the app left the foreground');
       return;
     }
+    // Caught up: the next long sync is a new catch-up.
+    if (saveMarker) await saveCatchUpTotal(0);
 
     // A long ROWID gap: finish with offset paging from the last checkpoint.
     if (emptyRun >= maxEmptySyncWindows && seen < total) {
       startRowId = cursor;
       await syncMessagePages(total - seen, useRowId: true);
     }
+  }
+
+  Future<void> saveCatchUpTotal(int total) async {
+    SettingsSvc.settings.incrementalCatchUpTotal.value = total;
+    await SettingsSvc.settings.saveManyAsync(['incrementalCatchUpTotal']);
   }
 
   /// Saves [rowId] as the bookmark once every message up to it is synced.
