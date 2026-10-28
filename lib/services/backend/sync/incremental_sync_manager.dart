@@ -4,6 +4,7 @@ import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/backend/sync/sync_manager_impl.dart';
+import 'package:bluebubbles/services/backend/sync/sync_windows.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/services/backend/interfaces/sync_interface.dart';
 import 'package:bluebubbles/services/isolates/global_isolate.dart';
@@ -29,6 +30,10 @@ class IncrementalSyncManager extends SyncManager {
 
   // The last row ID we synced
   int? lastSyncedRowId;
+
+  // The ROWID every message up to which has been synced and saved, so an
+  // interrupted sync resumes from it.
+  int? checkpointRowId;
 
   // The last timestamp we synced
   int? lastSyncedTimestamp;
@@ -160,13 +165,59 @@ class IncrementalSyncManager extends SyncManager {
     addToOutput('Found $total message(s) to sync...');
     if (total == 0) return;
 
-    // Sync the page we just fetched
-    await syncMessages(messagesRes.data['data'], total);
-
-    // Sync subsequent pages
-    if (total > batchSize) {
-      await syncMessagePages(total, startPage: 1, useRowId: true);
+    // A single page holds everything: no need to walk windows.
+    if (total <= batchSize) {
+      await syncMessages(messagesRes.data['data'], total);
+      return;
     }
+
+    // Walk ROWID windows so each one can be checkpointed; the first page above
+    // is only used for its total.
+    await syncMessageWindows(total);
+  }
+
+  /// Syncs messages after [startRowId] one ROWID window at a time, saving the
+  /// bookmark after each window, so an interrupted sync resumes where it
+  /// stopped instead of starting over.
+  Future<void> syncMessageWindows(int total) async {
+    int cursor = startRowId!;
+    int seen = 0;
+    int emptyRun = 0;
+    while (!syncWindowsDone(seen: seen, total: total, cursor: cursor, emptyRun: emptyRun, endRowId: endRowId)) {
+      final window = nextSyncWindow(cursor: cursor, batchSize: batchSize, endRowId: endRowId);
+      final res = await HttpSvc.message.query(
+        where: buildRowIdWhereArgs(window.after, window.upTo),
+        limit: batchSize,
+        offset: 0,
+        withQuery: defaultWithQuery,
+      );
+      final List<dynamic> messages = res.data['data'];
+      if (messages.isEmpty) {
+        emptyRun++;
+      } else {
+        emptyRun = 0;
+        seen += messages.length;
+        addToOutput('Synced $seen of $total message(s) (up to ROWID ${window.upTo})...', level: LogLevel.DEBUG);
+        await syncMessages(messages, total);
+      }
+      cursor = window.upTo;
+      await saveCheckpoint(cursor);
+    }
+
+    // A long ROWID gap: finish with offset paging from the last checkpoint.
+    if (emptyRun >= maxEmptySyncWindows && seen < total) {
+      startRowId = cursor;
+      await syncMessagePages(total - seen, useRowId: true);
+    }
+  }
+
+  /// Saves [rowId] as the bookmark once every message up to it is synced.
+  Future<void> saveCheckpoint(int rowId) async {
+    checkpointRowId = rowId;
+    if (!saveMarker) return;
+    if (rowId <= SettingsSvc.settings.lastIncrementalSyncRowId.value) return;
+    SettingsSvc.settings.lastIncrementalSyncRowId.value = rowId;
+    await SettingsSvc.settings.saveManyAsync(['lastIncrementalSyncRowId']);
   }
 
   Future<void> startMin_1_2_0() async {
@@ -446,9 +497,11 @@ class IncrementalSyncManager extends SyncManager {
         SettingsSvc.settings.lastIncrementalSync.value = lastSyncedTimestamp!;
       }
 
-      // The lastRowId should always get set, even when sycing using timestamps
-      if (lastSyncedRowId != null) {
-        SettingsSvc.settings.lastIncrementalSyncRowId.value = lastSyncedRowId!;
+      // The lastRowId should always get set, even when sycing using timestamps,
+      // but never behind a window already checkpointed.
+      final bookmark = syncBookmark(checkpoint: checkpointRowId, lastSyncedRowId: lastSyncedRowId);
+      if (bookmark != null) {
+        SettingsSvc.settings.lastIncrementalSyncRowId.value = bookmark;
         toSave.add('lastIncrementalSyncRowId');
       }
 
