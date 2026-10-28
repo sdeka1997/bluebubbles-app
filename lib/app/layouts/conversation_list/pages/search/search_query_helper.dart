@@ -6,6 +6,28 @@ import 'package:objectbox/src/native/query/query.dart' as obx;
 
 import 'search_models.dart';
 
+/// The chats whose name or participants (contact name or address) match [term],
+/// newest activity first, like the Conversations section of iOS Messages search.
+List<Chat> matchConversations(String term, Iterable<Chat> chats, {int limit = 8}) {
+  final query = term.trim().toLowerCase();
+  if (query.isEmpty) return [];
+  // A phone number typed with punctuation, e.g. "(555) 123-4567", matches by digits.
+  final digits = RegExp(r'^[\d\s()+.\-]+$').hasMatch(query) ? query.replaceAll(RegExp(r'\D'), '') : '';
+  bool matches(String? value) {
+    if (value == null || value.isEmpty) return false;
+    if (value.toLowerCase().contains(query)) return true;
+    return digits.length >= 3 && value.replaceAll(RegExp(r'\D'), '').contains(digits);
+  }
+
+  final seen = <String>{};
+  return chats
+      .where((c) => c.dateDeleted == null && seen.add(c.guid))
+      .where((c) => matches(c.displayName) || c.handles.any((h) => matches(h.displayName) || matches(h.address)))
+      .sorted((a, b) => (b.dbOnlyLatestMessageDate ?? DateTime(0)).compareTo(a.dbOnlyLatestMessageDate ?? DateTime(0)))
+      .take(limit)
+      .toList();
+}
+
 class SearchQueryHelper {
   static Future<List<SearchResultItem>> runLocal({
     required String term,
