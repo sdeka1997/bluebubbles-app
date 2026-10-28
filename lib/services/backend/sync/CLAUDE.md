@@ -10,6 +10,7 @@
 | `chat_sync_manager.dart` | Syncs chat list only (no messages); tracks per-chat progress |
 | `handle_sync_manager.dart` | Syncs phone/email handles; requires server v1.5.2+; supports rollback |
 | `sync_manager_impl.dart` | Abstract base: `SyncStatus` enum, progress `double`, log output `RxList` |
+| `sync_retry.dart` | Classifies transient network errors and quietly retries a failed incremental sync (3 s, then 10 s) before it is reported |
 
 ## Status Lifecycle
 ```

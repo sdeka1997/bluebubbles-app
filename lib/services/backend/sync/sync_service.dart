@@ -7,6 +7,7 @@ import 'package:bluebubbles/helpers/ui/async_task.dart';
 import 'package:bluebubbles/helpers/ui/ui_helpers.dart';
 import 'package:bluebubbles/services/backend/interfaces/contact_v2_interface.dart';
 import 'package:bluebubbles/services/backend/interfaces/sync_interface.dart';
+import 'package:bluebubbles/services/backend/sync/sync_retry.dart';
 import 'package:bluebubbles/services/isolates/global_isolate.dart';
 import 'package:bluebubbles/services/isolates/incremental_sync_isolate.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -127,7 +128,10 @@ class SyncService {
     try {
       Logger.info('Starting incremental chat sync...', tag: 'Incremental Chat Sync');
       final chatStopwatch = Stopwatch()..start();
-      final syncedMessages = await SyncInterface.performIncrementalSync(useGlobalIsolate: useGlobalIsolate);
+      // Retried inside this guarded call so a reconnect-triggered sync can't
+      // overlap it; only a failure that outlasts the retries reaches the toast.
+      final syncedMessages =
+          await retryTransientSync(() => SyncInterface.performIncrementalSync(useGlobalIsolate: useGlobalIsolate));
       if (syncedMessages.isNotEmpty) {
         // latestMessageIdPerChat is keyed by chat GUID, so syncedMessages already contains
         // at most one message per chat. Deduplicate defensively by keeping the latest
