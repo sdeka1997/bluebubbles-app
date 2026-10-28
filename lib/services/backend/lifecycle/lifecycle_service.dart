@@ -101,6 +101,8 @@ class LifecycleService with WidgetsBindingObserver {
     statesSinceLastResume.add(state);
 
     if (state == AppLifecycleState.resumed) {
+      if (Platform.isAndroid && GetIt.I.isRegistered<SyncService>()) SyncSvc.setSyncPaused(false);
+
       // If we resumed before the pause-initiated isolate drain finished, cancel
       // it so foreground sends/receives aren't rejected (Android-only drain).
       if (Platform.isAndroid && GetIt.I.isRegistered<GlobalIsolate>()) {
@@ -214,6 +216,9 @@ class LifecycleService with WidgetsBindingObserver {
     final backgrounded = triggerState == AppLifecycleState.paused || triggerState == AppLifecycleState.detached;
     if (Platform.isAndroid && backgrounded) {
       IsolateNameServer.removePortNameMapping('bg_isolate');
+      // Android cuts a cached app off the network; stop the sync at a checkpoint
+      // instead of letting it fail mid-window.
+      if (GetIt.I.isRegistered<SyncService>()) SyncSvc.setSyncPaused(true);
     }
 
     if (kIsDesktop && GetIt.I.isRegistered<ChatsService>()) {

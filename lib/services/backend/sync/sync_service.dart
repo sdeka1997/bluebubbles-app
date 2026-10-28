@@ -8,6 +8,7 @@ import 'package:bluebubbles/helpers/ui/ui_helpers.dart';
 import 'package:bluebubbles/services/backend/interfaces/contact_v2_interface.dart';
 import 'package:bluebubbles/services/backend/interfaces/sync_interface.dart';
 import 'package:bluebubbles/services/backend/sync/sync_retry.dart';
+import 'package:bluebubbles/services/backend/sync/sync_windows.dart';
 import 'package:bluebubbles/services/isolates/global_isolate.dart';
 import 'package:bluebubbles/services/isolates/incremental_sync_isolate.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -26,6 +27,27 @@ class SyncService {
   bool syncGroupChatIcons = false;
   int? syncTimeFilter;
   final RxBool isIncrementalSyncing = false.obs;
+
+  /// Messages synced so far and counted at the start of a long incremental
+  /// sync, for the progress bar; both 0 when no long sync is running.
+  final RxInt incrementalSyncSeen = 0.obs;
+  final RxInt incrementalSyncTotal = 0.obs;
+
+  /// Whether the app left the foreground while the current sync ran.
+  bool _backgroundedDuringSync = false;
+
+  /// Tells the isolates that may be running a sync to stop after the window in
+  /// hand (app backgrounded) or to carry on (app back in front). The window's
+  /// checkpoint is saved, so the next sync resumes from it.
+  void setSyncPaused(bool paused) {
+    if (paused && isIncrementalSyncing.value) _backgroundedDuringSync = true;
+    for (final isolate in <GlobalIsolate>[
+      if (GetIt.I.isRegistered<GlobalIsolate>()) GetIt.I<GlobalIsolate>(),
+      if (GetIt.I.isRegistered<IncrementalSyncIsolate>()) GetIt.I<IncrementalSyncIsolate>(),
+    ]) {
+      if (isolate.isRunning) isolate.broadcast(IsolateRequestType.setSyncPaused, paused);
+    }
+  }
 
   static const Duration _incrementalSyncCooldown = Duration(seconds: 30);
   static const int _dispatchChunkSize = 50;
@@ -71,7 +93,16 @@ class SyncService {
 
     _lastIncrementalSyncTimestamp = now;
     isIncrementalSyncing.value = true;
+    _backgroundedDuringSync = false;
+    incrementalSyncSeen.value = 0;
+    incrementalSyncTotal.value = 0;
     bool chatSyncFailed = false;
+
+    void onProgress(dynamic data) {
+      if (data is! Map) return;
+      incrementalSyncSeen.value = data['seen'] as int? ?? 0;
+      incrementalSyncTotal.value = data['total'] as int? ?? 0;
+    }
 
     // Per-page tracking: record message IDs and chat subtitle message IDs that were
     // already applied by per-page events so the final return can skip redundant work.
@@ -124,6 +155,9 @@ class SyncService {
     final GlobalIsolate syncIsolate =
         useGlobalIsolate ? GetIt.I<GlobalIsolate>() : GetIt.I<IncrementalSyncIsolate>();
     syncIsolate.addEventListener(IsolateEvent.incrementalSyncPageComplete, onPageComplete);
+    syncIsolate.addEventListener(IsolateEvent.incrementalSyncProgress, onProgress);
+    // A sync started while the app is in front must not inherit a stale pause.
+    syncIsolate.broadcast(IsolateRequestType.setSyncPaused, false);
 
     try {
       Logger.info('Starting incremental chat sync...', tag: 'Incremental Chat Sync');
@@ -186,6 +220,7 @@ class SyncService {
       chatSyncFailed = true;
     } finally {
       syncIsolate.removeEventListener(IsolateEvent.incrementalSyncPageComplete, onPageComplete);
+      syncIsolate.removeEventListener(IsolateEvent.incrementalSyncProgress, onProgress);
     }
 
     // A failed chat sync must not consume the cooldown window. Otherwise a sync that
@@ -203,7 +238,10 @@ class SyncService {
     // The chat sync is the one that matters, so its failure is reported alone and wins over the rest.
     // Contact failures get their own wording: a missing contacts permission returns early without
     // throwing, so a refresh failure is a genuine local error, not something a reconnect fixes.
-    if (chatSyncFailed) {
+    if (chatSyncFailed && !shouldReportSyncFailure(backgroundedDuringSync: _backgroundedDuringSync)) {
+      Logger.info('Sync stopped while the app was in the background; it resumes on return',
+          tag: 'Incremental Chat Sync');
+    } else if (chatSyncFailed) {
       await showToast("Sync failed. Check your connection.", isError: true);
     } else if (!contactSyncResult) {
       await showToast("Messages synced, but refreshing contacts failed. Check the logs for details.", isError: true);
@@ -213,6 +251,8 @@ class SyncService {
       await showToast('Incremental sync complete');
     }
 
+    incrementalSyncSeen.value = 0;
+    incrementalSyncTotal.value = 0;
     isIncrementalSyncing.value = false;
   }
 

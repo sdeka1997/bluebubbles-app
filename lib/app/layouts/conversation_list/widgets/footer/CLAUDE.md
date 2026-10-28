@@ -11,3 +11,4 @@ Samsung One UI only. Not rendered on iOS or Material skins. Controlled via `Them
 ## Related
 - Samsung headers: `../header/CLAUDE.md`
 - Parent list: `../../CLAUDE.md` (conversation_list)
+- `sync_progress_bar.dart` — `SyncProgressBar`: "Updating messages… N of M" bar under the list during a long incremental sync (all skins, added in `conversation_list.dart`)

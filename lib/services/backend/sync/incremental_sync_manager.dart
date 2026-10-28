@@ -183,7 +183,8 @@ class IncrementalSyncManager extends SyncManager {
     int cursor = startRowId!;
     int seen = 0;
     int emptyRun = 0;
-    while (!syncWindowsDone(seen: seen, total: total, cursor: cursor, emptyRun: emptyRun, endRowId: endRowId)) {
+    while (!syncWindowsDone(
+        seen: seen, total: total, cursor: cursor, emptyRun: emptyRun, endRowId: endRowId, paused: syncPausedForBackground)) {
       final window = nextSyncWindow(cursor: cursor, batchSize: batchSize, endRowId: endRowId);
       final res = await HttpSvc.message.query(
         where: buildRowIdWhereArgs(window.after, window.upTo),
@@ -202,6 +203,12 @@ class IncrementalSyncManager extends SyncManager {
       }
       cursor = window.upTo;
       await saveCheckpoint(cursor);
+      if (isIsolate) IsolateEventEmitter.emit(IsolateEvent.incrementalSyncProgress, {'seen': seen, 'total': total});
+    }
+
+    if (syncPausedForBackground && seen < total) {
+      addToOutput('Paused at ROWID $cursor ($seen of $total) because the app left the foreground');
+      return;
     }
 
     // A long ROWID gap: finish with offset paging from the last checkpoint.

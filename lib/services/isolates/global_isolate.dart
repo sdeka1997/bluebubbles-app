@@ -775,6 +775,7 @@ enum IsolateRequestType {
   // Sync actions
   performIncrementalSync,
   bulkSyncData,
+  setSyncPaused,
 
   // Log actions
   getLogs,

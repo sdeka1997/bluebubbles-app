@@ -12,6 +12,7 @@ import 'package:bluebubbles/services/backend/actions/prefs_actions.dart';
 import 'package:bluebubbles/services/backend/actions/server_actions.dart';
 import 'package:bluebubbles/services/backend/actions/storage_actions.dart';
 import 'package:bluebubbles/services/backend/actions/sync_actions.dart';
+import 'package:bluebubbles/services/backend/sync/sync_windows.dart';
 import 'package:bluebubbles/services/backend/actions/test_actions.dart';
 import 'package:bluebubbles/services/isolates/global_isolate.dart';
 import 'package:bluebubbles/services/network/http_service.dart';
@@ -115,6 +116,9 @@ class IsolateActons {
     // Sync
     IsolateRequestType.performIncrementalSync: SyncActions.performIncrementalSync,
     IsolateRequestType.bulkSyncData: SyncActions.bulkSyncData,
+    IsolateRequestType.setSyncPaused: (data) async {
+      syncPausedForBackground = data as bool;
+    },
 
     // Log actions
     IsolateRequestType.getLogs: (data) => LogActions.getLogs(data as Map<String, dynamic>),
