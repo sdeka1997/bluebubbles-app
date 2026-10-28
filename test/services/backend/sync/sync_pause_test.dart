@@ -47,4 +47,25 @@ void main() {
       expect(showSyncProgressBar(total: 40, batchSize: 1000), isFalse);
     });
   });
+
+  group('catchUpProgress across pauses', () {
+    test('a fresh catch-up records its size and starts at zero', () {
+      expect(catchUpProgress(saved: null, seenThisRun: 0, remainingThisRun: 381870),
+          (done: 0, total: 381870));
+    });
+
+    test('a resumed catch-up counts what earlier runs already synced', () {
+      // Live: paused with 336,223 left of the 381,870 the catch-up began with.
+      expect(catchUpProgress(saved: 381870, seenThisRun: 22816, remainingThisRun: 336223),
+          (done: 45647 + 22816, total: 381870));
+    });
+
+    test('messages that arrive during the catch-up grow the total instead of going negative', () {
+      expect(catchUpProgress(saved: 1000, seenThisRun: 0, remainingThisRun: 1500), (done: 0, total: 1500));
+    });
+
+    test('a short sync starts a new catch-up rather than continuing an old one', () {
+      expect(catchUpProgress(saved: null, seenThisRun: 10, remainingThisRun: 40), (done: 10, total: 40));
+    });
+  });
 }

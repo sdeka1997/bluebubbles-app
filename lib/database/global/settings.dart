@@ -66,6 +66,9 @@ class Settings {
   final RxBool reduceMotion = false.obs;
   final RxInt lastIncrementalSync = 0.obs;
   final RxInt lastIncrementalSyncRowId = 0.obs;
+  // Size of the incremental catch-up in progress (0 when none), so its
+  // progress bar carries across pauses.
+  final RxInt incrementalCatchUpTotal = 0.obs;
   final RxInt refreshRate = 0.obs;
 
   /// `CacheService` purge level applied when the app is backgrounded on mobile:
@@ -352,6 +355,7 @@ class Settings {
       'reduceMotion': reduceMotion.value,
       'lastIncrementalSync': lastIncrementalSync.value,
       'lastIncrementalSyncRowId': lastIncrementalSyncRowId.value,
+      'incrementalCatchUpTotal': incrementalCatchUpTotal.value,
       'refreshRate': refreshRate.value,
       'colorfulAvatars': colorfulAvatars.value,
       'colorfulBubbles': colorfulBubbles.value,
@@ -532,6 +536,8 @@ class Settings {
         map['lastIncrementalSync'] ?? SettingsSvc.settings.lastIncrementalSync.value;
     SettingsSvc.settings.lastIncrementalSyncRowId.value =
         map['lastIncrementalSyncRowId'] ?? SettingsSvc.settings.lastIncrementalSyncRowId.value;
+    SettingsSvc.settings.incrementalCatchUpTotal.value =
+        map['incrementalCatchUpTotal'] ?? SettingsSvc.settings.incrementalCatchUpTotal.value;
     SettingsSvc.settings.refreshRate.value = map['refreshRate'] ?? SettingsSvc.settings.refreshRate.value;
     SettingsSvc.settings.colorfulAvatars.value = map['colorfulAvatars'] ?? SettingsSvc.settings.colorfulAvatars.value;
     SettingsSvc.settings.colorfulBubbles.value = map['colorfulBubbles'] ?? SettingsSvc.settings.colorfulBubbles.value;
@@ -786,6 +792,7 @@ class Settings {
     s.reduceMotion.value = map['reduceMotion'] ?? false;
     s.lastIncrementalSync.value = map['lastIncrementalSync'] ?? 0;
     s.lastIncrementalSyncRowId.value = map['lastIncrementalSyncRowId'] ?? 0;
+    s.incrementalCatchUpTotal.value = map['incrementalCatchUpTotal'] ?? 0;
     s.refreshRate.value = map['refreshRate'] ?? 0;
     s.colorfulAvatars.value = map['colorfulAvatars'] ?? false;
     s.colorfulBubbles.value = map['colorfulBubbles'] ?? false;
