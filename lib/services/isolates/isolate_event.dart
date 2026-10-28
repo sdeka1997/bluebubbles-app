@@ -38,6 +38,10 @@ enum IsolateEvent {
   ///   `latestMessageIdPerChat` — `Map<String, int>` chatGuid → latest message DB ID in this page
   incrementalSyncPageComplete,
 
+  /// Emitted after each ROWID window of a long incremental sync.
+  /// Payload: `Map<String, dynamic>` with `seen` and `total` message counts.
+  incrementalSyncProgress,
+
   /// Emitted periodically while a storage analysis walks the attachments directory.
   /// Payload: `Map<String, dynamic>` with keys:
   ///   `runId`     — `String` opaque id of the analysis run this update belongs to

@@ -23,6 +23,7 @@ import 'package:path/path.dart' hide context;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/pages/cupertino_conversation_list.dart';
+import 'package:bluebubbles/app/layouts/conversation_list/widgets/footer/sync_progress_bar.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/pages/material_conversation_list.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/pages/samsung_conversation_list.dart';
 import 'package:bluebubbles/app/wrappers/theme_switcher.dart';
@@ -226,10 +227,17 @@ class _ConversationListState extends CustomState<ConversationList, void, Convers
 
   @override
   Widget build(BuildContext context) {
-    final child = ThemeSwitcher(
-      iOSSkin: CupertinoConversationList(parentController: controller),
-      materialSkin: MaterialConversationList(parentController: controller),
-      samsungSkin: SamsungConversationList(parentController: controller),
+    final child = Column(
+      children: [
+        Expanded(
+          child: ThemeSwitcher(
+            iOSSkin: CupertinoConversationList(parentController: controller),
+            materialSkin: MaterialConversationList(parentController: controller),
+            samsungSkin: SamsungConversationList(parentController: controller),
+          ),
+        ),
+        const SyncProgressBar(),
+      ],
     );
 
     if (controller.showArchivedChats || controller.showUnknownSenders) return child;
