@@ -11,6 +11,7 @@
 | `handle_sync_manager.dart` | Syncs phone/email handles; requires server v1.5.2+; supports rollback |
 | `sync_manager_impl.dart` | Abstract base: `SyncStatus` enum, progress `double`, log output `RxList` |
 | `apple_state_catch_up.dart` | Catches up with Apple after being offline: read state, single-message deletes, whole-chat deletes |
+| `sync_retry.dart` | Classifies transient network errors and quietly retries a failed incremental sync (3 s, then 10 s) before it is reported |
 
 ## Catching up with Apple
 Sync and live events both page *forward*: they learn about things that were
