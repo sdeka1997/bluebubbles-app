@@ -1,6 +1,8 @@
 import 'package:async_task/async_task_extension.dart';
+import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
+import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/backend/sync/sync_manager_impl.dart';
@@ -352,7 +354,9 @@ class IncrementalSyncManager extends SyncManager {
     // receives the correct displayName and writes it to the DB.
     for (final entry in latestNameChangePerChat.entries) {
       final chat = chatCache[entry.key];
-      if (chat != null) {
+      // Messages in iCloud can deliver old renames after newer ones are stored;
+      // those leave the current name the server sent with the chat in place.
+      if (chat != null && shouldApplyNameChange(entry.value.dateCreated, _newestStoredNameChange(entry.key))) {
         chat.displayName = entry.value.groupTitle;
       }
     }
@@ -413,6 +417,22 @@ class IncrementalSyncManager extends SyncManager {
         'latestMessageIdPerChat': pageLatestMessageIdPerChat,
       });
     }
+  }
+
+  /// When the newest group-name change stored for [chatGuid] (or the thread it
+  /// is folded into) happened, or null when none is stored.
+  DateTime? _newestStoredNameChange(String chatGuid) {
+    final local = Chat.findOne(guid: chatGuid);
+    if (local == null) return null;
+    final chatIds = {local.id!, findCanonicalTwin(local)?.id ?? local.id!}.toList();
+    final query = (Database.messages.query(Message_.itemType.equals(2))
+          ..link(Message_.chat, Chat_.id.oneOf(chatIds))
+          ..order(Message_.dateCreated, flags: Order.descending))
+        .build();
+    query.limit = 1;
+    final newest = query.findFirst();
+    query.close();
+    return newest?.dateCreated;
   }
 
   List<Map<String, dynamic>> buildRowIdWhereArgs(int startRowId, int? endRowId) {
@@ -491,3 +511,8 @@ class IncrementalSyncManager extends SyncManager {
     }
   }
 }
+
+/// Whether a group-name change made at [renamedAt] should rename the chat, given
+/// the newest name change already stored for it. Only a newer rename applies.
+bool shouldApplyNameChange(DateTime? renamedAt, DateTime? newestStoredRename) =>
+    newestStoredRename == null || (renamedAt != null && renamedAt.isAfter(newestStoredRename));
