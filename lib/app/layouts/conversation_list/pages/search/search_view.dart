@@ -57,8 +57,9 @@ class SearchViewState extends State<SearchView> with ThemeHelpers {
   final RxBool noResults = false.obs;
   final RxBool isSearching = false.obs;
   final Rx<String?> currentSearchTerm = Rx<String?>(null);
-  final RxBool local = false.obs;
-  final RxBool network = true.obs;
+  final RxBool local = (defaultSearchMode() == SearchMode.local).obs;
+  final RxBool network = (defaultSearchMode() == SearchMode.network).obs;
+  final SearchDebouncer debouncer = SearchDebouncer();
   final Rx<Chat?> selectedChat = Rx<Chat?>(null);
   final Rx<Handle?> selectedHandle = Rx<Handle?>(null);
   final RxBool isFromMe = false.obs;
@@ -81,9 +82,34 @@ class SearchViewState extends State<SearchView> with ThemeHelpers {
     });
   }
 
-  Future<void> search(String newSearch) async {
-    if (isSearching.value || isNullOrEmpty(newSearch) || newSearch.length < 3) return;
-    focusNode.unfocus();
+  @override
+  void dispose() {
+    debouncer.cancel();
+    super.dispose();
+  }
+
+  /// Searches as the user types; a search already running picks up the
+  /// latest text when it finishes.
+  void searchAsYouType(String text) {
+    if (!isSearchableTerm(text)) {
+      debouncer.cancel();
+      if (!isSearching.value) {
+        currentSearch.value = null;
+        noResults.value = false;
+      }
+      return;
+    }
+    debouncer(text.trim(), (term) => search(term, keepFocus: true));
+  }
+
+  Future<void> search(String newSearch, {bool keepFocus = false}) async {
+    newSearch = newSearch.trim();
+    if (!isSearchableTerm(newSearch)) return;
+    if (isSearching.value) {
+      if (newSearch != currentSearchTerm.value) searchAsYouType(newSearch);
+      return;
+    }
+    if (!keepFocus) focusNode.unfocus();
     noResults.value = false;
     currentSearchTerm.value = newSearch;
 
@@ -202,6 +228,7 @@ class SearchViewState extends State<SearchView> with ThemeHelpers {
                             controller: textEditingController,
                             focusNode: focusNode,
                             isSearching: isSearching.value,
+                            onChanged: searchAsYouType,
                             onSubmitted: search,
                             padding: EdgeInsets.zero,
                           ),
@@ -276,6 +303,7 @@ class SearchViewState extends State<SearchView> with ThemeHelpers {
                               isSearching.value = false;
                               noResults.value = false;
                               currentSearch.value = null;
+                              searchAsYouType(textEditingController.text);
                             },
                             children: [
                               const Row(
@@ -284,7 +312,7 @@ class SearchViewState extends State<SearchView> with ThemeHelpers {
                                     padding: EdgeInsets.all(8.0),
                                     child: Text("Search Device"),
                                   ),
-                                  Icon(Icons.storage_outlined, size: 16),
+                                  Icon(Icons.smartphone_outlined, size: 16),
                                 ],
                               ),
                               const Row(

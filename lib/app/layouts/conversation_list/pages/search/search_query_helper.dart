@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
@@ -26,6 +28,27 @@ List<Chat> matchConversations(String term, Iterable<Chat> chats, {int limit = 8}
       .sorted((a, b) => (b.dbOnlyLatestMessageDate ?? DateTime(0)).compareTo(a.dbOnlyLatestMessageDate ?? DateTime(0)))
       .take(limit)
       .toList();
+}
+
+/// Searches start at three characters, ignoring surrounding spaces.
+bool isSearchableTerm(String term) => term.trim().length >= 3;
+
+/// Search starts on this device: it is instant and works without the Mac.
+SearchMode defaultSearchMode() => SearchMode.local;
+
+/// Runs a search once typing pauses, with the latest text only.
+class SearchDebouncer {
+  SearchDebouncer({this.delay = const Duration(milliseconds: 300)});
+
+  final Duration delay;
+  Timer? _timer;
+
+  void call(String term, void Function(String term) search) {
+    _timer?.cancel();
+    _timer = Timer(delay, () => search(term));
+  }
+
+  void cancel() => _timer?.cancel();
 }
 
 class SearchQueryHelper {
