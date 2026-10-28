@@ -391,44 +391,6 @@ class _ConversationPeekViewState extends State<ConversationPeekView>
             ),
           ),
         ),
-      Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () async {
-            await showBBDialog(
-              barrierDismissible: false,
-              context: context,
-              title: "Are you sure?",
-              body: "This chat will be deleted from this device only",
-              actions: [
-                BBDialogAction(
-                  text: "No",
-                  onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
-                ),
-                BBDialogAction(
-                  text: "Yes",
-                  isDefault: true,
-                  onPressed: () {
-                    ChatsSvc.removeChat(widget.chat);
-                    ChatsSvc.softDeleteChat(widget.chat);
-                    Navigator.of(context, rootNavigator: true).pop();
-                  },
-                ),
-              ],
-            );
-            if (mounted) popPeekView();
-          },
-          child: ListTile(
-            mouseCursor: MouseCursor.defer,
-            dense: !kIsDesktop && !kIsWeb,
-            title: Text(
-              'Delete',
-              style: context.theme.textTheme.bodyLarge!.copyWith(color: context.theme.colorScheme.onSurfaceVariant),
-            ),
-            trailing: Icon(cupertino.CupertinoIcons.trash, color: context.theme.colorScheme.onSurfaceVariant),
-          ),
-        ),
-      ),
     ];
 
     return ClipRRect(

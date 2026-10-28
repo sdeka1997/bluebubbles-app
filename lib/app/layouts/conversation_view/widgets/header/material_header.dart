@@ -121,36 +121,6 @@ class MaterialHeader extends StatelessWidget implements PreferredSizeWidget {
                         Get.closeAllSnackbars();
                       }
                       Navigator.of(context).pop();
-                    } else if (value == 2) {
-                      showBBDialog(
-                        barrierDismissible: false,
-                        context: context,
-                        title: "Are you sure?",
-                        body: "This chat will be deleted from this device only",
-                        actions: <BBDialogAction>[
-                          BBDialogAction(
-                            text: "No",
-                            onPressed: () {
-                              if (Get.isSnackbarOpen) {
-                                Get.closeAllSnackbars();
-                              }
-                              Navigator.of(context, rootNavigator: true).pop();
-                            },
-                          ),
-                          BBDialogAction(
-                            text: "Yes",
-                            isDestructive: true,
-                            onPressed: () async {
-                              ChatsSvc.removeChat(controller.chat);
-                              ChatsSvc.softDeleteChat(controller.chat);
-                              if (Get.isSnackbarOpen) {
-                                Get.closeAllSnackbars();
-                              }
-                              Navigator.of(context, rootNavigator: true).pop();
-                            },
-                          ),
-                        ],
-                      );
                     } else if (value == 3) {
                       showBookmarksThread(controller, context);
                     }
@@ -169,15 +139,6 @@ class MaterialHeader extends StatelessWidget implements PreferredSizeWidget {
                           value: 1,
                           child: Text(
                             controller.chat.isArchived! ? 'Unarchive' : 'Archive',
-                            style:
-                                context.textTheme.bodyLarge!.apply(color: context.theme.colorScheme.onSurfaceVariant),
-                          ),
-                        ),
-                      if (!LifecycleSvc.isBubble)
-                        PopupMenuItem(
-                          value: 2,
-                          child: Text(
-                            'Delete',
                             style:
                                 context.textTheme.bodyLarge!.apply(color: context.theme.colorScheme.onSurfaceVariant),
                           ),

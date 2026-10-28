@@ -647,10 +647,6 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
           action: DetailsMenuAction.CopySelection,
         ),
       DetailsMenuActionWidget(
-        onTap: () => popup_message_actions.delete(_buildActionContext(DetailsMenuAction.Delete)),
-        action: DetailsMenuAction.Delete,
-      ),
-      DetailsMenuActionWidget(
         onTap: () => popup_message_actions.toggleBookmark(_buildActionContext(DetailsMenuAction.Bookmark)),
         action: DetailsMenuAction.Bookmark,
         customTitle: message.isBookmarked ? "Remove Bookmark" : "Add Bookmark",

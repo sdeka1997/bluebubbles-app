@@ -71,11 +71,6 @@ void edit(MessagePopupActionContext ctx) {
   );
 }
 
-Future<void> delete(MessagePopupActionContext ctx) async {
-  await ctx.service.deleteMessage(ctx.message);
-  ctx.popDetails();
-}
-
 void selectMultiple(MessagePopupActionContext ctx) {
   ctx.cvController.inSelectMode.toggle();
   if (SettingsSvc.settings.skin.value == Skins.iOS) {

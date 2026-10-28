@@ -29,9 +29,7 @@ class ListItem extends StatelessWidget {
           ? Colors.yellow[800]
           : action == MaterialSwipeAction.alerts
               ? Colors.purple
-              : action == MaterialSwipeAction.delete
-                  ? Colors.red
-                  : action == MaterialSwipeAction.mark_read
+              : action == MaterialSwipeAction.mark_read
                       ? Colors.blue
                       : Colors.red,
       child: Align(
@@ -47,9 +45,7 @@ class ListItem extends StatelessWidget {
                   ? (chat.isPinned! ? Icons.star_outline : Icons.star)
                   : action == MaterialSwipeAction.alerts
                       ? (chat.muteType == "mute" ? Icons.notifications_active : Icons.notifications_off)
-                      : action == MaterialSwipeAction.delete
-                          ? Icons.delete_forever_outlined
-                          : action == MaterialSwipeAction.mark_read
+                      : action == MaterialSwipeAction.mark_read
                               ? (chat.hasUnreadMessage! ? Icons.mark_chat_read : Icons.mark_chat_unread)
                               : (chat.isArchived! ? Icons.unarchive : Icons.archive),
               color: Colors.white,
@@ -59,9 +55,7 @@ class ListItem extends StatelessWidget {
                   ? (chat.isPinned! ? " Unpin" : " Pin")
                   : action == MaterialSwipeAction.alerts
                       ? (chat.muteType == "mute" ? ' Show Alerts' : ' Hide Alerts')
-                      : action == MaterialSwipeAction.delete
-                          ? " Delete"
-                          : action == MaterialSwipeAction.mark_read
+                      : action == MaterialSwipeAction.mark_read
                               ? (chat.hasUnreadMessage! ? ' Mark Read' : ' Mark Unread')
                               : (chat.isArchived! ? ' Unarchive' : ' Archive'),
               style: const TextStyle(
@@ -120,9 +114,6 @@ class ListItem extends StatelessWidget {
             } else {
               chat.toggleMuteAsync(chat.muteType != "mute");
             }
-          } else if (action == MaterialSwipeAction.delete) {
-            ChatsSvc.removeChat(chat);
-            ChatsSvc.softDeleteChat(chat);
           } else if (action == MaterialSwipeAction.mark_read) {
             final chatState = ChatsSvc.getChatState(chat.guid);
             if (chatState != null) {

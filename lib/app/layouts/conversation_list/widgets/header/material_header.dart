@@ -229,19 +229,6 @@ class _MaterialHeaderState extends CustomState<MaterialHeader, void, Conversatio
                                 color: context.theme.colorScheme.primary,
                               ),
                             ),
-                            IconButton(
-                              onPressed: () {
-                                for (Chat element in controller.selectedChats) {
-                                  ChatsSvc.removeChat(element);
-                                  ChatsSvc.softDeleteChat(element);
-                                }
-                                controller.clearSelectedChats();
-                              },
-                              icon: Icon(
-                                Icons.delete_outlined,
-                                color: context.theme.colorScheme.primary,
-                              ),
-                            ),
                           ],
                         )
                       ],

@@ -14,7 +14,7 @@ Handles the action sheet / context menu shown when the user long-presses (or rig
 | `actions/media_actions.dart` | Attachment/media actions (save/open/share/copy/redownload) |
 | `actions/text_actions.dart` | Text/link actions (copy text, copy selection, open link) |
 | `actions/navigation_actions.dart` | Navigation actions (reply/thread/DM/forward/new conversation) |
-| `actions/message_actions.dart` | Message lifecycle actions (edit/unsend/delete/bookmark/remind/info/etc.) |
+| `actions/message_actions.dart` | Message lifecycle actions (edit/unsend/bookmark/remind/info/etc.). There is no Delete: Apple devices are the source of truth, and Apple-side deletions sync in through `MessagesService.softDeleteMessage` |
 | `widgets/reaction_details.dart` | Reactions preview widget rendered at top of popup |
 
 ## MessagePopupActionContext Contract

@@ -30,6 +30,10 @@
 - `initial_widget_right.dart` — empty right-pane placeholder on tablet
 - `dialogs/conversation_peek_view.dart` — hover message preview (desktop)
 
+## Hiding Conversations
+
+Archive is the only way to hide a conversation on Android; Apple devices are the source of truth and nothing done here changes them. The peek view, the multi-select header/footer and the swipe actions offer Archive and no Delete. Archived chats come back on a new message (`unarchiveOnNewMessage`, default on). Deletions made on an Apple device still sync in through `ChatsSvc.softDeleteChat`; Settings → Developer Tools keeps the troubleshooting delete. `test/app/layouts/no_delete_surfaces_test.dart` guards this.
+
 ## Skin Pattern
 All three skins share `ConversationListController`. Branch via `ThemeSwitcher` — never put skin-conditional logic inside shared tile widgets.
 

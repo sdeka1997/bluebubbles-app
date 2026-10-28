@@ -444,7 +444,7 @@ class _ChatListPanelState extends State<ChatListPanel> with ThemeHelpers {
                                     await SettingsSvc.settings.saveOneAsync('materialRightAction');
                                   }
                                 },
-                                options: MaterialSwipeAction.values,
+                                options: MaterialSwipeAction.offered,
                                 textProcessing: (val) =>
                                     val.toString().split(".")[1].replaceAll("_", " ").capitalizeFirst!,
                                 title: "Swipe Right Action",
@@ -459,7 +459,7 @@ class _ChatListPanelState extends State<ChatListPanel> with ThemeHelpers {
                                     await SettingsSvc.settings.saveOneAsync('materialLeftAction');
                                   }
                                 },
-                                options: MaterialSwipeAction.values,
+                                options: MaterialSwipeAction.offered,
                                 textProcessing: (val) =>
                                     val.toString().split(".")[1].replaceAll("_", " ").capitalizeFirst!,
                                 title: "Swipe Left Action",

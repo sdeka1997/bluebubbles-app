@@ -176,9 +176,17 @@ enum LinkPreviewPolicy {
 enum MaterialSwipeAction {
   pin,
   alerts,
+  // No longer offered: Archive is the only way to hide a conversation. Kept so the saved
+  // indices of the actions after it stay put.
   delete,
   mark_read,
-  archive,
+  archive;
+
+  /// The actions the swipe pickers offer.
+  static List<MaterialSwipeAction> get offered => values.where((a) => a != delete).toList();
+
+  /// The action saved at [index], with a saved Delete becoming Archive.
+  static MaterialSwipeAction fromSaved(int index) => values[index] == delete ? archive : values[index];
 }
 
 enum SecurityLevel {

@@ -44,7 +44,6 @@ enum DetailsMenuAction {
     Icons.content_copy,
     "Copy Selection",
   ),
-  Delete(PlatformSupport.all, CupertinoIcons.trash, Icons.delete_outlined, "Delete"),
   Bookmark(PlatformSupport.all, CupertinoIcons.bookmark, Icons.bookmark_outlined, "Add/Remove Bookmark"),
   SelectMultiple(PlatformSupport.all, CupertinoIcons.checkmark_square, Icons.check_box_outlined, "Select Multiple"),
   MessageInfo(PlatformSupport.all, CupertinoIcons.info, Icons.info, "Message Info"),

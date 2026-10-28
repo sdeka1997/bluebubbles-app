@@ -47,6 +47,8 @@ Pinned chats are rendered in a horizontal `GridView` at the top of the list. `Pi
 
 `ListItem` wraps `ConversationTile` in a `Dismissible` for swipe-to-archive / swipe-to-pin on Material skin. iOS swipe actions are handled by the Cupertino skin tile directly.
 
+There is no Delete swipe: Archive is the only way to hide a conversation on Android (Apple devices are the source of truth). The pickers offer `MaterialSwipeAction.offered`; `MaterialSwipeAction.delete` stays in the enum only to keep saved indices stable, and `MaterialSwipeAction.fromSaved` loads a saved Delete as Archive.
+
 ## Data Source
 
 Chat data flows from `ChatsSvc` → `ChatState`. The tile observes `ChatState` fields via `Obx()` for the last message preview, unread count, and highlight state.

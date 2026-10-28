@@ -36,52 +36,41 @@ class ManualMarkState extends State<ManualMark> with ThemeHelpers {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          IconButton(
-            icon: Icon(
-              widget.controller.inSelectMode.value
-                  ? (iOS ? CupertinoIcons.trash : Icons.delete_outlined)
-                  : marking
-                      ? (iOS ? CupertinoIcons.arrow_2_circlepath : Icons.sync)
-                      : marked
-                          ? (iOS ? CupertinoIcons.app : Icons.mark_chat_read_outlined)
-                          : (iOS ? CupertinoIcons.app_badge : Icons.mark_chat_unread_outlined),
-              color: !iOS
-                  ? context.theme.colorScheme.onSurface
-                  : (!marked && !marking || widget.controller.inSelectMode.value)
-                      ? context.theme.colorScheme.primary
-                      : context.theme.colorScheme.outline,
-            ),
-            tooltip: widget.controller.inSelectMode.value
-                ? "Delete"
-                : marking
-                    ? null
+          if (!widget.controller.inSelectMode.value)
+            IconButton(
+              icon: Icon(
+                marking
+                    ? (iOS ? CupertinoIcons.arrow_2_circlepath : Icons.sync)
                     : marked
-                        ? "Mark Unread"
-                        : "Mark Read",
-            onPressed: () async {
-              if (widget.controller.inSelectMode.value) {
-                for (Message m in widget.controller.selected) {
-                  await MessagesSvc(chat.guid).softDeleteMessage(m);
+                        ? (iOS ? CupertinoIcons.app : Icons.mark_chat_read_outlined)
+                        : (iOS ? CupertinoIcons.app_badge : Icons.mark_chat_unread_outlined),
+                color: !iOS
+                    ? context.theme.colorScheme.onSurface
+                    : (!marked && !marking)
+                        ? context.theme.colorScheme.primary
+                        : context.theme.colorScheme.outline,
+              ),
+              tooltip: marking
+                  ? null
+                  : marked
+                      ? "Mark Unread"
+                      : "Mark Read",
+              onPressed: () async {
+                if (marking) return;
+                setState(() {
+                  marking = true;
+                });
+                if (!marked) {
+                  await HttpSvc.chat.markRead(chat.guid);
+                } else {
+                  await HttpSvc.chat.markUnread(chat.guid);
                 }
-                widget.controller.inSelectMode.value = false;
-                widget.controller.selected.clear();
-                return;
-              }
-              if (marking) return;
-              setState(() {
-                marking = true;
-              });
-              if (!marked) {
-                await HttpSvc.chat.markRead(chat.guid);
-              } else {
-                await HttpSvc.chat.markUnread(chat.guid);
-              }
-              setState(() {
-                marking = false;
-                marked = !marked;
-              });
-            },
-          ),
+                setState(() {
+                  marking = false;
+                  marked = !marked;
+                });
+              },
+            ),
           if (widget.controller.inSelectMode.value)
             IconButton(
               icon: Icon(
