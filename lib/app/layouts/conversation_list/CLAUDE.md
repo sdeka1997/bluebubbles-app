@@ -6,7 +6,7 @@
 - `material_conversation_list.dart` — Material skin
 - `samsung_conversation_list.dart` — Samsung skin
 - `search/search_view.dart` — full-text search results page (UI + filter state orchestration)
-- `search/search_query_helper.dart` — local/network message search query execution and result hydration
+- `search/search_query_helper.dart` — local/network message search query execution and result hydration; `matchConversations()` picks the chats shown in the Conversations section above the messages
 - `search/search_models.dart` — typed search models (`SearchMode`, `SearchResultItem`)
 
 ## Widgets

@@ -25,11 +25,15 @@ class SearchResult {
   final String chatGuidFilter;
   final SearchMode mode;
   final List<SearchResultItem> results;
+  final List<Chat> conversations;
+
+  bool get isEmpty => results.isEmpty && conversations.isEmpty;
 
   SearchResult({
     required this.search,
     required this.mode,
     required this.results,
+    this.conversations = const [],
     this.chatGuidFilter = "",
   });
 }
@@ -88,8 +92,7 @@ class SearchViewState extends State<SearchView> with ThemeHelpers {
             .firstWhereOrNull(
               (e) => e.search == newSearch && e.mode == (local.value ? SearchMode.local : SearchMode.network),
             )
-            ?.results
-            .isEmpty ??
+            ?.isEmpty ??
         false) {
       noResults.value = true;
       return;
@@ -101,6 +104,8 @@ class SearchViewState extends State<SearchView> with ThemeHelpers {
       search: currentSearchTerm.value!,
       mode: local.value ? SearchMode.local : SearchMode.network,
       results: [],
+      // Matched on the loaded chats in either mode; not when searching inside one chat
+      conversations: selectedChat.value == null ? matchConversations(currentSearchTerm.value!, ChatsSvc.allChats) : [],
     );
 
     if (local.value) {
@@ -129,7 +134,7 @@ class SearchViewState extends State<SearchView> with ThemeHelpers {
 
     pastSearches.add(search);
     isSearching.value = false;
-    noResults.value = search.results.isEmpty;
+    noResults.value = search.isEmpty;
     currentSearch.value = search;
   }
 
@@ -302,6 +307,33 @@ class SearchViewState extends State<SearchView> with ThemeHelpers {
                           child: Center(child: Text("No results found!", style: context.theme.textTheme.bodyLarge))),
                   ]),
                 ),
+                if (!isSearching.value && (currentSearch.value?.conversations.isNotEmpty ?? false))
+                  SliverList(
+                    delegate: SliverChildListDelegate([
+                      SettingsHeader(iosSubtitle: iosSubtitle, materialSubtitle: materialSubtitle, text: "Conversations"),
+                      for (final chat in currentSearch.value!.conversations)
+                        ListTile(
+                          mouseCursor: MouseCursor.defer,
+                          title: RichText(
+                            text: TextSpan(
+                              children: MessageHelper.buildEmojiText(
+                                ChatsSvc.getChatState(chat.guid)?.title.value ?? chat.getTitle(),
+                                context.theme.textTheme.bodyLarge!,
+                              ),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          leading: ContactAvatarGroupWidget(chat: chat, size: 40, editable: false),
+                          onTap: () => NavigationSvc.pushAndRemoveUntil(
+                            context,
+                            ConversationView(chat: chat),
+                            (route) => route.isFirst,
+                          ),
+                        ),
+                      if (currentSearch.value!.results.isNotEmpty)
+                        SettingsHeader(iosSubtitle: iosSubtitle, materialSubtitle: materialSubtitle, text: "Messages"),
+                    ]),
+                  ),
                 if (!isSearching.value && currentSearch.value != null)
                   SliverList(
                     delegate: SliverChildBuilderDelegate(
