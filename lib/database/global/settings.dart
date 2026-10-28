@@ -137,7 +137,7 @@ class Settings {
   final RxBool scrollToBottomOnSend = true.obs;
   final RxBool sendEventsToTasker = false.obs;
   final RxBool keepAppAlive = false.obs;
-  final RxBool unarchiveOnNewMessage = false.obs;
+  final RxBool unarchiveOnNewMessage = true.obs;
   final RxBool scrollToLastUnread = false.obs;
   final RxString userName = "You".obs;
   final RxnString userAvatarPath = RxnString();
@@ -680,10 +680,10 @@ class Settings {
     SettingsSvc.settings.notificationReactionActionType.value =
         map['notificationReactionActionType'] ?? SettingsSvc.settings.notificationReactionActionType.value;
     SettingsSvc.settings.materialRightAction.value = map['materialRightAction'] != null
-        ? MaterialSwipeAction.values[map['materialRightAction']]
+        ? MaterialSwipeAction.fromSaved(map['materialRightAction'])
         : SettingsSvc.settings.materialRightAction.value;
     SettingsSvc.settings.materialLeftAction.value = map['materialLeftAction'] != null
-        ? MaterialSwipeAction.values[map['materialLeftAction']]
+        ? MaterialSwipeAction.fromSaved(map['materialLeftAction'])
         : SettingsSvc.settings.materialLeftAction.value;
     SettingsSvc.settings.shouldSecure.value = map['shouldSecure'] ?? SettingsSvc.settings.shouldSecure.value;
     SettingsSvc.settings.securityLevel.value = map['securityLevel'] != null
@@ -846,7 +846,7 @@ class Settings {
     s.scrollToBottomOnSend.value = map['scrollToBottomOnSend'] ?? true;
     s.sendEventsToTasker.value = map['sendEventsToTasker'] ?? false;
     s.keepAppAlive.value = map['keepAppAlive'] ?? false;
-    s.unarchiveOnNewMessage.value = map['unarchiveOnNewMessage'] ?? false;
+    s.unarchiveOnNewMessage.value = map['unarchiveOnNewMessage'] ?? true;
     s.scrollToLastUnread.value = map['scrollToLastUnread'] ?? false;
     s.userName.value = map['userName'] ?? "You";
     s.userAvatarPath.value = map['userAvatarPath'];
@@ -877,10 +877,10 @@ class Settings {
     s.notificationReactionAction.value = map['notificationReactionAction'] ?? true;
     s.notificationReactionActionType.value = map['notificationReactionActionType'] ?? ReactionTypes.LIKE;
     s.materialRightAction.value = map['materialRightAction'] != null
-        ? MaterialSwipeAction.values[map['materialRightAction']]
+        ? MaterialSwipeAction.fromSaved(map['materialRightAction'])
         : MaterialSwipeAction.pin;
     s.materialLeftAction.value = map['materialLeftAction'] != null
-        ? MaterialSwipeAction.values[map['materialLeftAction']]
+        ? MaterialSwipeAction.fromSaved(map['materialLeftAction'])
         : MaterialSwipeAction.archive;
     s.shouldSecure.value = map['shouldSecure'] ?? false;
     s.securityLevel.value =

@@ -26,6 +26,8 @@ All three variants receive the same `ConversationViewController`. Header state (
 
 **`ManualMark`** — appears when Private API is enabled and the conversation is open. Lets the user manually mark the chat as read on the server. Visibility is gated on `SettingsSvc.settings.enablePrivateAPI.value`.
 
+In select mode the header offers Forward but no Delete, and the Material overflow menu offers Archive but no Delete: Archive is the only way to hide on Android, and messages are only deleted when an Apple device deletes them.
+
 When adding new header features, add shared logic or sub-widgets to `header_widgets.dart` and reference them from the skin-specific files rather than duplicating.
 
 ## Related
