@@ -34,8 +34,6 @@ class SearchContactTile extends StatelessWidget {
 
     return Obx(() {
       final hideInfo = SettingsSvc.settings.redactedMode.value && SettingsSvc.settings.hideContactInfo.value;
-      // Email addresses are only valid for iMessage
-      final showEmails = controller.selectedService.value.isIMessageService;
 
       return Column(
         key: ValueKey(contact.nativeContactId),
@@ -60,26 +58,25 @@ class SearchContactTile extends StatelessWidget {
               },
             ),
           ),
-          if (showEmails)
-            ...uniqueEmails.map(
-              (e) => _ContactAddressRow(
-                displayName: hideInfo ? 'Contact' : contact.computedDisplayName,
-                address: hideInfo ? '' : e.address,
-                label: hideInfo ? null : e.label,
-                contact: contact,
-                onTap: () {
-                  if (controller.selectedContacts.firstWhereOrNull((c) => c.address == e.address) != null) {
-                    return;
-                  }
-                  controller.addSelected(
-                    SelectedContact(
-                      displayName: contact.computedDisplayName,
-                      address: e.address,
-                    ),
-                  );
-                },
-              ),
+          ...uniqueEmails.map(
+            (e) => _ContactAddressRow(
+              displayName: hideInfo ? 'Contact' : contact.computedDisplayName,
+              address: hideInfo ? '' : e.address,
+              label: hideInfo ? null : e.label,
+              contact: contact,
+              onTap: () {
+                if (controller.selectedContacts.firstWhereOrNull((c) => c.address == e.address) != null) {
+                  return;
+                }
+                controller.addSelected(
+                  SelectedContact(
+                    displayName: contact.computedDisplayName,
+                    address: e.address,
+                  ),
+                );
+              },
             ),
+          ),
         ],
       );
     });

@@ -1,17 +1,15 @@
 /// Represents the messaging service type for a chat.
 ///
 /// Derived from the GUID prefix (the part before `;-;` or `;+;`).
-/// Add new service types here. Set [isVisible] to false to define a service
-/// without exposing it in the UI (e.g. RCS, which is defined but not yet shown).
+/// Add new service types here.
 enum ChatServiceType {
-  iMessage(label: 'iMessage', isVisible: true),
-  sms(label: 'SMS', isVisible: true),
-  rcs(label: 'RCS', isVisible: true);
+  iMessage(label: 'iMessage'),
+  sms(label: 'SMS'),
+  rcs(label: 'RCS');
 
-  const ChatServiceType({required this.label, required this.isVisible});
+  const ChatServiceType({required this.label});
 
   final String label;
-  final bool isVisible;
 
   /// Apple supports Tapbacks in iMessage, RCS and SMS conversations.
   bool get supportsTapbacks => true;
@@ -26,6 +24,15 @@ enum ChatServiceType {
       case ChatServiceType.rcs:
         return 'RCS';
     }
+  }
+
+  /// The service a new message to [recipients] starts on, from the Mac's iMessage
+  /// answer for each one ([status], null while unknown): text once any phone number
+  /// is off iMessage, otherwise iMessage like stock. Emails only reach iMessage.
+  /// The Mac itself upgrades a text to RCS where it can.
+  static ChatServiceType forNewChat(Iterable<({String address, ChatServiceType? status})> recipients) {
+    final texting = recipients.any((r) => !r.address.contains('@') && r.status?.isIMessageService == false);
+    return texting ? ChatServiceType.sms : ChatServiceType.iMessage;
   }
 
   /// Whether chats of this type are iMessage chats.
