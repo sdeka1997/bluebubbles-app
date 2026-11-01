@@ -113,6 +113,16 @@ class FindMyController extends GetxController {
 
   bool get _isAlive => !isClosed;
 
+  /// How long a whole fetch may take before the page stops waiting on it.
+  ///
+  /// Dio's own receive window for the device refresh is `apiTimeout * 12`, i.e.
+  /// six minutes by default, and a tunnel can cancel the connection without
+  /// either side raising an error — so the await alone is not a bound the user
+  /// ever sees. The server's device refresh legitimately takes ~25 s (measured
+  /// 24.8 s and 25.3 s), so this has to clear that with room to spare while
+  /// still failing fast enough to show cached pins instead of a dead spinner.
+  static const Duration fetchDeadline = Duration(seconds: 75);
+
   void _scheduleRefreshGate() {
     _refreshTimer?.cancel();
     _refreshTimer = Timer(const Duration(seconds: 30), () {
@@ -422,14 +432,25 @@ class FindMyController extends GetxController {
   /// we will "patch" it by only "refreshing" devices when the user manually refreshes the data.
   Future<void> getLocations({bool refreshFriends = true, bool refreshDevices = false}) async {
     try {
-      await _fetchLocations(refreshFriends: refreshFriends, refreshDevices: refreshDevices);
+      await _fetchLocations(
+        refreshFriends: refreshFriends,
+        refreshDevices: refreshDevices,
+      ).timeout(fetchDeadline);
+    } on TimeoutException catch (e) {
+      Logger.warn("FindMy fetch gave no answer within $fetchDeadline", error: e, tag: 'FindMyController');
     } finally {
       // Every path should already clear these; this covers a throw (e.g. from the
-      // location permission check) that would otherwise leave the refresh button
-      // spinning until the page is reopened.
+      // location permission check) or a request that never answers at all, either
+      // of which would otherwise leave the refresh button spinning and the map
+      // pinned on a loading spinner until the page is reopened.
       if (_isAlive) {
         refreshing.value = false;
         refreshing2.value = false;
+        // null is the "tried and failed" state, as used by the parse-error paths.
+        // It lets the map draw whatever cached markers it has — or say plainly
+        // that there is no location — instead of waiting on a dead request.
+        if (fetching.value == true) fetching.value = null;
+        if (fetching2.value == true) fetching2.value = null;
       }
     }
   }
