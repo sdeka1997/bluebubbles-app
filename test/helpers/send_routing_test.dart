@@ -1,3 +1,4 @@
+import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/types/classes/chat_service_type.dart';
 import 'package:bluebubbles/helpers/types/helpers/send_routing.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -87,5 +88,38 @@ void main() {
 
   test('off iMessage with only an iMessage copy still sends there; the Mac decides', () {
     expect(pickSendTarget(copies: [imA], isGroup: false, members: off, latestService: im).guid, imA.guid);
+  });
+
+  group('describeThread', () {
+    Message msg(String? apple, int day, {bool fromMe = false, String? service}) =>
+        Message(guid: 'm$day', appleChatGuid: apple, dateCreated: DateTime(2026, 1, day), isFromMe: fromMe, service: service);
+    final thread = Chat(id: 1, guid: 'SMS;-;+15550000001');
+    final imCopy = Chat(id: 2, guid: 'iMessage;-;+15550000001');
+
+    test('times per copy; messages without an Apple chat belong to the thread chat', () {
+      final d = describeThread(threadGuid: thread.guid, copies: [thread, imCopy], recent: [
+        msg(null, 3),
+        msg('iMessage;-;+15550000001', 5),
+        msg('iMessage;-;+15550000001', 6, fromMe: true),
+      ]);
+      expect(d.copies[0].lastIncoming, DateTime(2026, 1, 3));
+      expect(d.copies[1].lastIncoming, DateTime(2026, 1, 5));
+      expect(d.copies[1].lastActivity, DateTime(2026, 1, 6));
+    });
+
+    test('latest service and latest text service', () {
+      final d = describeThread(threadGuid: thread.guid, copies: [thread, imCopy], recent: [
+        msg(null, 3, service: 'RCS'),
+        msg(null, 4, service: 'SMS'),
+        msg('iMessage;-;+15550000001', 5),
+      ]);
+      expect(d.latestService, ChatServiceType.iMessage);
+      expect(d.latestTextService, ChatServiceType.sms);
+    });
+
+    test('a message filed under SMS but sent over RCS counts as RCS', () {
+      final d = describeThread(threadGuid: thread.guid, copies: [thread], recent: [msg(null, 3, service: 'RCS')]);
+      expect(d.latestTextService, ChatServiceType.rcs);
+    });
   });
 }

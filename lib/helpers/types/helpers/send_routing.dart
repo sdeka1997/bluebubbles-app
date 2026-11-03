@@ -1,3 +1,4 @@
+import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/types/classes/chat_service_type.dart';
 import 'package:collection/collection.dart';
 
@@ -78,4 +79,50 @@ SendCopy? _best(Iterable<SendCopy> copies) {
   final received = copies.where((c) => c.lastIncoming != null);
   if (received.isNotEmpty) return received.sorted((a, b) => byDate(b.lastIncoming, a.lastIncoming)).first;
   return copies.sorted((a, b) => byDate(b.lastActivity, a.lastActivity)).firstOrNull;
+}
+
+/// What [pickSendTarget] needs about a thread, from its Apple chats [copies]
+/// and its newest messages [recent]. [threadGuid] is the local chat the thread
+/// is stored under; its own messages may not record their Apple chat.
+({List<SendCopy> copies, ChatServiceType? latestService, ChatServiceType? latestTextService}) describeThread({
+  required String threadGuid,
+  required List<Chat> copies,
+  required List<Message> recent,
+}) {
+  final incoming = <String, DateTime>{};
+  final activity = <String, DateTime>{};
+  ChatServiceType? latest, latestText;
+  DateTime? latestAt, latestTextAt;
+  for (final m in recent) {
+    final at = m.dateCreated;
+    if (at == null) continue;
+    final guid = m.appleChatGuid ?? threadGuid;
+    if (activity[guid] == null || at.isAfter(activity[guid]!)) activity[guid] = at;
+    if (m.isFromMe != true && (incoming[guid] == null || at.isAfter(incoming[guid]!))) incoming[guid] = at;
+    final service = m.service == null
+        ? copies.firstWhereOrNull((c) => c.guid == guid)?.service
+        : ChatServiceType.current(ChatServiceType.iMessage, latestMessageService: m.service);
+    if (service == null) continue;
+    if (latestAt == null || at.isAfter(latestAt)) {
+      latestAt = at;
+      latest = service;
+    }
+    if (!service.isIMessageService && (latestTextAt == null || at.isAfter(latestTextAt))) {
+      latestTextAt = at;
+      latestText = service;
+    }
+  }
+  return (
+    copies: [
+      for (final c in copies)
+        SendCopy(
+          guid: c.guid,
+          service: c.service,
+          lastIncoming: incoming[c.guid],
+          lastActivity: activity[c.guid] ?? c.dbOnlyLatestMessageDate,
+        ),
+    ],
+    latestService: latest,
+    latestTextService: latestText,
+  );
 }
