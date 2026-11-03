@@ -62,3 +62,40 @@ List<Chat> relistChatsShownByEvents(Iterable<Chat> chats) {
   if (changed.isNotEmpty) Database.chats.putMany(changed);
   return changed;
 }
+
+/// Why [chat]'s place in the list disagrees with [newest], the newest message
+/// that [listsThread] this phone holds for it, or null when it agrees. The
+/// list sorts by the stored date, so any disagreement puts the thread in the
+/// wrong place.
+String? listingProblem(Chat chat, Message? newest) {
+  if (newest == null) return null;
+  final latest = chat.dbLatestMessage.target;
+  final date = chat.dbOnlyLatestMessageDate;
+  if (date == null || date.millisecondsSinceEpoch == 0) return 'no stored date';
+  if (latest != null && latest.dateCreated != null && latest.dateCreated != date) return 'date does not match its message';
+  if (date.isBefore(newest.dateCreated!)) return 'listed by something older than its newest message';
+  if (latest?.guid != newest.guid && date.isAfter(newest.dateCreated!)) return 'listed by something newer than any message it holds';
+  return null;
+}
+
+/// Points every chat whose place in the list disagrees with the messages this
+/// phone holds back at its newest message, logging why. Returns the chats
+/// that changed; the caller refreshes the list.
+List<Chat> repairListing(Iterable<Chat> chats, void Function(String) log) {
+  final changed = <Chat>[];
+  for (final chat in chats) {
+    if (chat.id == null || chat.dateDeleted != null) continue;
+    final newest = newestMessageIn(chat.id!);
+    final problem = listingProblem(chat, newest);
+    if (problem == null) continue;
+    final latest = chat.dbLatestMessage.target;
+    log('${chat.guid} #${chat.id}: $problem; stored ${chat.dbOnlyLatestMessageDate?.toIso8601String()} '
+        '(message #${latest?.id} type ${latest?.itemType} in chat #${latest?.chat.targetId}), '
+        'newest ${newest!.dateCreated!.toIso8601String()} (message #${newest.id})');
+    chat.dbLatestMessage.target = newest;
+    chat.dbOnlyLatestMessageDate = newest.dateCreated;
+    changed.add(chat);
+  }
+  if (changed.isNotEmpty) Database.chats.putMany(changed);
+  return changed;
+}
