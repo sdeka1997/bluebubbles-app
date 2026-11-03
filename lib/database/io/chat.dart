@@ -87,13 +87,15 @@ class Chat {
 
   /// Update the latest-message relation and its sort-key in one step.
   /// Persists both fields to the DB asynchronously (fire-and-forget).
-  void setLatestMessage(Message m) {
-    // The save sends only the message's id, and a missing id reads as
-    // "cleared", which wipes the stored date and drops the thread to the
-    // bottom of the list. Logged to find the caller.
-    if (m.id == null || m.id == 0) {
-      Logger.warn("$guid: latest message ${m.guid} has no id, so its date will be cleared",
-          tag: "ThreadCheck", trace: StackTrace.current);
+  void setLatestMessage(Message message) {
+    // The save sends only the message's local id, and a missing id reads as
+    // "cleared". A message built from a server event has no local id, so it
+    // is matched to its stored copy first.
+    final m = latestMessageToStore(message, (guid) => Message.findOne(guid: guid));
+    if (m == null) {
+      Logger.warn("$guid: latest message ${message.guid} is not stored yet, so it is not saved as latest",
+          tag: "ThreadCheck");
+      return;
     }
     dbLatestMessage.target = m;
     dbOnlyLatestMessageDate = m.dateCreated;
@@ -1020,4 +1022,15 @@ class Chat {
       "dbLatestMessageId": dbLatestMessage.targetId,
     };
   }
+}
+
+/// The copy of [message] to store as a chat's latest message: [message] when
+/// it is already stored, else its stored copy found by [lookup] (by guid), or
+/// null when this phone hasn't stored it yet.
+Message? latestMessageToStore(Message message, Message? Function(String guid) lookup) {
+  if ((message.id ?? 0) > 0) return message;
+  final guid = message.guid;
+  if (guid == null) return null;
+  final stored = lookup(guid);
+  return (stored?.id ?? 0) > 0 ? stored : null;
 }
