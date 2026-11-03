@@ -172,7 +172,6 @@ class _ChatInfoState extends State<ChatInfo> with ThemeHelpers {
                     ((chat.handles.first.contactsV2.firstOrNull?.emailAddresses.isNotEmpty ?? false) ||
                         chat.handles.first.address.contains("@")))
                   MailButton(tileColor: tileColor, chat: chat, iOS: iOS),
-                if (!kIsWeb && !kIsDesktop) InfoButton(tileColor: tileColor, chat: chat, iOS: iOS),
               ]).toList(),
             ),
           ),
@@ -187,73 +186,6 @@ class _ChatInfoState extends State<ChatInfo> with ThemeHelpers {
   }
 }
 
-class InfoButton extends StatelessWidget {
-  const InfoButton({
-    super.key,
-    required this.tileColor,
-    required this.chat,
-    required this.iOS,
-  });
-
-  final Color tileColor;
-  final Chat chat;
-  final bool iOS;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Material(
-        borderRadius: BorderRadius.circular(15),
-        color: tileColor,
-        child: InkWell(
-          onTap: () async {
-            final contact = chat.handles.first.contactsV2.firstOrNull;
-            final handle = chat.handles.first;
-            if (contact == null || !contact.isNative) {
-              await MethodChannelSvc.actions.openContactForm(
-                address: handle.address,
-                isEmail: handle.address.isEmail,
-              );
-            } else {
-              try {
-                await MethodChannelSvc.actions.viewContactForm(nativeContactId: contact.nativeContactId);
-              } catch (_) {
-                showSnackbar("Error", "Failed to find contact on device!", type: SnackbarType.error);
-              }
-            }
-          },
-          borderRadius: BorderRadius.circular(15),
-          child: SizedBox(
-            height: 60,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  chat.handles.isNotEmpty &&
-                          chat.handles.first.contactsV2.isNotEmpty &&
-                          chat.handles.first.contactsV2.first.isNative
-                      ? (iOS ? CupertinoIcons.info : Icons.info)
-                      : (iOS ? CupertinoIcons.plus_circle : Icons.add_circle_outline),
-                  color: context.theme.colorScheme.onSurface,
-                  size: 20,
-                ),
-                const SizedBox(height: 7.5),
-                Text(
-                    chat.handles.isNotEmpty &&
-                            chat.handles.first.contactsV2.isNotEmpty &&
-                            chat.handles.first.contactsV2.first.isNative
-                        ? "Info"
-                        : "Add Contact",
-                    style: context.theme.textTheme.bodySmall!.copyWith(color: context.theme.colorScheme.onSurface)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class MailButton extends StatelessWidget {
   const MailButton({

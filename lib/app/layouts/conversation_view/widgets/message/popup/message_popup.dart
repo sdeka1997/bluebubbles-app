@@ -643,13 +643,6 @@ class _MessagePopupState extends State<MessagePopup> with SingleTickerProviderSt
         onTap: () => popup_message_actions.remindLater(_buildActionContext(DetailsMenuAction.RemindLater)),
         action: DetailsMenuAction.RemindLater,
       ),
-      if (!message.isFromMe! &&
-          message.handleRelation.target != null &&
-          message.handleRelation.target!.contactsV2.isEmpty)
-        DetailsMenuActionWidget(
-          onTap: () => popup_message_actions.createContact(_buildActionContext(DetailsMenuAction.CreateContact)),
-          action: DetailsMenuAction.CreateContact,
-        ),
       if (SettingsSvc.serverDetails.isMinVentura &&
           message.isFromMe! &&
           !widget.controller.isSending.value &&

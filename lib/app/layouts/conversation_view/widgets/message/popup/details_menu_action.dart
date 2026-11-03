@@ -27,12 +27,6 @@ enum DetailsMenuAction {
   Share(PlatformSupport.android | PlatformSupport.windows, CupertinoIcons.share, Icons.share, "Share"),
   ReDownloadFromServer(PlatformSupport.all, CupertinoIcons.refresh, Icons.refresh, "Re-download From Server"),
   RemindLater(PlatformSupport.android | PlatformSupport.windows, CupertinoIcons.alarm, Icons.alarm, "Remind Later"),
-  CreateContact(
-    PlatformSupport.android,
-    CupertinoIcons.person_crop_circle_badge_plus,
-    Icons.contact_page_outlined,
-    "Create Contact",
-  ),
   UndoSend(PlatformSupport.all, CupertinoIcons.arrow_uturn_left, Icons.undo, "Undo Send"),
   Edit(PlatformSupport.all, CupertinoIcons.pencil, Icons.edit_outlined, "Edit"),
   Forward(PlatformSupport.all, CupertinoIcons.arrow_right, Icons.forward, "Forward"),

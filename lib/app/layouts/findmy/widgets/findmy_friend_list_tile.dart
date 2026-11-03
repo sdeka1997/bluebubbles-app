@@ -7,7 +7,6 @@ import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_selected_card.dart
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/services.dart';
-import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -97,7 +96,6 @@ class FindMyFriendListTile extends StatelessWidget {
             ? FutureBuilder<ContactV2?>(
                 future: hideContactInfo ? Future.value() : controller.nativeContactForFriend(item),
                 builder: (context, snapshot) {
-                  final contact = snapshot.data;
                   return FindMySelectedCard(
                     leading: leading,
                     title: displayName,
@@ -112,16 +110,7 @@ class FindMyFriendListTile extends StatelessWidget {
                     onDirections: withLocation && markerPoint != null
                         ? () => MapsLauncher.launchCoordinates(markerPoint.latitude, markerPoint.longitude)
                         : null,
-                    onContact: contact == null
-                        ? null
-                        : () async {
-                            try {
-                              await MethodChannelSvc.actions.viewContactForm(nativeContactId: contact.nativeContactId);
-                            } catch (e, s) {
-                              Logger.error("Failed to find contact on device", error: e, trace: s);
-                              showSnackbar("Error", "Failed to find contact on device!", type: SnackbarType.error);
-                            }
-                          },
+                    onContact: null,
                   );
                 },
               )

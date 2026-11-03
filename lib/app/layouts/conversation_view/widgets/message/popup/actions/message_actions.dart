@@ -46,14 +46,6 @@ Future<void> remindLater(MessagePopupActionContext ctx) async {
   }
 }
 
-Future<void> createContact(MessagePopupActionContext ctx) async {
-  ctx.popDetails();
-  await MethodChannelSvc.actions.openContactForm(
-    address: ctx.message.handleRelation.target!.address,
-    isEmail: ctx.message.handleRelation.target!.address.isEmail,
-  );
-}
-
 Future<void> unsend(MessagePopupActionContext ctx) async {
   ctx.popDetails();
   await MessagesSvc(ctx.chat.guid).unsendMessage(ctx.message, ctx.part.part);

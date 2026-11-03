@@ -7,7 +7,6 @@ import 'package:bluebubbles/helpers/ui/async_task.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_metadata_helpers.dart';
 import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/helpers/ui/ui_helpers.dart';
-import 'package:bluebubbles/services/backend/interfaces/contact_v2_interface.dart';
 import 'package:bluebubbles/services/backend/interfaces/sync_interface.dart';
 import 'package:bluebubbles/services/backend/sync/sync_retry.dart';
 import 'package:bluebubbles/services/backend/sync/sync_windows.dart';
@@ -19,7 +18,6 @@ import 'package:bluebubbles/services/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart' hide Response;
 import 'package:get_it/get_it.dart';
-import 'package:universal_io/universal_io.dart';
 
 // ignore: non_constant_identifier_names
 SyncService get SyncSvc => GetIt.I<SyncService>();
@@ -354,29 +352,8 @@ class SyncService {
     }
   }
 
-  Future<bool> performContactSyncToServer() async {
-    try {
-      // Auto upload contacts if requested
-      if (Platform.isAndroid && SettingsSvc.settings.syncContactsAutomatically.value) {
-        Logger.debug("Starting contact upload to server...", tag: "Contact Upload");
-        final contactUploadStopwatch = Stopwatch()..start();
-        // Get all contacts from ContactServiceV2
-        final contactsV2 = await ContactsSvcV2.getAllContacts();
-        final _contacts = <Map<String, dynamic>>[];
-        for (final c in contactsV2) {
-          _contacts.add(c.toServerMap());
-        }
+  /// Contacts come from the Mac's Apple Contacts, so the phone never uploads
+  /// its own; kept so callers that report sync steps still get a result.
+  Future<bool> performContactSyncToServer() async => true;
 
-        await ContactV2Interface.uploadContacts(_contacts);
-        contactUploadStopwatch.stop();
-        Logger.debug("Contact upload complete in ${contactUploadStopwatch.elapsedMilliseconds}ms",
-            tag: "Contact Upload");
-      }
-
-      return true;
-    } catch (e, stack) {
-      Logger.error("Failed to upload contacts!", error: e, trace: stack, tag: "Contact Upload");
-      return false;
-    }
-  }
 }

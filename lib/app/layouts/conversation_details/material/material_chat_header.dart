@@ -231,7 +231,6 @@ class ExpressiveChatHeader extends StatelessWidget {
     }
 
     final contact = chat.handles.isNotEmpty ? chat.handles.first.contactsV2.firstOrNull : null;
-    final hasContact = contact != null && contact.isNative;
 
     return [
       M3EButtonGroupItem(
@@ -258,25 +257,6 @@ class ExpressiveChatHeader extends StatelessWidget {
           icon: Icons.email_outlined,
           label: "Mail",
           onPressed: () => showAddressPicker(contact, chat.handles.first, context, isEmail: true),
-        ),
-      if (!kIsWeb && !kIsDesktop)
-        M3EButtonGroupItem(
-          icon: hasContact ? Icons.info_outline : Icons.person_add_outlined,
-          label: hasContact ? "Info" : "Add contact",
-          onPressed: () async {
-            if (!hasContact) {
-              await MethodChannelSvc.actions.openContactForm(
-                address: chat.handles.first.address,
-                isEmail: chat.handles.first.address.isEmail,
-              );
-            } else {
-              try {
-                await MethodChannelSvc.actions.viewContactForm(nativeContactId: contact.nativeContactId);
-              } catch (_) {
-                showSnackbar("Error", "Failed to find contact on device!", type: SnackbarType.error);
-              }
-            }
-          },
         ),
     ];
   }

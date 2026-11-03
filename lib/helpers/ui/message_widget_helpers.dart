@@ -44,27 +44,7 @@ List<InlineSpan> buildMessageSpans(BuildContext context, MessagePart part, Messa
         textStyle,
       ));
       textSpans.addAll(MessageHelper.buildEmojiText(
-          part.displayText!.substring(range.first, range.last), textStyle.apply(fontWeightDelta: 2),
-          recognizer: TapGestureRecognizer()
-            ..onTap = () async {
-              if (kIsDesktop || kIsWeb) return;
-              final handle = ChatsSvc.activeChat!.chat.handles
-                  .firstWhereOrNull((e) => e.address == part.mentions[i].mentionedAddress);
-              if (handle?.contactsV2.isNotEmpty == true && handle!.contactsV2.first.isNative) {
-                try {
-                  await MethodChannelSvc.actions.viewContactForm(
-                    nativeContactId: handle.contactsV2.first.nativeContactId,
-                  );
-                } catch (_) {
-                  showSnackbar("Error", "Failed to find contact on device!", type: SnackbarType.error);
-                }
-              } else if (handle != null) {
-                await MethodChannelSvc.actions.openContactForm(
-                  address: handle.address,
-                  isEmail: handle.address.isEmail,
-                );
-              }
-            }));
+          part.displayText!.substring(range.first, range.last), textStyle.apply(fontWeightDelta: 2)));
       if (i == part.mentions.length - 1) {
         textSpans.addAll(MessageHelper.buildEmojiText(
           part.displayText!.substring(range.last),
@@ -185,26 +165,7 @@ Future<List<InlineSpan>> buildEnrichedMessageSpans(BuildContext context, Message
         textStyle,
       ));
       if (type == "mention") {
-        textSpans.addAll(MessageHelper.buildEmojiText(text, textStyle.apply(fontWeightDelta: 2),
-            recognizer: TapGestureRecognizer()
-              ..onTap = () async {
-                if (kIsDesktop || kIsWeb) return;
-                final handle = ChatsSvc.activeChat!.chat.handles.firstWhereOrNull((e) => e.address == data!.first);
-                if (handle?.contactsV2.isNotEmpty == true && handle!.contactsV2.first.isNative) {
-                  try {
-                    await MethodChannelSvc.actions.viewContactForm(
-                      nativeContactId: handle.contactsV2.first.nativeContactId,
-                    );
-                  } catch (_) {
-                    showSnackbar("Error", "Failed to find contact on device!", type: SnackbarType.error);
-                  }
-                } else if (handle != null) {
-                  await MethodChannelSvc.actions.openContactForm(
-                    address: handle.address,
-                    isEmail: handle.address.isEmail,
-                  );
-                }
-              }));
+        textSpans.addAll(MessageHelper.buildEmojiText(text, textStyle.apply(fontWeightDelta: 2)));
       } else if (urlRegex.hasMatch(text) ||
           type == "map" ||
           text.isPhoneNumber ||

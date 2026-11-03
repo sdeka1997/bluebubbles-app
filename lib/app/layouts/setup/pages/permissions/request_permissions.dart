@@ -14,9 +14,7 @@ class RequestPermissions extends StatefulWidget {
 }
 
 class _RequestPermissionsState extends State<RequestPermissions> with WidgetsBindingObserver {
-  PermissionStatus _contactsStatus = PermissionStatus.denied;
   PermissionStatus _notifStatus = PermissionStatus.denied;
-  bool _contactsRequested = false;
   bool _notifRequested = false;
 
   @override
@@ -38,30 +36,9 @@ class _RequestPermissionsState extends State<RequestPermissions> with WidgetsBin
   }
 
   Future<void> _refreshAll() async {
-    final results = await Future.wait([
-      Permission.contacts.status,
-      Permission.notification.status,
-    ]);
+    final status = await Permission.notification.status;
     if (!mounted) return;
-    setState(() {
-      _contactsStatus = results[0];
-      _notifStatus = results[1];
-    });
-  }
-
-  Future<void> _requestContacts() async {
-    if (Platform.isAndroid) {
-      await ContactsSvcV2.requestContactPermission();
-    } else {
-      await Permission.contacts.request();
-    }
-    final status = await Permission.contacts.status;
-    if (mounted) {
-      setState(() {
-        _contactsStatus = status;
-        _contactsRequested = true;
-      });
-    }
+    setState(() => _notifStatus = status);
   }
 
   Future<void> _requestNotifications() async {
@@ -81,7 +58,8 @@ class _RequestPermissionsState extends State<RequestPermissions> with WidgetsBin
     return Platform.isIOS || (Platform.isAndroid && sdkInt >= 33);
   }
 
-  bool get _allGranted => _contactsStatus.isGranted && (_notifStatus.isGranted || !_notifRequired);
+  // Contacts come from the Mac's Apple Contacts, so only notifications are asked for.
+  bool get _allGranted => _notifStatus.isGranted || !_notifRequired;
 
   @override
   Widget build(BuildContext context) {
@@ -93,15 +71,6 @@ class _RequestPermissionsState extends State<RequestPermissions> with WidgetsBin
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _PermissionCard(
-              icon: Icons.contacts_rounded,
-              label: "Contacts",
-              description: "Show contact names and photos in your conversations.",
-              status: _contactsStatus,
-              hasRequested: _contactsRequested,
-              onRequest: _requestContacts,
-            ),
-            const SizedBox(height: 12),
             if (_notifRequired)
               _PermissionCard(
                 icon: Icons.notifications_rounded,
@@ -118,7 +87,6 @@ class _RequestPermissionsState extends State<RequestPermissions> with WidgetsBin
         if (_allGranted) return true;
 
         final missing = <String>[];
-        if (!_contactsStatus.isGranted) missing.add("Contacts");
         if (!_notifStatus.isGranted && _notifRequired) missing.add("Notifications");
 
         return await showBBDialog<bool>(

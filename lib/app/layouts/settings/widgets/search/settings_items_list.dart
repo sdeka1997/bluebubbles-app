@@ -21,7 +21,6 @@ import 'package:bluebubbles/app/layouts/settings/pages/misc/troubleshoot_panel.d
 import 'package:bluebubbles/app/layouts/settings/pages/profile/profile_panel.dart';
 import 'package:bluebubbles/app/layouts/settings/pages/server/backup_restore_panel.dart';
 import 'package:bluebubbles/app/layouts/settings/pages/server/server_management_panel.dart';
-import 'package:bluebubbles/app/layouts/settings/pages/contacts/contacts_management_panel.dart';
 import 'package:bluebubbles/app/layouts/settings/pages/storage/storage_analyzer_panel.dart';
 import 'package:bluebubbles/app/layouts/settings/pages/system/notification_panel.dart';
 import 'package:bluebubbles/app/layouts/settings/pages/theming/theming_panel.dart';
@@ -574,35 +573,6 @@ List<Widget> buildSettingItemList({
           ),
         ),
 
-        // Contacts Management Tile
-        if (!kIsWeb)
-          SearchableSettingItem(
-            title: "Contacts Management",
-            searchTags: const [
-              "Contacts Permission",
-              "Refresh Contacts",
-              "Sync From Account",
-              "Contact Accounts",
-              "GrapheneOS",
-            ],
-            onTap: () {
-              ns.pushAndRemoveSettingsUntil(context, const ContactsManagementPanel(), (Route route) => route.isFirst);
-            },
-            child: SettingsTile(
-              backgroundColor: tileColor,
-              onTap: () {
-                ns.pushAndRemoveSettingsUntil(context, const ContactsManagementPanel(), (Route route) => route.isFirst);
-              },
-              leading: const SettingsLeadingIcon(
-                iosIcon: CupertinoIcons.person_crop_circle_badge_checkmark,
-                materialIcon: Icons.contacts_rounded,
-                containerColor: Colors.green,
-              ),
-              title: "Contacts Management",
-              activePage: ContactsManagementPanel,
-              trailing: const NextButton(),
-            ),
-          ),
 
         // Storage Analyzer Tile
         if (!kIsWeb)
