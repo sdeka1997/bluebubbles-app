@@ -399,6 +399,7 @@ class ChatsService {
 
     loadedAllChats.complete();
     Logger.info("Finished fetching chats (${chatStates.length}).", tag: "ChatBloc");
+    if (!kIsWeb) _logUnlistedThreads();
 
     // Calculate initial unread count now that all chat states are populated.
     // The listener only fires on changes, so we need an explicit call here to
@@ -710,6 +711,20 @@ class ChatsService {
         b.dbOnlyLatestMessageDate ??
         DateTime.fromMillisecondsSinceEpoch(0);
     return -aDate.compareTo(bDate);
+  }
+
+  /// Logs every thread that should be listed but isn't, so a missing
+  /// conversation can be traced from an exported log.
+  void _logUnlistedThreads() {
+    try {
+      final lines = threadDiagnostics(Database.chats.getAll(), listed: chatStates.keys.toSet());
+      Logger.info("Unlisted threads: ${lines.length}", tag: "ThreadCheck");
+      for (final line in lines.take(200)) {
+        Logger.info(line, tag: "ThreadCheck");
+      }
+    } catch (e, stack) {
+      Logger.warn("Could not check for unlisted threads", error: e, trace: stack, tag: "ThreadCheck");
+    }
   }
 
   /// Find the correct insertion index for a chat using binary search

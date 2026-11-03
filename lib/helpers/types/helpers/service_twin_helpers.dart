@@ -226,3 +226,30 @@ String? threadNameFor(Chat chat) {
   }
   return threadName(chat, copies, newestRename: newestRename);
 }
+
+/// Log lines for every thread the conversation list should show but doesn't:
+/// the chat it's shown as, why that chat is hidden, and each copy with its
+/// latest-message date. [listed] holds the guids the list holds. Chats deleted
+/// on this phone are left out.
+List<String> threadDiagnostics(Iterable<Chat> chats, {required Set<String> listed}) {
+  String flags(Chat c) => [
+        if (c.isFilteredAsSpam == true) 'spam',
+        if (c.isArchived ?? false) 'archived',
+        if (c.dateDeleted != null) 'deleted',
+        if (!listed.contains(c.guid)) 'not listed',
+      ].join(', ');
+  final lines = <String>[];
+  final byThread = chats.groupListsBy((c) => c.threadKey?.isNotEmpty ?? false ? c.threadKey! : c.guid);
+  for (final entry in byThread.entries) {
+    final copies = entry.value;
+    final live = copies.where((c) => c.dateDeleted == null).toList();
+    if (live.isEmpty) continue;
+    final shown = live.where((c) => c.id != null).sortedBy<num>((c) => c.id!).firstOrNull ?? live.first;
+    if (listed.contains(shown.guid) || shown.isFilteredAsSpam == true && copies.every((c) => c.isFilteredAsSpam == true)) {
+      continue;
+    }
+    final parts = [for (final c in copies) '${c.guid} #${c.id} [${flags(c)}] latest ${c.dbOnlyLatestMessageDate?.toIso8601String()}'];
+    lines.add('thread ${entry.key} shown as ${shown.guid} [${flags(shown)}]; copies: ${parts.join('; ')}');
+  }
+  return lines;
+}
