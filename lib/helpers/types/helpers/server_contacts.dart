@@ -30,6 +30,7 @@ List<ServerContact> contactsFromServer(Iterable<dynamic> data) {
       displayName: displayName,
       firstName: item['firstName']?.toString(),
       lastName: item['lastName']?.toString(),
+      nickname: item['nickname']?.toString(),
     );
     contact.phoneNumbers = phones;
     contact.emailAddresses = emails;

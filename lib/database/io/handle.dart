@@ -120,19 +120,13 @@ class Handle {
   String get reactionDisplayName {
     if (address.startsWith("urn:biz")) return "Business";
     if (!kIsWeb && contactsV2.isNotEmpty) {
-      // Prioritize native contacts, but fall back to any contact if no native ones exist (should be rare)
-      final firstNativeContact = contactsV2.where((c) => c.isNative).firstOrNull;
-      final nativeNickname = firstNativeContact?.nickname;
-      if (!isNullOrEmpty(nativeNickname)) return nativeNickname!;
-
-      final nativeFirstName = firstNativeContact?.firstName;
-      if (!isNullOrEmpty(nativeFirstName)) return nativeFirstName!;
-
-      final nativeComputedDisplayName = firstNativeContact?.computedDisplayName;
-      if (!isNullOrEmpty(nativeComputedDisplayName)) return nativeComputedDisplayName!;
-
-      final computedDisplayName = contactsV2.first.computedDisplayName;
-      if (!isNullOrEmpty(computedDisplayName)) return computedDisplayName;
+      // Like the iPhone: the card's nickname, else its first name, else its
+      // name. Cards now come from the Mac's Apple Contacts rather than the
+      // phone, so any card counts, a phone one first if there is one.
+      final card = contactsV2.where((c) => c.isNative).firstOrNull ?? contactsV2.first;
+      if (!isNullOrEmpty(card.nickname)) return card.nickname!;
+      if (!isNullOrEmpty(card.firstName)) return card.firstName!;
+      if (!isNullOrEmpty(card.computedDisplayName)) return card.computedDisplayName;
     }
 
     // For reactions, we want to show the formatted address for phone numbers, but the regular address for emails
