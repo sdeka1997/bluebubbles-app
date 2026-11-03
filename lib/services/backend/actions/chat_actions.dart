@@ -692,6 +692,9 @@ class ChatActions {
           }
           chatToSave.mergeSpamFlag(inputChat);
           chatToSave.groupId = inputChat.groupId ?? chatToSave.groupId;
+          chatToSave.originalGroupId = inputChat.originalGroupId ?? chatToSave.originalGroupId;
+          chatToSave.legacyGroupIds = inputChat.legacyGroupIds ?? chatToSave.legacyGroupIds;
+          chatToSave.latestGroupTitle = inputChat.latestGroupTitle ?? chatToSave.latestGroupTitle;
         }
 
         // Prepare handles to link (collect them for later)

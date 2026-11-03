@@ -205,6 +205,9 @@ class SyncActions {
         }
         chatToSave.chatIdentifier ??= inputChat.chatIdentifier;
         chatToSave.groupId = inputChat.groupId ?? chatToSave.groupId;
+        chatToSave.originalGroupId = inputChat.originalGroupId ?? chatToSave.originalGroupId;
+        chatToSave.legacyGroupIds = inputChat.legacyGroupIds ?? chatToSave.legacyGroupIds;
+        chatToSave.latestGroupTitle = inputChat.latestGroupTitle ?? chatToSave.latestGroupTitle;
         chatToSave.style ??= inputChat.style;
         if (inputChat.isArchived == true) chatToSave.isArchived = true;
         chatToSave.mergeSpamFlag(inputChat);

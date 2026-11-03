@@ -104,7 +104,7 @@
     },
     {
       "id": "3:9017250848141753702",
-      "lastPropertyId": "42:1919316201223924951",
+      "lastPropertyId": "45:2142803789090083031",
       "name": "Chat",
       "properties": [
         {
@@ -266,6 +266,21 @@
         {
           "id": "42:1919316201223924951",
           "name": "groupId",
+          "type": 9
+        },
+        {
+          "id": "43:2654157464602353348",
+          "name": "originalGroupId",
+          "type": 9
+        },
+        {
+          "id": "44:4970068184735083323",
+          "name": "legacyGroupIds",
+          "type": 30
+        },
+        {
+          "id": "45:2142803789090083031",
+          "name": "latestGroupTitle",
           "type": 9
         }
       ],

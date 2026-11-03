@@ -45,6 +45,12 @@ class Chat {
   String? chatIdentifier;
   String? serviceName;
   String? groupId;
+  // Messages' first group id and every old one; copies of one conversation
+  // share at least one. Null when the server predates them.
+  String? originalGroupId;
+  List<String>? legacyGroupIds;
+  // Name after the newest rename; "" when it was cleared, null if never renamed.
+  String? latestGroupTitle;
   bool? isArchived;
   String? muteType;
   String? muteArgs;
@@ -150,6 +156,9 @@ class Chat {
     this.chatIdentifier,
     this.serviceName,
     this.groupId,
+    this.originalGroupId,
+    this.legacyGroupIds,
+    this.latestGroupTitle,
     this.isArchived = false,
     this.isPinned = false,
     this.muteType,
@@ -192,6 +201,9 @@ class Chat {
       chatIdentifier: json["chatIdentifier"],
       serviceName: json["serviceName"],
       groupId: json["groupId"],
+      originalGroupId: json["originalGroupId"],
+      legacyGroupIds: (json["legacyGroupIds"] as List?)?.map((e) => e.toString()).toList(),
+      latestGroupTitle: json["latestGroupTitle"],
       participants:
           (json['participants'] as List? ?? []).map((e) => Handle.fromMap(e!.cast<String, Object>())).toList(),
       isArchived: json['isArchived'] ?? false,
@@ -864,6 +876,9 @@ class Chat {
     chatIdentifier ??= other.chatIdentifier;
     serviceName = other.serviceName ?? serviceName;
     groupId = other.groupId ?? groupId;
+    originalGroupId = other.originalGroupId ?? originalGroupId;
+    legacyGroupIds = other.legacyGroupIds ?? legacyGroupIds;
+    latestGroupTitle = other.latestGroupTitle ?? latestGroupTitle;
     displayName ??= other.displayName;
     isFilteredAsSpam ??= other.isFilteredAsSpam;
     if (handles.isEmpty) {
@@ -952,6 +967,9 @@ class Chat {
       "chatIdentifier": chatIdentifier,
       "serviceName": serviceName,
       "groupId": groupId,
+      "originalGroupId": originalGroupId,
+      "legacyGroupIds": legacyGroupIds,
+      "latestGroupTitle": latestGroupTitle,
       "isArchived": isArchived!,
       "muteType": muteType,
       "muteArgs": muteArgs,

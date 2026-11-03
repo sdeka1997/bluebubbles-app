@@ -147,7 +147,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(3, 9017250848141753702),
     name: 'Chat',
-    lastPropertyId: const obx_int.IdUid(42, 1919316201223924951),
+    lastPropertyId: const obx_int.IdUid(45, 2142803789090083031),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -337,6 +337,24 @@ final _entities = <obx_int.ModelEntity>[
       obx_int.ModelProperty(
         id: const obx_int.IdUid(42, 1919316201223924951),
         name: 'groupId',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(43, 2654157464602353348),
+        name: 'originalGroupId',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(44, 4970068184735083323),
+        name: 'legacyGroupIds',
+        type: 30,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(45, 2142803789090083031),
+        name: 'latestGroupTitle',
         type: 9,
         flags: 0,
       ),
@@ -1496,7 +1514,20 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final groupIdOffset = object.groupId == null
             ? null
             : fbb.writeString(object.groupId!);
-        fbb.startTable(43);
+        final originalGroupIdOffset = object.originalGroupId == null
+            ? null
+            : fbb.writeString(object.originalGroupId!);
+        final legacyGroupIdsOffset = object.legacyGroupIds == null
+            ? null
+            : fbb.writeList(
+                object.legacyGroupIds!
+                    .map(fbb.writeString)
+                    .toList(growable: false),
+              );
+        final latestGroupTitleOffset = object.latestGroupTitle == null
+            ? null
+            : fbb.writeString(object.latestGroupTitle!);
+        fbb.startTable(46);
         fbb.addInt64(0, object.id ?? 0);
         fbb.addOffset(2, guidOffset);
         fbb.addOffset(4, chatIdentifierOffset);
@@ -1531,6 +1562,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addBool(39, object.isFilteredAsSpam);
         fbb.addOffset(40, serviceNameOffset);
         fbb.addOffset(41, groupIdOffset);
+        fbb.addOffset(42, originalGroupIdOffset);
+        fbb.addOffset(43, legacyGroupIdsOffset);
+        fbb.addOffset(44, latestGroupTitleOffset);
         fbb.finish(fbb.endTable());
         return object.id ?? 0;
       },
@@ -1561,6 +1595,16 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final groupIdParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGetNullable(buffer, rootOffset, 86);
+        final originalGroupIdParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGetNullable(buffer, rootOffset, 88);
+        final legacyGroupIdsParam = const fb.ListReader<String>(
+          fb.StringReader(asciiOptimization: true),
+          lazy: false,
+        ).vTableGetNullable(buffer, rootOffset, 90);
+        final latestGroupTitleParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGetNullable(buffer, rootOffset, 92);
         final isArchivedParam = const fb.BoolReader().vTableGetNullable(
           buffer,
           rootOffset,
@@ -1646,6 +1690,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
                 chatIdentifier: chatIdentifierParam,
                 serviceName: serviceNameParam,
                 groupId: groupIdParam,
+                originalGroupId: originalGroupIdParam,
+                legacyGroupIds: legacyGroupIdsParam,
+                latestGroupTitle: latestGroupTitleParam,
                 isArchived: isArchivedParam,
                 isPinned: isPinnedParam,
                 muteType: muteTypeParam,
@@ -2942,6 +2989,21 @@ class Chat_ {
   /// See [Chat.groupId].
   static final groupId = obx.QueryStringProperty<Chat>(
     _entities[1].properties[30],
+  );
+
+  /// See [Chat.originalGroupId].
+  static final originalGroupId = obx.QueryStringProperty<Chat>(
+    _entities[1].properties[31],
+  );
+
+  /// See [Chat.legacyGroupIds].
+  static final legacyGroupIds = obx.QueryStringVectorProperty<Chat>(
+    _entities[1].properties[32],
+  );
+
+  /// See [Chat.latestGroupTitle].
+  static final latestGroupTitle = obx.QueryStringProperty<Chat>(
+    _entities[1].properties[33],
   );
 
   /// see [Chat.handles]
