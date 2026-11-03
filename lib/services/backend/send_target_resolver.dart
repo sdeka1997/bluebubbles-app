@@ -26,8 +26,9 @@ class SendTargetResolver {
         final anchorChat = Message.findOne(guid: anchorGuid)?.appleChatGuid;
         return copies.firstWhereOrNull((c) => c.guid == anchorChat) ?? thread;
       }
-      // One service only: nothing to choose between, and nothing to ask the Mac.
-      if (copies.length <= 1) return thread;
+      final hasIMessage = copies.any((c) => c.service.isIMessageService);
+      // One chat and nothing to make: nothing to choose between.
+      if (copies.length <= 1 && (thread.isGroup || hasIMessage)) return thread;
 
       final query =
           (Database.messages.query()
@@ -39,9 +40,12 @@ class SendTargetResolver {
       query.close();
 
       final described = describeThread(threadGuid: thread.guid, copies: copies, recent: recent);
-      final mixed = copies.map((c) => c.service).toSet().length > 1;
+      // Ask the Mac only when the answer can change the pick: the thread has
+      // chats on several services, or it's a 1:1 that may need an iMessage chat.
+      final ask = copies.map((c) => c.service).toSet().length > 1 || (!thread.isGroup && !hasIMessage);
       final addresses = (thread.handles.isEmpty ? thread.participants : thread.handles).map((h) => h.address).toList();
-      final members = [for (final a in addresses) (address: a, iMessage: mixed ? await _isOnIMessage(a) : null)];
+      final answers = await Future.wait(addresses.map((a) async => ask ? await _isOnIMessage(a) : null));
+      final members = [for (var i = 0; i < addresses.length; i++) (address: addresses[i], iMessage: answers[i])];
       final target = pickSendTarget(
         copies: described.copies,
         isGroup: thread.isGroup,
@@ -49,17 +53,13 @@ class SendTargetResolver {
         latestService: described.latestService,
         latestTextService: described.latestTextService,
       );
-      // Making the missing 1:1 iMessage chat comes later; until then use the
-      // best existing copy.
-      final guid =
-          target.guid ??
-          pickSendTarget(
-            copies: described.copies,
-            isGroup: true,
-            members: members,
-            latestService: described.latestService,
-            latestTextService: described.latestTextService,
-          ).guid;
+      // A 1:1 on iMessage without an iMessage chat: send to its iMessage
+      // address; the Mac opens that chat for the person, as the iPhone would.
+      if (target.createIMessageChat && addresses.length == 1) {
+        Logger.debug('Sending ${thread.guid} through a new iMessage chat', tag: _tag);
+        return newIMessageChat(addresses.first);
+      }
+      final guid = target.guid;
       final chosen = copies.firstWhereOrNull((c) => c.guid == guid) ?? thread;
       if (chosen.guid != thread.guid) Logger.debug('Sending ${thread.guid} through ${chosen.guid}', tag: _tag);
       return chosen;
@@ -68,6 +68,18 @@ class SendTargetResolver {
       return thread;
     }
   }
+
+  /// The 1:1 iMessage chat for [address], before the Mac has made it.
+  @visibleForTesting
+  static Chat newIMessageChat(String address) => Chat.fromMap({
+        'guid': 'iMessage;-;$address',
+        'chatIdentifier': address,
+        'serviceName': 'iMessage',
+        'style': 45,
+        'participants': [
+          {'address': address}
+        ],
+      });
 
   /// The Mac's iMessage answer for [address], cached a day; null when unknown.
   static Future<bool?> _isOnIMessage(String address) async {
