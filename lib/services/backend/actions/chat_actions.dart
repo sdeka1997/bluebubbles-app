@@ -1,3 +1,4 @@
+import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
@@ -494,7 +495,7 @@ class ChatActions {
 
       for (int chatId in chatIds) {
         // Fetch latest message for the chat
-        final latestMsgQuery = (messageBox.query(Message_.dateCreated.notNull())
+        final latestMsgQuery = (messageBox.query(Message_.dateCreated.notNull().and(listsThreadCondition))
               ..link(Message_.chat, Chat_.id.equals(chatId))
               ..order(Message_.dateCreated, flags: Order.descending))
             .build();

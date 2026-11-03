@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
 import 'package:bluebubbles/services/services.dart';
@@ -167,11 +168,11 @@ class RecoverableMessages {
 
     final chat = ChatsSvc.findChatByGuid(chatGuid);
     if (chat == null) return;
-    final surviving = Chat.getMessages(chat, limit: 1);
-    if (surviving.isEmpty) {
+    final surviving = chat.id == null ? null : newestMessageIn(chat.id!);
+    if (surviving == null) {
       ChatsSvc.clearChatLatestMessage(chatGuid);
     } else {
-      ChatsSvc.updateChatLatestMessage(chatGuid, surviving.first, allowOlder: true);
+      ChatsSvc.updateChatLatestMessage(chatGuid, surviving, allowOlder: true);
     }
   }
 }

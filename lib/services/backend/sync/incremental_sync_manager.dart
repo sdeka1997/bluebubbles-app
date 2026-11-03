@@ -1,4 +1,5 @@
 import 'package:async_task/async_task_extension.dart';
+import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
@@ -490,10 +491,10 @@ class IncrementalSyncManager extends SyncManager {
       // Track the latest message per chat (highest dateCreated with a valid DB id)
       // so the action layer can return message IDs instead of chat IDs.
       final latest = syncResult.messages
-          .where((m) => m.id != null && m.dateCreated != null)
+          .where((m) => m.id != null && m.dateCreated != null && listsThread(m))
           .fold<Message?>(null, (prev, m) => prev == null || m.dateCreated!.isAfter(prev.dateCreated!) ? m : prev);
       // A service twin's messages are filed under the thread it was folded into.
-      final threadGuid = latest?.chat.target?.guid ?? item.key;
+      final threadGuid = syncResult.messages.map((m) => m.chat.target?.guid).nonNulls.firstOrNull ?? item.key;
       if (latest != null) {
         latestMessageIdPerChat[threadGuid] = latest.id!;
       }

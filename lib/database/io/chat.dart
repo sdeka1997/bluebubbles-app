@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/database/database.dart';
@@ -461,8 +462,9 @@ class Chat {
     // Handle post-save operations on main thread
     if (isNewer) {
       // Link the saved (DB-hydrated) message so a freshly-added chat's tile is
-      // built with its subtitle populated on first paint.
-      setLatestMessage(newMessage ?? message);
+      // built with its subtitle populated on first paint. Group events stay
+      // inside the thread.
+      if (listsThread(message)) setLatestMessage(newMessage ?? message);
       if (dateDeleted != null) {
         dateDeleted = null;
         await saveAsync(updateDateDeleted: true);

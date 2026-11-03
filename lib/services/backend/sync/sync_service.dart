@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/ui/async_task.dart';
@@ -103,6 +104,7 @@ class SyncService {
       final localChats = Database.chats.getAll();
       late Map<String, Chat> folded;
       late List<Chat> changed;
+      late List<Chat> relisted;
       Database.runInTransaction(TxMode.write, () {
         changed = {
           ...updateGroupIdsFromRemote(localChats, remoteChats),
@@ -110,6 +112,7 @@ class SyncService {
         }.toList();
         if (changed.isNotEmpty) Database.chats.putMany(changed);
         folded = foldServiceTwins(localChats);
+        relisted = relistChatsShownByEvents(Database.chats.getAll());
       });
 
       // Apply spam changes to the live list immediately. addChat also refuses
@@ -126,8 +129,17 @@ class SyncService {
         if (twin != null) ChatsSvc.removeChat(twin);
         await ChatsSvc.addChat(entry.value, immediate: true);
       }
+      for (final chat in relisted) {
+        final latest = chat.dbLatestMessage.target;
+        if (latest == null) {
+          ChatsSvc.clearChatLatestMessage(chat.guid);
+        } else {
+          ChatsSvc.updateChatLatestMessage(chat.guid, latest, allowOlder: true);
+        }
+      }
       Logger.info(
-        'Refreshed metadata for ${changed.length} chats; folded ${folded.length} service twins',
+        'Refreshed metadata for ${changed.length} chats; folded ${folded.length} service twins; '
+        'relisted ${relisted.length} chats shown by a group event',
         tag: 'Service Twins',
       );
     } catch (e, stack) {

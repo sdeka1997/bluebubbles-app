@@ -1,3 +1,4 @@
+import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/app/state/message_state.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
@@ -131,8 +132,8 @@ Future<void> removeReaction({
 
   await NotificationsSvc.clearFailedToSend(chat.id!);
   // Get the "new" latest info
-  List<Message> latest = await Chat.getMessagesAsync(chat, limit: 1);
-  ChatsSvc.setChatLatestMessage(chat, latest.first);
+  final latest = chat.id == null ? null : newestMessageIn(chat.id!);
+  if (latest != null) ChatsSvc.setChatLatestMessage(chat, latest);
   await chat.saveAsync();
 }
 

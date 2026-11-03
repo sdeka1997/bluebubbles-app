@@ -1,3 +1,4 @@
+import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/backend/startup_tasks.dart';
@@ -41,7 +42,7 @@ class ChatLatestMessageMigration {
         if (chat.id == null) continue;
 
         // Find the most recent non-deleted message for this chat.
-        final msgQuery = (messageBox.query(Message_.dateDeleted.isNull())
+        final msgQuery = (messageBox.query(Message_.dateDeleted.isNull().and(listsThreadCondition))
               ..link(Message_.chat, Chat_.id.equals(chat.id!))
               ..order(Message_.dateCreated, flags: Order.descending))
             .build()

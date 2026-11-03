@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/app/state/attachment_state.dart';
 import 'package:bluebubbles/app/state/message_state.dart';
 import 'package:bluebubbles/helpers/types/extensions/extensions.dart';
@@ -1303,11 +1304,11 @@ class MessagesService extends GetxController {
     if (chatState == null || chatState.latestMessage.value?.guid != deletedGuid) return;
     final chat = ChatsSvc.findChatByGuid(tag);
     if (chat == null) return;
-    final latest = Chat.getMessages(chat, limit: 1);
-    if (latest.isNotEmpty) {
+    final latest = chat.id == null ? null : newestMessageIn(chat.id!);
+    if (latest != null) {
       // The newest message was just deleted, so the surviving latest is older
       // than the current pointer — allow the downgrade here specifically.
-      ChatsSvc.updateChatLatestMessage(tag, latest.first, allowOlder: true);
+      ChatsSvc.updateChatLatestMessage(tag, latest, allowOlder: true);
       return;
     }
 

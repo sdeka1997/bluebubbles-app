@@ -1,3 +1,4 @@
+import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/app/state/message_state_scope.dart';
 import 'package:bluebubbles/app/layouts/conversation_view/widgets/message/shared/message_error_helper.dart';
 import 'package:bluebubbles/app/layouts/conversation_view/widgets/message/timestamp/delivered_indicator.dart';
@@ -72,8 +73,8 @@ class ErrorIndicatorObserver extends StatelessWidget {
                   // Delete the message from DB and remove from service
                   await service.deleteMessage(message);
                   // Get the "new" latest info
-                  List<Message> latest = await Chat.getMessagesAsync(chat, limit: 1);
-                  ChatsSvc.setChatLatestMessage(chat, latest.first);
+                  final latest = chat.id == null ? null : newestMessageIn(chat.id!);
+                  if (latest != null) ChatsSvc.setChatLatestMessage(chat, latest);
                   await chat.saveAsync();
                 },
               ),

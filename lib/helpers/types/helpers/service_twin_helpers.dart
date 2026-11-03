@@ -1,3 +1,4 @@
+import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_keys.dart';
@@ -146,21 +147,6 @@ bool carryOverThreadSettings(Chat thread, Iterable<Chat> twins) {
   return changed;
 }
 
-/// Points [thread] at the newest of [messages], its own and those of the
-/// chats folded into it. A thread can be a copy holding only a rename, so its
-/// stored preview may be older than messages that just moved in. Returns
-/// whether [thread] changed; the caller saves it.
-bool refreshThreadLatest(Chat thread, Iterable<Message> messages) {
-  final newest = messages
-      .where((m) => m.dateDeleted == null && m.dateCreated != null)
-      .sortedBy<num>((m) => m.dateCreated!.millisecondsSinceEpoch)
-      .lastOrNull;
-  if (newest == null || thread.dbLatestMessage.target?.guid == newest.guid) return false;
-  thread.dbLatestMessage.target = newest;
-  thread.dbOnlyLatestMessageDate = newest.dateCreated;
-  return true;
-}
-
 /// Regroups every local chat, then moves the messages of each folded chat in
 /// [chats], or whose thread changed, to its thread. Must run inside a write
 /// transaction. Returns each folded chat's guid mapped to its thread.
@@ -202,14 +188,7 @@ Map<String, Chat> foldServiceTwins(Iterable<Chat> chats) {
     Database.messages.putMany(messages);
   }
   for (final thread in threads.values) {
-    final query = (Database.messages.query(Message_.dateDeleted.isNull())
-          ..link(Message_.chat, Chat_.id.equals(thread.id!))
-          ..order(Message_.dateCreated, flags: Order.descending))
-        .build();
-    query.limit = 1;
-    final newest = query.find();
-    query.close();
-    if (refreshThreadLatest(thread, newest)) Database.chats.put(thread);
+    if (refreshThreadLatestFromDb(thread)) Database.chats.put(thread);
   }
   return folded;
 }

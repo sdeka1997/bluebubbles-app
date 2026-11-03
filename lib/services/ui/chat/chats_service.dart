@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_links/app_links.dart';
+import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/app/components/wallpaper/chat_wallpaper_type.dart';
 import 'package:bluebubbles/app/components/wallpaper/wallpaper_config_codec.dart';
 import 'package:bluebubbles/app/layouts/chat_creator/chat_creator.dart';
@@ -1639,7 +1640,7 @@ class ChatsService {
   /// Set chat latest message
   Future<void> setChatLatestMessage(Chat chat, Message value) async {
     final state = getChatState(chat.guid);
-    if (state == null) return;
+    if (state == null || !listsThread(value)) return;
 
     // Update Chat model (use state.chat if available, otherwise use passed in chat)
     final chatToUpdate = state.chat;
@@ -1678,7 +1679,8 @@ class ChatsService {
   void updateChatLatestMessage(String chatGuid, Message message,
       {bool allowOlder = false, bool repositionImmediate = true}) {
     final state = getChatState(chatGuid);
-    if (state == null) return;
+    // Group events stay inside the thread; they never preview or move it.
+    if (state == null || !listsThread(message)) return;
 
     if (!allowOlder) {
       final current = state.latestMessage.value;
