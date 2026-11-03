@@ -16,7 +16,9 @@ void main() {
     for (final c in (data['cards'] as List).cast<Map<String, dynamic>>()) {
       final card = ContactV2(nativeContactId: c['id'], displayName: c['id']);
       for (final p in (c['phones'] as List).cast<String>()) {
-        byAddress[ContactV2.normalizePhoneNumber(p)] = card;
+        for (final v in _variants(p)) {
+          byAddress[v] = card;
+        }
       }
       for (final e in (c['emails'] as List).cast<String>()) {
         byAddress[ContactV2.normalizeEmail(e)] = card;
@@ -37,8 +39,9 @@ void main() {
       );
       for (final a in (r['people'] as List).cast<String>()) {
         final h = Handle(address: a);
-        final key = a.contains('@') ? ContactV2.normalizeEmail(a) : ContactV2.normalizePhoneNumber(a);
-        final card = byAddress[key];
+        final card = a.contains('@')
+            ? byAddress[ContactV2.normalizeEmail(a)]
+            : _variants(a).map((v) => byAddress[v]).nonNulls.firstOrNull;
         if (card != null) h.contactsV2.add(card);
         chat.handles.add(h);
       }
@@ -88,4 +91,13 @@ void main() {
     // ignore: avoid_print
     print('JOINED ${wrongPairs.join(' ')}');
   }, skip: path == null);
+}
+
+/// The forms the app matches a number on: as written, and with the + and a
+/// 1-3 digit country code dropped (as ContactV2Actions does).
+Set<String> _variants(String phone) {
+  final n = ContactV2.normalizePhoneNumber(phone);
+  if (n.isEmpty) return {};
+  if (!n.startsWith('+')) return {n};
+  return {n, n.substring(1), for (var i = 1; i <= 3 && i + 1 < n.length; i++) n.substring(i + 1)};
 }
