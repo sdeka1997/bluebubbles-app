@@ -8,9 +8,7 @@ import 'package:bluebubbles/services/backend/interfaces/contact_v2_interface.dar
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_contacts/flutter_contacts.dart' as fc;
 import 'package:get_it/get_it.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:universal_io/io.dart';
 
 // ignore: non_constant_identifier_names
@@ -21,23 +19,6 @@ ContactServiceV2 get ContactsSvcV2 => GetIt.I<ContactServiceV2>();
 /// Follows the architecture outlined in FR-1.md Section III
 class ContactServiceV2 {
   final tag = "ContactServiceV2";
-
-  /// Trailing debounce for device contact change events while the app is in the
-  /// foreground — an account sync (e.g. Google Contacts) fires many change events
-  /// in a burst, and each full sync is an expensive Contacts Provider sweep.
-  static const Duration _contactChangeDebounce = Duration(seconds: 30);
-
-  /// Minimum time between OS permission re-checks on app resume while the last
-  /// known status is `granted` or `permanentlyDenied` — states unlikely to have
-  /// changed since the last check. A plain `denied` status is re-checked on
-  /// every resume instead (see [refreshPermissionStatusOnResume]), since that's
-  /// the state most likely to change from outside the app (user grants access
-  /// via system Settings and switches back).
-  static const Duration _permissionRecheckThrottle = Duration(minutes: 15);
-
-  /// Last known permission status, used to decide whether
-  /// [refreshPermissionStatusOnResume] should throttle its re-check.
-  PermissionStatus? _lastKnownPermissionStatus;
 
   /// Whether we have permission to access contacts
   bool _hasContactAccess = false;
@@ -63,58 +44,23 @@ class ContactServiceV2 {
 
   /// Check if we can access contacts
   Future<bool> _canAccessContacts() async {
-    if (kIsWeb || kIsDesktop) {
-      return SettingsSvc.getServerDetails().supportsContactsApi;
-    } else {
-      final status = await Permission.contacts.status;
-      _lastKnownPermissionStatus = status;
-      return status.isGranted;
-    }
+    // Contacts come from the Mac's Apple Contacts on every platform; the
+    // phone's own contacts permission plays no part.
+    return SettingsSvc.getServerDetails().supportsContactsApi;
   }
 
-  /// Request contact permission from the user
+  /// Contacts come from the server, so there is no phone permission to ask
+  /// for; this re-checks that the server can serve them.
   Future<bool> requestContactPermission() async {
-    if (kIsWeb || kIsDesktop) return false;
-
-    final status = await Permission.contacts.request();
-    _lastKnownPermissionStatus = status;
-    _hasContactAccess = status.isGranted;
-
-    if (_hasContactAccess) {
-      Logger.info('[ContactServiceV2] Contact permission granted');
-    } else {
-      Logger.warn('[ContactServiceV2] Contact permission denied');
-    }
-
+    _hasContactAccess = await _canAccessContacts();
     return _hasContactAccess;
   }
 
-  /// Re-check the OS contacts permission status on app resume.
-  ///
-  /// A plain [PermissionStatus.denied] (never granted, or deniable again) is
-  /// re-checked on every call — it's the state most likely to have changed
-  /// from outside the app (the user grants access via system Settings and
-  /// switches back), and the check itself is a cheap platform-channel status
-  /// query. [PermissionStatus.granted] and [PermissionStatus.permanentlyDenied]
-  /// are unlikely to have changed since the last check, so those are throttled
-  /// via a persisted last-checked timestamp (survives app restarts).
+  /// Re-checks on app resume whether the server can serve contacts (it can't
+  /// until server details have loaded).
   Future<void> refreshPermissionStatusOnResume() async {
-    if (kIsWeb || kIsDesktop) return;
-
-    final lastStatus = _lastKnownPermissionStatus;
-    if (lastStatus == null || lastStatus == PermissionStatus.denied) {
-      _hasContactAccess = await _canAccessContacts();
-      return;
-    }
-
-    final lastCheckMillis = PrefsSvc.system.getLastContactPermissionCheck();
-    final lastCheck = lastCheckMillis != null ? DateTime.fromMillisecondsSinceEpoch(lastCheckMillis) : null;
-    if (lastCheck != null && DateTime.now().difference(lastCheck) < _permissionRecheckThrottle) {
-      return;
-    }
-
+    if (_hasContactAccess) return;
     _hasContactAccess = await _canAccessContacts();
-    await PrefsSvc.system.setLastContactPermissionCheck(DateTime.now().millisecondsSinceEpoch);
   }
 
   /// Force a live re-check of the OS contacts permission status, bypassing
@@ -175,48 +121,11 @@ class ContactServiceV2 {
       Logger.info('[ContactServiceV2] Contact access: $_hasContactAccess');
       await syncContactsToHandles(wait: false);
 
-      // Subscribe to device contact change events (mobile only)
-      if (!kIsDesktop && !kIsWeb) {
-        _contactChangeListener = (_) => _onContactsDbChanged();
-        _contactChangeSubscription = fc.FlutterContacts.onDatabaseChange.listen(_contactChangeListener!);
-      }
     } else {
       Logger.info('[ContactServiceV2] Headless mode, skipping contact sync opeerations');
     }
 
     Logger.info('[ContactServiceV2] Initialization complete');
-  }
-
-  bool get _isAppAlive {
-    if (!GetIt.I.isRegistered<LifecycleService>() || !GetIt.I.isReadySync<LifecycleService>()) return true;
-    return LifecycleSvc.isAlive;
-  }
-
-  /// Handle a device contacts DB change event.
-  ///
-  /// While backgrounded, a full sync per change event hammers the Contacts Provider
-  /// from a cached process — this is what triggered the "excessive binder traffic
-  /// during cached" kills during overnight account syncs. Instead, mark a pending
-  /// sync and run it once on the next app resume ([runPendingContactSync]).
-  /// While foregrounded, coalesce event bursts with a trailing debounce.
-  void _onContactsDbChanged() {
-    _contactChangeDebounceTimer?.cancel();
-
-    if (!_isAppAlive) {
-      _pendingContactSync = true;
-      Logger.debug('[ContactServiceV2] Contacts changed while backgrounded — deferring sync to next app resume');
-      return;
-    }
-
-    _contactChangeDebounceTimer = Timer(_contactChangeDebounce, () {
-      // The app may have been backgrounded while the debounce was pending.
-      if (!_isAppAlive) {
-        _pendingContactSync = true;
-        return;
-      }
-      Logger.info('[ContactServiceV2] Contacts changed — running debounced sync');
-      syncContactsToHandles(wait: false);
-    });
   }
 
   /// Run a contact sync that was deferred because change events arrived while the

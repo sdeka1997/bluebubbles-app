@@ -5,12 +5,12 @@ import 'dart:io';
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
+import 'package:bluebubbles/helpers/types/helpers/server_contacts.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_contacts/flutter_contacts.dart' as fc;
 import 'package:path/path.dart' as p;
 
 /// ContactV2Actions - Isolate-side logic for the new contact service
@@ -99,113 +99,62 @@ class ContactV2Actions {
     // Create a new completer for this sync operation
     _syncCompleter = Completer<_ContactSyncStats>();
 
-    // Optional account filter — set via the Contacts Management page. Null
-    // means "all accounts" (the default, unfiltered behavior).
-    final dataMap = data is Map ? data : const {};
-    final accountName = dataMap['accountName'] as String?;
-    final accountType = dataMap['accountType'] as String?;
-    final account =
-        (accountName != null && accountType != null) ? fc.Account(id: '', name: accountName, type: accountType) : null;
-
     final startTime = DateTime.now().millisecondsSinceEpoch;
     final affectedHandleIds = <int>[];
     int matchedContactCount = 0;
 
     try {
-      List<fc.Contact> deviceContacts = [];
       List<ContactV2> networkContacts = [];
       final avatarPaths = <String, String?>{};
 
-      if (kIsDesktop) {
-        // Step 1: Fetch contacts from server
-        Logger.info('[ContactV2] Starting contact fetch from server...');
-        final response = await HttpSvc.contact.fetchAll(withAvatars: true);
-
-        if (response.statusCode == 200 && !isNullOrEmpty(response.data['data'])) {
-          for (Map<String, dynamic> map in response.data['data']) {
-            final displayName = getDisplayName(map['displayName'], map['firstName'], map['lastName']);
-            final emails = (map['emails'] as List<dynamic>? ?? [])
-                .map((e) => ContactEmail(address: e['address'].toString(), label: e['label']?.toString() ?? ''))
-                .toList();
-            final phones = (map['phoneNumbers'] as List<dynamic>? ?? [])
-                .map((e) => ContactPhone(number: e['address'].toString(), label: e['label']?.toString() ?? ''))
-                .toList();
-
-            final contactId = (map['id'] ?? displayName).toString();
-            if (!isNullOrEmpty(map['avatar'])) {
-              try {
-                final savedPath = await _saveContactAvatar(contactId, base64Decode(map['avatar'].toString()));
-                // A null path means the disk write failed — leave the key unset so
-                // the existing avatarPath is preserved instead of being wiped.
-                if (savedPath != null) avatarPaths[contactId] = savedPath;
-              } catch (_) {}
-            } else {
-              // Server reports no avatar for this contact — record the removal explicitly.
-              avatarPaths[contactId] = null;
-            }
-
-            final nc = ContactV2(
-              nativeContactId: contactId,
-              displayName: displayName,
-              firstName: map['firstName']?.toString(),
-              lastName: map['lastName']?.toString(),
-            );
-            nc.phoneNumbers = phones;
-            nc.emailAddresses = emails;
-            networkContacts.add(nc);
-          }
-          Logger.info('[ContactV2] Fetched ${networkContacts.length} contacts from server');
-        } else {
-          Logger.info('[ContactV2] No server contacts found!');
-        }
-      } else {
-        // Step 1: Fetch contacts using flutter_contacts
-        Logger.info('[ContactV2] Starting contact fetch from device (flutter_contacts)'
-            '${account != null ? ' for account ${account.name} (${account.type})' : ''}...');
-        deviceContacts =
-            await fc.FlutterContacts.getAll(properties: fc.ContactProperties.allProperties, account: account);
-        Logger.info('[ContactV2] Fetched ${deviceContacts.length} contacts from device');
-        if (deviceContacts.isEmpty) {
-          // The OS permission check passed (we only reach this branch with contacts
-          // access granted), yet the provider returned nothing. This is expected for
-          // a genuinely empty address book, but it's also exactly what a privacy
-          // sandbox that virtualizes the Contacts provider per-app (e.g. GrapheneOS's
-          // Contact Scopes) looks like: the permission reads as granted, but the app
-          // only sees whatever the user explicitly scoped in — zero, until configured.
-          Logger.warn('[ContactV2] Contacts permission is granted but 0 device contacts were returned. '
-              'If contacts are expected to exist, check for a privacy sandbox / contact '
-              'scoping feature (e.g. GrapheneOS Contact Scopes) restricting this app\'s access.');
-        }
-
-        // Step 1.5: Pre-fetch and save all contact avatars (async operations must be done BEFORE transaction)
-        for (final rawContact in deviceContacts) {
-          if (rawContact.id == null) continue;
-          try {
-            final contactWithPhoto = await fc.FlutterContacts.get(
-              rawContact.id!,
-              properties: {fc.ContactProperty.photoFullRes, fc.ContactProperty.photoThumbnail},
-            );
-            final avatarData = contactWithPhoto?.photo?.fullSize ?? contactWithPhoto?.photo?.thumbnail;
-
-            if (avatarData != null && avatarData.isNotEmpty) {
-              final savedPath = await _saveContactAvatar(rawContact.id!, avatarData);
+      // Every platform reads the Mac's Apple Contacts through the server: the
+      // app mirrors the iPhone, so names, photos and who-is-who come from the
+      // same iCloud cards the iPhone uses, never from the phone's own contacts.
+      Logger.info('[ContactV2] Starting contact fetch from server...');
+      final response = await HttpSvc.contact.fetchAll(withAvatars: true);
+      final fetched = response.statusCode == 200 && response.data['data'] is List;
+      if (fetched) {
+        for (final card in contactsFromServer(response.data['data'] as List)) {
+          final contactId = card.contact.nativeContactId;
+          if (card.avatar != null) {
+            try {
+              final savedPath = await _saveContactAvatar(contactId, base64Decode(card.avatar!));
               // A null path means the disk write failed — leave the key unset so
               // the existing avatarPath is preserved instead of being wiped.
-              if (savedPath != null) avatarPaths[rawContact.id!] = savedPath;
-            } else if (contactWithPhoto != null) {
-              // Fetch succeeded and the contact has no photo — record the removal explicitly.
-              avatarPaths[rawContact.id!] = null;
-            }
-          } catch (e) {
-            // Avatar fetch failed — leave the key unset so the existing avatarPath is kept.
+              if (savedPath != null) avatarPaths[contactId] = savedPath;
+            } catch (_) {}
+          } else {
+            // Server reports no avatar for this contact — record the removal explicitly.
+            avatarPaths[contactId] = null;
           }
+          networkContacts.add(card.contact);
         }
+        Logger.info('[ContactV2] Fetched ${networkContacts.length} contacts from server');
+      } else {
+        // Keep what's stored rather than wiping every name on a failed fetch.
+        Logger.warn('[ContactV2] Server contacts unavailable (status ${response.statusCode})');
       }
 
       // Step 2: Process and normalize contacts within a transaction (synchronous only!)
       Database.runInTransaction(TxMode.write, () {
         final contactsBox = Database.contactsV2;
         final handlesBox = Database.handles;
+
+        if (fetched) {
+          // Drop cards deleted in iCloud, and any left from the phone's contacts.
+          final stale = contactIdsToRemove(
+              contactsBox.getAll().map((c) => c.nativeContactId), networkContacts.map((c) => c.nativeContactId));
+          if (stale.isNotEmpty) {
+            final query = contactsBox.query(ContactV2_.nativeContactId.oneOf(stale.toList())).build();
+            final removed = query.find();
+            query.close();
+            for (final contact in removed) {
+              affectedHandleIds.addAll(contact.handles.map((h) => h.id).whereType<int>());
+            }
+            contactsBox.removeMany(removed.map((c) => c.id).toList());
+            Logger.info('[ContactV2] Removed ${removed.length} contacts no longer on the server');
+          }
+        }
         final allHandles = handlesBox.getAll();
 
         final emailHandleMap = <String, List<Handle>>{};
@@ -243,42 +192,23 @@ class ContactV2Actions {
         Logger.info(
             '[ContactV2] Built lookup maps: ${emailHandleMap.length} email keys, ${phoneHandleMap.length} phone variant keys');
 
-        for (final rawContact in [...deviceContacts, ...networkContacts]) {
+        for (final rawContact in networkContacts) {
           // Normalize addresses
           final normalizedAddresses = <String>{};
 
-          // Different data objects for desktop/mobile
-          if (rawContact is fc.Contact) {
-            // Add normalized phone numbers
-            for (final phone in rawContact.phones) {
-              final normalized = ContactV2.normalizePhoneNumber(phone.number);
-              if (normalized.isNotEmpty) {
-                normalizedAddresses.add(normalized);
-              }
+          // Add normalized phone numbers
+          for (final phone in rawContact.phoneNumbers) {
+            final normalized = ContactV2.normalizePhoneNumber(phone.number);
+            if (normalized.isNotEmpty) {
+              normalizedAddresses.add(normalized);
             }
+          }
 
-            // Add normalized emails
-            for (final email in rawContact.emails) {
-              final normalized = ContactV2.normalizeEmail(email.address);
-              if (normalized.isNotEmpty) {
-                normalizedAddresses.add(normalized);
-              }
-            }
-          } else if (rawContact is ContactV2) {
-            // Add normalized phone numbers
-            for (final phone in rawContact.phoneNumbers) {
-              final normalized = ContactV2.normalizePhoneNumber(phone.number);
-              if (normalized.isNotEmpty) {
-                normalizedAddresses.add(normalized);
-              }
-            }
-
-            // Add normalized emails
-            for (final email in rawContact.emailAddresses) {
-              final normalized = ContactV2.normalizeEmail(email.address);
-              if (normalized.isNotEmpty) {
-                normalizedAddresses.add(normalized);
-              }
+          // Add normalized emails
+          for (final email in rawContact.emailAddresses) {
+            final normalized = ContactV2.normalizeEmail(email.address);
+            if (normalized.isNotEmpty) {
+              normalizedAddresses.add(normalized);
             }
           }
 
@@ -290,46 +220,12 @@ class ContactV2Actions {
           List<ContactPhone> contactPhones = [];
           List<ContactEmail> contactEmails = [];
 
-          if (rawContact is fc.Contact) {
-            if (rawContact.id == null || rawContact.displayName == null) {
-              // Skip contacts without ID or display name
-              continue;
-            }
-
-            contactId = rawContact.id!;
-            displayName = rawContact.displayName!;
-
-            final name = rawContact.name;
-            firstName = name?.first;
-            lastName = name?.last;
-            middleName = name?.middle;
-            namePrefix = name?.prefix;
-            nameSuffix = name?.suffix;
-            nickname = name?.nickname;
-
-            if (rawContact.organizations.isNotEmpty) {
-              final orgCompany = rawContact.organizations.first.name;
-              if (orgCompany != null) company = orgCompany;
-            }
-
-            for (final phone in rawContact.phones) {
-              final label =
-                  phone.label.label == fc.PhoneLabel.custom ? phone.label.customLabel ?? '' : phone.label.label.name;
-              contactPhones.add(ContactPhone(number: phone.number, label: label));
-            }
-            for (final email in rawContact.emails) {
-              final label =
-                  email.label.label == fc.EmailLabel.custom ? email.label.customLabel ?? '' : email.label.label.name;
-              contactEmails.add(ContactEmail(address: email.address, label: label));
-            }
-          } else if (rawContact is ContactV2) {
-            contactId = rawContact.nativeContactId;
-            displayName = rawContact.displayName;
-            firstName = rawContact.firstName;
-            lastName = rawContact.lastName;
-            contactPhones = rawContact.phoneNumbers;
-            contactEmails = rawContact.emailAddresses;
-          }
+          contactId = rawContact.nativeContactId;
+          displayName = rawContact.displayName;
+          firstName = rawContact.firstName;
+          lastName = rawContact.lastName;
+          contactPhones = rawContact.phoneNumbers;
+          contactEmails = rawContact.emailAddresses;
 
           // Get pre-fetched avatar path
           final avatarPath = avatarPaths[contactId];
@@ -392,7 +288,7 @@ class ContactV2Actions {
           }
 
           // Mark contact as native only when it originates from flutter_contacts
-          contact.isNative = rawContact is fc.Contact;
+          contact.isNative = false;
 
           // Step 3: Match contact to handles using lookup maps (O(addresses) instead of O(addresses × handles))
           final matchedHandles = <Handle>{};
@@ -475,7 +371,7 @@ class ContactV2Actions {
 
       final stats = _ContactSyncStats(
         affectedHandleIds: uniqueAffected,
-        deviceContactCount: deviceContacts.length,
+        deviceContactCount: networkContacts.length,
         matchedContactCount: matchedContactCount,
       );
 
@@ -501,32 +397,10 @@ class ContactV2Actions {
   /// This is used by the periodic background task (Section II.B of FR-1.md)
   static Future<bool> checkContactChanges(dynamic data) async {
     try {
-      Logger.info('[ContactV2] Checking for contact changes...');
-
-      // Get current device contact IDs (only fetch minimal data)
-      final currentContacts = await fc.FlutterContacts.getAll(); // IDs only by default
-      final currentIds = currentContacts.map((c) => c.id).toSet();
-
-      // Get stored contact IDs
-      final storedIds = Database.runInTransaction(TxMode.read, () {
-        final contactsBox = Database.contactsV2;
-        final allContacts = contactsBox.getAll();
-        return allContacts.map((c) => c.nativeContactId).toSet();
-      });
-
-      // Check for differences
-      final hasChanges = currentIds.length != storedIds.length ||
-          !currentIds.containsAll(storedIds) ||
-          !storedIds.containsAll(currentIds);
-
-      if (hasChanges) {
-        Logger.info('[ContactV2] Contact changes detected, triggering refresh');
-        await syncContactsToHandles(<String, dynamic>{});
-        return true;
-      }
-
-      Logger.info('[ContactV2] No contact changes detected');
-      return false;
+      // Contacts come from the server, which has no change feed: resync and
+      // report whether any handle changed.
+      final stats = await _syncContactsToHandlesInternal(data);
+      return stats.affectedHandleIds.isNotEmpty;
     } catch (e, stack) {
       Logger.error('[ContactV2] Error checking contact changes', error: e, trace: stack);
       return false;
@@ -686,28 +560,7 @@ class ContactV2Actions {
         return await avatarFile.readAsBytes();
       }
 
-      // If not on disk, try to fetch it fresh
-      if (!kIsWeb && !kIsDesktop) {
-        Uint8List? avatar;
-
-        try {
-          final contact = await fc.FlutterContacts.get(
-            nativeContactId,
-            properties: {fc.ContactProperty.photoFullRes, fc.ContactProperty.photoThumbnail},
-          );
-          avatar = contact?.photo?.fullSize ?? contact?.photo?.thumbnail;
-        } catch (e) {
-          Logger.warn('[ContactV2] Failed to get avatar for ID $nativeContactId: $e');
-        }
-
-        // Save it to disk for future use
-        if (avatar != null) {
-          await _saveContactAvatar(nativeContactId, avatar);
-        }
-
-        return avatar;
-      }
-
+      // Photos come with the server's contacts and are saved during sync.
       return null;
     } catch (e, stack) {
       Logger.error('[ContactV2] Error getting contact avatar for $nativeContactId', error: e, trace: stack);
@@ -735,22 +588,8 @@ class ContactV2Actions {
   /// per account. Used by the Contacts Management page's account selector.
   /// Mobile only — desktop has no device accounts.
   static Future<List<Map<String, dynamic>>> getAccountContactCounts(dynamic data) async {
-    if (kIsWeb || kIsDesktop) return [];
-
-    try {
-      final accounts = await fc.FlutterContacts.accounts.getAll();
-      final results = <Map<String, dynamic>>[];
-
-      for (final account in accounts) {
-        final contacts = await fc.FlutterContacts.getAll(account: account);
-        results.add({'name': account.name, 'type': account.type, 'count': contacts.length});
-      }
-
-      return results;
-    } catch (e, stack) {
-      Logger.error('[ContactV2] Error getting account contact counts', error: e, trace: stack);
-      return [];
-    }
+    // Contacts come from the Mac's Apple Contacts, not the phone's accounts.
+    return [];
   }
 }
 
