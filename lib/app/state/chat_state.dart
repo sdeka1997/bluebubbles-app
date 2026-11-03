@@ -1,5 +1,6 @@
 import 'dart:async' show unawaited;
 
+import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/app/components/wallpaper/chat_wallpaper_type.dart';
 import 'package:bluebubbles/app/components/wallpaper/wallpaper_config_codec.dart';
 import 'package:bluebubbles/app/state/handle_state.dart';
@@ -83,7 +84,7 @@ class ChatState {
         muteType = RxnString(chat.muteType),
         muteArgs = RxnString(chat.muteArgs),
         isArchived = (chat.isArchived ?? false).obs,
-        displayName = RxnString(chat.currentName),
+        displayName = RxnString(_threadName(chat)),
         customAvatarPath = RxnString(chat.customAvatarPath),
         customBackgroundPath = RxnString(FilesystemSvc.getExistingChatBackgroundPath(chat.guid)),
         // Placeholder; recomputed from live participant state once [participants]
@@ -437,7 +438,7 @@ class ChatState {
     updateHasUnreadInternal(updatedChat.hasUnreadMessage ?? false);
     updateMutedInternal(updatedChat.muteType, updatedChat.muteArgs);
     updateArchivedInternal(updatedChat.isArchived ?? false);
-    updateDisplayNameInternal(updatedChat.currentName);
+    updateDisplayNameInternal(_threadName(updatedChat));
     updateCustomAvatarPathInternal(updatedChat.customAvatarPath);
     updateCustomBackgroundPathInternal(FilesystemSvc.getExistingChatBackgroundPath(updatedChat.guid));
     updateCustomThemeLightInternal(updatedChat.customThemeLight);
@@ -568,7 +569,7 @@ class ChatState {
 
   /// Restore contact information to original values from the underlying DB model.
   void unredactContactInfo() {
-    updateDisplayNameInternal(chat.currentName);
+    updateDisplayNameInternal(_threadName(chat));
     updateTitleInternal(_computeTitle());
     updateChatCreatorSubtitleInternal(_computeCreatorSubtitle());
     // Recompute subtitle — hideMessageContent may still be active even after
@@ -627,3 +628,7 @@ class ChatState {
     updateShouldHideAttachmentsInternal(false);
   }
 }
+
+/// A folded thread is named from all its copies; the web build keeps no
+/// threads, so a chat there is named on its own.
+String? _threadName(Chat chat) => kIsWeb ? chat.currentName : threadNameFor(chat);

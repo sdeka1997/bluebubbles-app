@@ -192,3 +192,37 @@ Map<String, Chat> foldServiceTwins(Iterable<Chat> chats) {
   }
   return folded;
 }
+
+/// The name a thread shows, from its [copies] ([thread] included). Messages
+/// renames every copy of a thread together, so copies disagree only when one
+/// was never renamed: a renamed copy wins. Renamed copies that still disagree
+/// follow [newestRename], the newest rename this phone holds for the thread.
+/// With no renames at all, a stored name beats an empty one. A name set on
+/// this phone still wins.
+String? threadName(Chat thread, Iterable<Chat> copies, {Message? newestRename}) {
+  if (thread.lockChatName) return thread.displayName;
+  final all = [thread, ...copies.where((c) => c.guid != thread.guid)];
+  final renamed = {for (final c in all) if (c.latestGroupTitle != null) c.latestGroupTitle!};
+  if (renamed.length == 1) return renamed.first;
+  if (renamed.length > 1) return newestRename != null ? newestRename.groupTitle ?? '' : thread.latestGroupTitle ?? renamed.first;
+  return all.map((c) => c.displayName).firstWhereOrNull((n) => n?.isNotEmpty ?? false) ?? thread.displayName;
+}
+
+/// [threadName] against the local database.
+String? threadNameFor(Chat chat) {
+  final key = chat.threadKey;
+  if (key == null || key.isEmpty || chat.id == null) return chat.currentName;
+  final copies = _chatsInThread(key).where((c) => c.dateDeleted == null).toList();
+  if (copies.length < 2) return chat.currentName;
+  Message? newestRename;
+  if ({for (final c in copies) c.latestGroupTitle}.whereType<String>().length > 1) {
+    final query = (Database.messages.query(Message_.itemType.equals(2))
+          ..link(Message_.chat, Chat_.id.equals(chat.id!))
+          ..order(Message_.dateCreated, flags: Order.descending))
+        .build();
+    query.limit = 1;
+    newestRename = query.findFirst();
+    query.close();
+  }
+  return threadName(chat, copies, newestRename: newestRename);
+}
