@@ -42,4 +42,23 @@ void main() {
     expect(stored.legacyGroupIds, ['B']);
     expect(stored.latestGroupTitle, '');
   });
+
+  group('a group is titled by its newest rename', () {
+    test('a removed name falls back to the people, even if Messages still stores the old name', () {
+      final chat = Chat(guid: 'iMessage;+;chat1', displayName: '.', latestGroupTitle: '');
+      expect(chat.currentName, '');
+    });
+
+    test('a rename the stored name has not caught up with wins', () {
+      expect(Chat(guid: 'g', displayName: 'old', latestGroupTitle: 'new').currentName, 'new');
+    });
+
+    test('no rename known keeps the stored name', () {
+      expect(Chat(guid: 'g', displayName: 'family').currentName, 'family');
+    });
+
+    test('a name set on this phone still wins', () {
+      expect(Chat(guid: 'g', displayName: 'mine', latestGroupTitle: '', lockChatName: true).currentName, 'mine');
+    });
+  });
 }

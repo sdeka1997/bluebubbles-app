@@ -308,8 +308,13 @@ class Chat {
     return this;
   }
 
+  /// The group's name as Messages shows it: the newest rename, where an empty
+  /// rename means the name was removed. Messages' stored name can lag behind
+  /// that. A name set on this phone still wins.
+  String? get currentName => lockChatName ? displayName : latestGroupTitle ?? displayName;
+
   /// Get a chat's title
-  String getTitle() => isNullOrEmpty(displayName) ? getChatCreatorSubtitle() : displayName!;
+  String getTitle() => isNullOrEmpty(currentName) ? getChatCreatorSubtitle() : currentName!;
 
   /// Get a chat's title
   String getChatCreatorSubtitle() {

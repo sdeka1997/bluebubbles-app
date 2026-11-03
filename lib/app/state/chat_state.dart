@@ -83,7 +83,7 @@ class ChatState {
         muteType = RxnString(chat.muteType),
         muteArgs = RxnString(chat.muteArgs),
         isArchived = (chat.isArchived ?? false).obs,
-        displayName = RxnString(chat.displayName),
+        displayName = RxnString(chat.currentName),
         customAvatarPath = RxnString(chat.customAvatarPath),
         customBackgroundPath = RxnString(FilesystemSvc.getExistingChatBackgroundPath(chat.guid)),
         // Placeholder; recomputed from live participant state once [participants]
@@ -437,7 +437,7 @@ class ChatState {
     updateHasUnreadInternal(updatedChat.hasUnreadMessage ?? false);
     updateMutedInternal(updatedChat.muteType, updatedChat.muteArgs);
     updateArchivedInternal(updatedChat.isArchived ?? false);
-    updateDisplayNameInternal(updatedChat.displayName);
+    updateDisplayNameInternal(updatedChat.currentName);
     updateCustomAvatarPathInternal(updatedChat.customAvatarPath);
     updateCustomBackgroundPathInternal(FilesystemSvc.getExistingChatBackgroundPath(updatedChat.guid));
     updateCustomThemeLightInternal(updatedChat.customThemeLight);
@@ -568,7 +568,7 @@ class ChatState {
 
   /// Restore contact information to original values from the underlying DB model.
   void unredactContactInfo() {
-    updateDisplayNameInternal(chat.displayName);
+    updateDisplayNameInternal(chat.currentName);
     updateTitleInternal(_computeTitle());
     updateChatCreatorSubtitleInternal(_computeCreatorSubtitle());
     // Recompute subtitle — hideMessageContent may still be active even after
