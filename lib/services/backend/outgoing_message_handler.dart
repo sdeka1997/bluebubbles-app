@@ -4,6 +4,7 @@ import 'dart:collection';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/backend/interfaces/send_message_interface.dart';
+import 'package:bluebubbles/services/backend/send_target_resolver.dart';
 import 'package:bluebubbles/services/isolates/global_isolate.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/file_utils.dart';
@@ -748,9 +749,12 @@ class OutgoingMessageHandler {
     return _sendWithRace(
       tempGuid: tempGuid,
       chat: c,
-      httpCall: () => r == null
+      httpCall: () async {
+        final t =
+            await SendTargetResolver.resolve(c, anchorGuid: r != null ? selected?.guid : m.threadOriginatorGuid);
+        return r == null
           ? SendMessageInterface.sendTextMessage(
-              chatGuid: c.guid,
+              chatGuid: t.guid,
               tempGuid: tempGuid,
               message: m.text!,
               method: _resolveMethod(m),
@@ -759,16 +763,17 @@ class OutgoingMessageHandler {
               subject: m.subject,
               partIndex: int.tryParse(m.threadOriginatorPart?.split(':').firstOrNull ?? ''),
               ddScan: !SettingsSvc.serverDetails.isMinSonoma && m.text!.hasUrl,
-              chatLookup: SendMessageInterface.chatLookup(c),
+              chatLookup: SendMessageInterface.chatLookup(t),
             )
           : SendMessageInterface.sendTapback(
-              chatGuid: c.guid,
+              chatGuid: t.guid,
               selectedMessageText: selected!.text ?? '',
               selectedMessageGuid: selected.guid!,
               reaction: r,
               partIndex: m.associatedMessagePart,
-              chatLookup: SendMessageInterface.chatLookup(c),
-            ),
+              chatLookup: SendMessageInterface.chatLookup(t),
+            );
+      },
       onSuccess: (data) => _finalizeOutgoingSuccess(
         c, tempGuid, data,
         // Reactions live in the parent's associatedMessages list, not as
@@ -833,17 +838,20 @@ class OutgoingMessageHandler {
     return _sendWithRace(
       tempGuid: tempGuid,
       chat: c,
-      httpCall: () => SendMessageInterface.sendMultipartMessage(
-        chatGuid: c.guid,
-        tempGuid: tempGuid,
-        parts: parts,
-        subject: m.subject,
-        selectedMessageGuid: m.threadOriginatorGuid,
-        effectId: m.expressiveSendStyleId,
-        partIndex: int.tryParse(m.threadOriginatorPart?.split(':').firstOrNull ?? ''),
-        ddScan: !SettingsSvc.serverDetails.isMinSonoma && parts.any((e) => e['text'].toString().hasUrl),
-        chatLookup: SendMessageInterface.chatLookup(c),
-      ),
+      httpCall: () async {
+        final t = await SendTargetResolver.resolve(c, anchorGuid: m.threadOriginatorGuid);
+        return SendMessageInterface.sendMultipartMessage(
+          chatGuid: t.guid,
+          tempGuid: tempGuid,
+          parts: parts,
+          subject: m.subject,
+          selectedMessageGuid: m.threadOriginatorGuid,
+          effectId: m.expressiveSendStyleId,
+          partIndex: int.tryParse(m.threadOriginatorPart?.split(':').firstOrNull ?? ''),
+          ddScan: !SettingsSvc.serverDetails.isMinSonoma && parts.any((e) => e['text'].toString().hasUrl),
+          chatLookup: SendMessageInterface.chatLookup(t),
+        );
+      },
       onSuccess: (data) => _finalizeOutgoingSuccess(c, tempGuid, data),
       onError: (error, stack) => _finalizeOutgoingFailure(
         c,
@@ -886,19 +894,22 @@ class OutgoingMessageHandler {
     return _sendWithRace(
       tempGuid: tempGuid,
       chat: c,
-      httpCall: () => SendMessageInterface.sendAttachmentMessage(
-        chatGuid: c.guid,
-        tempGuid: attachment.guid!,
-        filePath: attachment.path,
-        fileName: attachment.transferName!,
-        fileSize: attachment.totalBytes ?? 0,
-        method: _resolveMethod(m, forAttachment: true),
-        selectedMessageGuid: m.threadOriginatorGuid,
-        effectId: m.expressiveSendStyleId,
-        partIndex: int.tryParse(m.threadOriginatorPart?.split(':').firstOrNull ?? ''),
-        isAudioMessage: isAudioMessage,
-        chatLookup: SendMessageInterface.chatLookup(c),
-      ),
+      httpCall: () async {
+        final t = await SendTargetResolver.resolve(c, anchorGuid: m.threadOriginatorGuid);
+        return SendMessageInterface.sendAttachmentMessage(
+          chatGuid: t.guid,
+          tempGuid: attachment.guid!,
+          filePath: attachment.path,
+          fileName: attachment.transferName!,
+          fileSize: attachment.totalBytes ?? 0,
+          method: _resolveMethod(m, forAttachment: true),
+          selectedMessageGuid: m.threadOriginatorGuid,
+          effectId: m.expressiveSendStyleId,
+          partIndex: int.tryParse(m.threadOriginatorPart?.split(':').firstOrNull ?? ''),
+          isAudioMessage: isAudioMessage,
+          chatLookup: SendMessageInterface.chatLookup(t),
+        );
+      },
       onSuccess: (Map<String, dynamic> data) async {
         final newMessage = Message.fromMap(data['data']);
         final responseAttachments = ((data['data']?['attachments'] as List?) ?? <dynamic>[])

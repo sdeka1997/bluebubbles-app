@@ -105,6 +105,12 @@ List<Chat> _chatsInThread(String? key) {
 /// The local thread [chat] belongs to, or null when [chat] is its own thread.
 Chat? findCanonicalTwin(Chat chat) => canonicalTwinFor(chat, _chatsInThread(chat.threadKey));
 
+/// Every local chat in [chat]'s thread, [chat] included.
+List<Chat> findThreadChats(Chat chat) {
+  final chats = _chatsInThread(chat.threadKey).where((c) => c.dateDeleted == null).toList();
+  return chats.any((c) => c.guid == chat.guid) ? chats : [chat, ...chats];
+}
+
 /// [guidsToMarkRead] against the local database.
 List<String> findGuidsToMarkRead(String guid) {
   final chat = Chat.findOne(guid: guid);
