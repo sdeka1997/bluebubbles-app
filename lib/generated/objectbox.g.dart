@@ -147,7 +147,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(3, 9017250848141753702),
     name: 'Chat',
-    lastPropertyId: const obx_int.IdUid(45, 2142803789090083031),
+    lastPropertyId: const obx_int.IdUid(46, 1265616471513393070),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -357,6 +357,13 @@ final _entities = <obx_int.ModelEntity>[
         name: 'latestGroupTitle',
         type: 9,
         flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(46, 1265616471513393070),
+        name: 'threadKey',
+        type: 9,
+        flags: 2048,
+        indexId: const obx_int.IdUid(21, 4652148863245564274),
       ),
     ],
     relations: <obx_int.ModelRelation>[
@@ -1163,7 +1170,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
     generatorVersion: obx_int.GeneratorVersion.v2025_12_16,
     entities: _entities,
     lastEntityId: const obx_int.IdUid(19, 6026421545462496199),
-    lastIndexId: const obx_int.IdUid(20, 7536809638379289421),
+    lastIndexId: const obx_int.IdUid(21, 4652148863245564274),
     lastRelationId: const obx_int.IdUid(3, 2372732884714308620),
     lastSequenceId: const obx_int.IdUid(0, 0),
     retiredEntityUids: const [
@@ -1533,7 +1540,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final latestGroupTitleOffset = object.latestGroupTitle == null
             ? null
             : fbb.writeString(object.latestGroupTitle!);
-        fbb.startTable(46);
+        final threadKeyOffset = object.threadKey == null
+            ? null
+            : fbb.writeString(object.threadKey!);
+        fbb.startTable(47);
         fbb.addInt64(0, object.id ?? 0);
         fbb.addOffset(2, guidOffset);
         fbb.addOffset(4, chatIdentifierOffset);
@@ -1571,6 +1581,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addOffset(42, originalGroupIdOffset);
         fbb.addOffset(43, legacyGroupIdsOffset);
         fbb.addOffset(44, latestGroupTitleOffset);
+        fbb.addOffset(45, threadKeyOffset);
         fbb.finish(fbb.endTable());
         return object.id ?? 0;
       },
@@ -1611,6 +1622,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final latestGroupTitleParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGetNullable(buffer, rootOffset, 92);
+        final threadKeyParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGetNullable(buffer, rootOffset, 94);
         final isArchivedParam = const fb.BoolReader().vTableGetNullable(
           buffer,
           rootOffset,
@@ -1699,6 +1713,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
                 originalGroupId: originalGroupIdParam,
                 legacyGroupIds: legacyGroupIdsParam,
                 latestGroupTitle: latestGroupTitleParam,
+                threadKey: threadKeyParam,
                 isArchived: isArchivedParam,
                 isPinned: isPinnedParam,
                 muteType: muteTypeParam,
@@ -3018,6 +3033,11 @@ class Chat_ {
   /// See [Chat.latestGroupTitle].
   static final latestGroupTitle = obx.QueryStringProperty<Chat>(
     _entities[1].properties[33],
+  );
+
+  /// See [Chat.threadKey].
+  static final threadKey = obx.QueryStringProperty<Chat>(
+    _entities[1].properties[34],
   );
 
   /// see [Chat.handles]

@@ -358,7 +358,7 @@ class ChatsService {
     // Service twins are shown as the thread they were folded into.
     var foldedTwins = const <String>{};
     if (!kIsWeb) {
-      final twinsQuery = Database.chats.query(Chat_.groupId.notNull()).build();
+      final twinsQuery = Database.chats.query(Chat_.threadKey.notNull()).build();
       foldedTwins = foldedTwinGuids(twinsQuery.find());
       twinsQuery.close();
     }

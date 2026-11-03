@@ -104,7 +104,7 @@
     },
     {
       "id": "3:9017250848141753702",
-      "lastPropertyId": "45:2142803789090083031",
+      "lastPropertyId": "46:1265616471513393070",
       "name": "Chat",
       "properties": [
         {
@@ -282,6 +282,13 @@
           "id": "45:2142803789090083031",
           "name": "latestGroupTitle",
           "type": 9
+        },
+        {
+          "id": "46:1265616471513393070",
+          "name": "threadKey",
+          "indexId": "21:4652148863245564274",
+          "type": 9,
+          "flags": 2048
         }
       ],
       "relations": [
@@ -911,7 +918,7 @@
     }
   ],
   "lastEntityId": "19:6026421545462496199",
-  "lastIndexId": "20:7536809638379289421",
+  "lastIndexId": "21:4652148863245564274",
   "lastRelationId": "3:2372732884714308620",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

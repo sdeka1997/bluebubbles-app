@@ -58,6 +58,8 @@ class Chat {
   List<String>? legacyGroupIds;
   // Name after the newest rename; "" when it was cleared, null if never renamed.
   String? latestGroupTitle;
+  // Chats with the same key show as one thread; set by assignThreadKeys.
+  String? threadKey;
   bool? isArchived;
   String? muteType;
   String? muteArgs;
@@ -117,6 +119,7 @@ class Chat {
     this.originalGroupId,
     this.legacyGroupIds,
     this.latestGroupTitle,
+    this.threadKey,
     this.isArchived = false,
     this.isPinned = false,
     this.muteType,
@@ -159,6 +162,7 @@ class Chat {
       originalGroupId: json["originalGroupId"],
       legacyGroupIds: (json["legacyGroupIds"] as List?)?.map((e) => e.toString()).toList(),
       latestGroupTitle: json["latestGroupTitle"],
+      threadKey: json["threadKey"],
       isArchived: json['isArchived'] ?? false,
       muteType: json["muteType"],
       muteArgs: json["muteArgs"],
@@ -597,6 +601,7 @@ class Chat {
         "originalGroupId": originalGroupId,
         "legacyGroupIds": legacyGroupIds,
         "latestGroupTitle": latestGroupTitle,
+        "threadKey": threadKey,
         "isArchived": isArchived!,
         "muteType": muteType,
         "muteArgs": muteArgs,
