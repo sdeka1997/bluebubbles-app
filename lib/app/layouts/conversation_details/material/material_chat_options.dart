@@ -33,8 +33,7 @@ class _OptionRow {
 /// four labeled `M3ESection` groups instead of one 679-line flat `SettingsSection`.
 ///
 /// Every handler below is ported verbatim from `chat_options.dart`; this is a presentation
-/// change only, except for two intentional parity fixes documented inline (View Bookmarks,
-/// Leave Chat).
+/// change only, except for an intentional parity fix documented inline (View Bookmarks).
 class ExpressiveChatOptions extends StatelessWidget {
   final Chat chat;
 
@@ -505,18 +504,6 @@ class ExpressiveChatOptions extends StatelessWidget {
           onTap: () => _showCancelConfirmation(context),
         ),
       ),
-      _OptionRow(
-        enabled: chat.handles.length > 2 &&
-            SettingsSvc.settings.enablePrivateAPI.value &&
-            SettingsSvc.serverDetails.supportsGroupChatManagement,
-        build: (context) => M3EListTile(
-          destructive: true,
-          icon: Icons.logout,
-          title: "Leave chat",
-          supportingText: "Stop receiving messages from this group",
-          onTap: () => _leaveChat(context),
-        ),
-      ),
     ];
 
     return _group(context, "Danger zone", rows, tone: M3ESectionTone.error);
@@ -542,34 +529,6 @@ class ExpressiveChatOptions extends StatelessWidget {
           },
         ),
       ],
-    );
-  }
-
-  Future<void> _leaveChat(BuildContext context) async {
-    await showAreYouSure(
-      context,
-      title: "Leave Chat?",
-      content: const Text(
-          "Are you sure you want to leave this chat? You will no longer receive messages from this group."),
-      yesText: "Leave",
-      yesColor: context.theme.colorScheme.error,
-      onNo: () => Navigator.of(context, rootNavigator: true).pop(),
-      onYes: () async {
-        Navigator.of(context, rootNavigator: true).pop();
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => const BBProgressDialog(title: "Leaving chat..."),
-        );
-        final response = await HttpSvc.chat.leave(chat.guid);
-        if (!context.mounted) return;
-        Navigator.of(context, rootNavigator: true).pop();
-        if (response.statusCode == 200) {
-          showSnackbar("Notice", "Left chat successfully!");
-        } else {
-          showSnackbar("Error", "Failed to leave chat!", type: SnackbarType.error);
-        }
-      },
     );
   }
 

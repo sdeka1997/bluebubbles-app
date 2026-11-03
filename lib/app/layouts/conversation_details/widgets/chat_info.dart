@@ -1,6 +1,5 @@
 import 'package:bluebubbles/app/components/copy_address_button.dart';
 import 'package:bluebubbles/app/layouts/conversation_details/dialogs/address_picker.dart';
-import 'package:bluebubbles/app/layouts/conversation_details/dialogs/change_name.dart';
 import 'package:bluebubbles/app/layouts/conversation_details/material/chat_photo_actions.dart' as photo_actions;
 import 'package:bluebubbles/app/components/avatars/contact_avatar_group_widget.dart';
 import 'package:bluebubbles/database/models.dart';
@@ -43,18 +42,12 @@ class _ChatInfoState extends State<ChatInfo> with ThemeHelpers {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                GestureDetector(
-                  onTap: chat.isGroup
-                      ? () async {
-                          photo_actions.updatePhoto(context, chat);
-                        }
-                      : null,
-                  child: ContactAvatarGroupWidget(
-                    size: 100,
-                    editable: !chat.isGroup,
-                  ),
+                ContactAvatarGroupWidget(
+                  size: 100,
+                  editable: !chat.isGroup,
                 ),
-                Obx(() => chat.customAvatarPath != null
+                // A group's photo is changed on the iPhone or Mac.
+                Obx(() => !chat.isGroup && chat.customAvatarPath != null
                     ? Positioned(
                         right: -5,
                         top: -5,
@@ -136,28 +129,6 @@ class _ChatInfoState extends State<ChatInfo> with ThemeHelpers {
                   ],
                 );
               }),
-            ),
-          ),
-        if (chat.isGroup)
-          Center(
-            child: TextButton(
-              child: Text(
-                "${(chat.displayName?.isNotEmpty ?? false) ? "Change" : "Add"} Name",
-                style: context.theme.textTheme.bodyMedium!.apply(color: context.theme.primaryColor),
-                textScaler: const TextScaler.linear(1.15),
-              ),
-              onPressed: () async {
-                bool? papi = false;
-                if (SettingsSvc.settings.enablePrivateAPI.value && chat.isIMessage) {
-                  papi = await photo_actions.showMethodDialog(context, chat, "Group Name Update Method");
-                }
-                if (papi == null) return;
-                if (!papi) {
-                  showChangeName(chat, "local", context);
-                } else {
-                  showChangeName(chat, "private-api", context);
-                }
-              },
             ),
           ),
         if (!chat.isGroup && iOS)

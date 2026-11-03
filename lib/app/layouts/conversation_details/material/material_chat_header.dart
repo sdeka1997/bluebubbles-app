@@ -2,9 +2,7 @@ import 'package:bluebubbles/app/components/copy_address_button.dart';
 import 'package:bluebubbles/app/components/animated_dropdown_menu.dart';
 import 'package:bluebubbles/app/components/avatars/contact_avatar_group_widget.dart';
 import 'package:bluebubbles/app/components/m3e/m3e.dart';
-import 'package:bluebubbles/app/layouts/conversation_details/dialogs/add_participant.dart';
 import 'package:bluebubbles/app/layouts/conversation_details/dialogs/address_picker.dart';
-import 'package:bluebubbles/app/layouts/conversation_details/dialogs/change_name.dart';
 import 'package:bluebubbles/app/layouts/conversation_details/material/chat_photo_actions.dart' as photo_actions;
 import 'package:bluebubbles/app/layouts/conversation_list/pages/search/search_view.dart';
 import 'package:bluebubbles/app/state/chat_state.dart';
@@ -32,9 +30,6 @@ class ExpressiveChatHeader extends StatelessWidget {
           ((chat.handles.first.contactsV2.firstOrNull?.phoneNumbers.isNotEmpty ?? false) ||
               !chat.handles.first.address.contains("@")));
 
-  bool get _canAddPeople =>
-      SettingsSvc.settings.enablePrivateAPI.value && chat.isIMessage && chat.isGroup;
-
   @override
   Widget build(BuildContext context) {
     final chatState = ChatsSvc.getChatState(chat.guid);
@@ -50,13 +45,12 @@ class ExpressiveChatHeader extends StatelessWidget {
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  GestureDetector(
-                    onTap: chat.isGroup ? () => photo_actions.updatePhoto(context, chat) : null,
-                    child: ContactAvatarGroupWidget(
-                      size: 96,
-                      editable: !chat.isGroup,
-                    ),
+                  ContactAvatarGroupWidget(
+                    size: 96,
+                    editable: !chat.isGroup,
                   ),
+                  // A group's photo is changed on the iPhone or Mac.
+                  if (!chat.isGroup)
                   Positioned(
                     right: -4,
                     bottom: -4,
@@ -188,26 +182,8 @@ class ExpressiveChatHeader extends StatelessWidget {
 
   List<M3EButtonGroupItem> _buildActions(BuildContext context, ChatState? chatState) {
     if (chat.isGroup) {
+      // Renaming and adding people are done on the iPhone or Mac.
       return [
-        if (_canAddPeople)
-          M3EButtonGroupItem(
-            icon: Icons.person_add_outlined,
-            label: "Add people",
-            onPressed: () => showAddParticipant(context, chat),
-          ),
-        M3EButtonGroupItem(
-          icon: Icons.edit_outlined,
-          label: "Rename",
-          onPressed: () async {
-            bool? papi = false;
-            if (SettingsSvc.settings.enablePrivateAPI.value && chat.isIMessage) {
-              papi = await photo_actions.showMethodDialog(context, chat, "Group Name Update Method");
-            }
-            if (papi == null) return;
-            if (!context.mounted) return;
-            showChangeName(chat, papi ? "private-api" : "local", context);
-          },
-        ),
         M3EButtonGroupItem(
           icon: (chatState?.muteType.value ?? chat.muteType) == "mute"
               ? Icons.notifications_off_outlined

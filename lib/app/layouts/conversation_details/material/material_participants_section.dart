@@ -1,5 +1,4 @@
 import 'package:bluebubbles/app/components/m3e/m3e.dart';
-import 'package:bluebubbles/app/layouts/conversation_details/dialogs/add_participant.dart';
 import 'package:bluebubbles/app/layouts/conversation_details/widgets/contact_tile.dart';
 import 'package:bluebubbles/app/state/chat_state.dart';
 import 'package:bluebubbles/database/models.dart';
@@ -26,8 +25,6 @@ class _ExpressiveParticipantsSectionState extends State<ExpressiveParticipantsSe
 
   ChatState? get _chatState => ChatsSvc.chatStates[chat.guid];
 
-  bool get _canAddPeople =>
-      SettingsSvc.settings.enablePrivateAPI.value && chat.isIMessage && chat.isGroup;
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +38,6 @@ class _ExpressiveParticipantsSectionState extends State<ExpressiveParticipantsSe
         final participants = state != null ? state.participants.map((hs) => hs.handle).toList() : chat.handles.toList();
         final shouldShowMore = participants.length > 5;
         final clipped = showMoreParticipants ? participants : participants.take(5).toList();
-        final canBeRemoved = chat.isGroup && SettingsSvc.settings.enablePrivateAPI.value && chat.isIMessage;
 
         final children = <Widget>[
           for (final handle in clipped)
@@ -49,15 +45,12 @@ class _ExpressiveParticipantsSectionState extends State<ExpressiveParticipantsSe
               key: Key(handle.address),
               handle: handle,
               chat: chat,
-              canBeRemoved: canBeRemoved,
             ),
           if (shouldShowMore)
             _ShowMoreRow(
               expanded: showMoreParticipants,
               onTap: () => setState(() => showMoreParticipants = !showMoreParticipants),
             ),
-          if (_canAddPeople)
-            _AddPeopleRow(onTap: () => showAddParticipant(context, chat)),
         ];
 
         return Column(
@@ -110,21 +103,6 @@ class _ShowMoreRow extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _AddPeopleRow extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _AddPeopleRow({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return M3EListTile(
-      icon: Icons.person_add,
-      title: "Add people",
-      onTap: onTap,
     );
   }
 }

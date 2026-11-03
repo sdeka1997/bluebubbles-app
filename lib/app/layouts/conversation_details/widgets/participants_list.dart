@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:bluebubbles/app/layouts/conversation_details/dialogs/add_participant.dart';
 import 'package:bluebubbles/app/layouts/conversation_details/widgets/contact_tile.dart';
 import 'package:bluebubbles/app/state/chat_state.dart';
 import 'package:bluebubbles/database/models.dart';
@@ -44,7 +43,7 @@ class _ParticipantsListState extends State<ParticipantsList> with ThemeHelpers {
   @override
   void initState() {
     super.initState();
-    // Rebuild whenever the reactive participants list changes (e.g. after addParticipant).
+    // Rebuild whenever the reactive participants list changes (e.g. after a member change syncs from the Mac).
     _participantsSub = _chatState?.participants.listen((_) {
       if (mounted) setState(() {});
     });
@@ -67,48 +66,7 @@ class _ParticipantsListState extends State<ParticipantsList> with ThemeHelpers {
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (context, index) {
-          final addMember = ListTile(
-            mouseCursor: MouseCursor.defer,
-            title: Text(
-              "Add ${iOS ? "Member" : "people"}",
-              style: context.theme.textTheme.bodyLarge!.copyWith(
-                color: context.theme.colorScheme.primary,
-              ),
-            ),
-            leading: Container(
-              width: 40 * SettingsSvc.settings.avatarScale.value,
-              height: 40 * SettingsSvc.settings.avatarScale.value,
-              decoration: BoxDecoration(
-                color: !iOS ? null : context.theme.colorScheme.surfaceContainerHighest,
-                shape: BoxShape.circle,
-                border: iOS
-                    ? null
-                    : Border.all(
-                        color: context.theme.colorScheme.primary,
-                        width: 3,
-                      ),
-              ),
-              child: Icon(
-                Icons.add,
-                color: context.theme.colorScheme.primary,
-                size: 20,
-              ),
-            ),
-            onTap: () {
-              showAddParticipant(context, widget.chat);
-            },
-          );
-
-          if (index > participants.length) {
-            if (SettingsSvc.settings.enablePrivateAPI.value &&
-                widget.chat.isIMessage &&
-                widget.chat.isGroup &&
-                shouldShowMore) {
-              return addMember;
-            } else {
-              return const SizedBox.shrink();
-            }
-          }
+          if (index > participants.length) return const SizedBox.shrink();
 
           if (index == participants.length) {
             if (shouldShowMore) {
@@ -145,8 +103,6 @@ class _ParticipantsListState extends State<ParticipantsList> with ThemeHelpers {
                   ),
                 ),
               );
-            } else if (SettingsSvc.settings.enablePrivateAPI.value && widget.chat.isIMessage && widget.chat.isGroup) {
-              return addMember;
             } else {
               return const SizedBox.shrink();
             }
@@ -156,7 +112,6 @@ class _ParticipantsListState extends State<ParticipantsList> with ThemeHelpers {
             key: Key(participants[index].address),
             handle: participants[index],
             chat: widget.chat,
-            canBeRemoved: widget.chat.isGroup && SettingsSvc.settings.enablePrivateAPI.value && widget.chat.isIMessage,
           );
         },
         childCount: participants.length + 2,

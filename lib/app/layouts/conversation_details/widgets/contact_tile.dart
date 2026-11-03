@@ -1,11 +1,8 @@
 import 'package:bluebubbles/app/components/animated_dropdown_menu.dart';
 import 'package:bluebubbles/app/components/copy_address_button.dart';
 import 'package:bluebubbles/app/layouts/conversation_details/dialogs/address_picker.dart';
-import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/app/components/avatars/contact_avatar_widget.dart';
 import 'package:bluebubbles/database/models.dart';
-import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
-import 'package:dio/dio.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart' hide Response;
@@ -13,13 +10,11 @@ import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:pull_down_button/pull_down_button.dart';
 
 class ContactTile extends StatelessWidget {
   final Handle handle;
   final Chat chat;
-  final bool canBeRemoved;
 
   bool _hasPhones(ContactV2? contact) {
     return contact?.addresses.any((addr) => !addr.contains('@')) ?? false;
@@ -33,50 +28,7 @@ class ContactTile extends StatelessWidget {
     super.key,
     required this.handle,
     required this.chat,
-    required this.canBeRemoved,
   });
-
-  void _removeParticipant(BuildContext context) {
-    final navigator = Navigator.of(context, rootNavigator: true);
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: context.theme.colorScheme.surfaceContainerHighest,
-          title: Text(
-            "Removing participant...",
-            style: context.theme.textTheme.titleLarge,
-          ),
-          content: SizedBox(
-            height: 70,
-            child: Center(child: buildProgressIndicator(context)),
-          ),
-        );
-      },
-    );
-
-    HttpSvc.chat.modifyParticipant("remove", chat.guid, handle.address).then((response) async {
-      navigator.pop();
-      if (response.statusCode == 200 && response.data != null && response.data['data'] != null) {
-        final result = await ChatInterface.bulkSyncChats(
-          chatsData: [response.data['data'] as Map<String, dynamic>],
-        );
-        if (result.chats.isNotEmpty) {
-          ChatsSvc.updateChat(result.chats.first, override: true);
-        }
-      }
-      Logger.info("Removed participant ${handle.address}");
-    }).catchError((err, stack) {
-      Logger.error("Failed to remove participant ${handle.address}", error: err, trace: stack);
-      late final String error;
-      if (err is Response) {
-        error = err.data["error"]["message"].toString();
-      } else {
-        error = err.toString();
-      }
-      showSnackbar("Error", "Failed to remove participant: $error", type: SnackbarType.error);
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -131,16 +83,6 @@ class ContactTile extends StatelessWidget {
                         showCopiedToast("Address copied to clipboard");
                       },
                     ),
-                    if (canBeRemoved)
-                      ListTile(
-                        mouseCursor: MouseCursor.defer,
-                        leading: Icon(Icons.person_remove_outlined, color: context.theme.colorScheme.error),
-                        title: Text("Remove from chat", style: TextStyle(color: context.theme.colorScheme.error)),
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          _removeParticipant(context);
-                        },
-                      ),
                     const SizedBox(height: 8),
                   ],
                 ),
@@ -181,23 +123,7 @@ class ContactTile extends StatelessWidget {
         ),
       );
 
-      return canBeRemoved && !kIsDesktop
-          ? Slidable(
-              endActionPane: ActionPane(
-                motion: const StretchMotion(),
-                extentRatio: 0.25,
-                children: [
-                  SlidableAction(
-                    label: 'Remove',
-                    backgroundColor: Colors.red,
-                    icon: SettingsSvc.settings.skin.value == Skins.iOS ? CupertinoIcons.trash : Icons.delete_outlined,
-                    onPressed: (_) => _removeParticipant(context),
-                  ),
-                ],
-              ),
-              child: child,
-            )
-          : child;
+      return child;
     });
   }
 
