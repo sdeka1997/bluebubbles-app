@@ -35,12 +35,11 @@ class TypingIndicatorService extends GetxController {
   }
 
   /// Every Apple chat in [chatGuid]'s thread, so whichever copy the others are
-  /// reading shows it. Only iMessage carries typing; Messages drops it elsewhere.
+  /// reading shows it. Messages sends typing where the service carries it.
   List<String> _threadGuids(String chatGuid) {
     if (kIsWeb) return [chatGuid];
     final chat = Chat.findOne(guid: chatGuid);
     if (chat == null) return [chatGuid];
-    final guids = findThreadChats(chat).where((c) => c.service.isIMessageService).map((c) => c.guid).toList();
-    return guids.isEmpty ? [chatGuid] : guids;
+    return findThreadChats(chat).map((c) => c.guid).toList();
   }
 }
