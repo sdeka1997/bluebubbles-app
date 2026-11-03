@@ -1679,7 +1679,7 @@ class ChatsService {
   void updateChatLatestMessage(String chatGuid, Message message,
       {bool allowOlder = false, bool repositionImmediate = true}) {
     final state = getChatState(chatGuid);
-    // Group events stay inside the thread; they never preview or move it.
+    // Status items such as renames stay inside the thread; they never preview or move it.
     if (state == null || !listsThread(message)) return;
 
     if (!allowOlder) {

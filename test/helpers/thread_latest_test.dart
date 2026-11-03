@@ -67,6 +67,12 @@ void main() {
       expect(listsThread(left), isFalse);
     });
 
+    test('only ordinary items list a thread; status items such as location sharing do not', () {
+      expect(listsThread(msg('location', DateTime(2026, 1, 6), itemType: 4)), isFalse);
+      expect(listsThread(msg('status', DateTime(2026, 1, 6), itemType: 5)), isFalse);
+      expect(listsThread(msg('future', DateTime(2026, 1, 6), itemType: 9)), isFalse);
+    });
+
     test('a thread whose newest items are events previews its last real message', () {
       final thread = threadShowing(unnamed);
       expect(refreshThreadLatest(thread, [text, unnamed, removed]), isTrue);

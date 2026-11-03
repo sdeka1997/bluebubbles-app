@@ -2,18 +2,17 @@ import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:collection/collection.dart';
 
-// Messages lists a thread by its newest message or reaction. Group events --
-// people added or removed (item type 1), a rename or removed name (2), someone
-// leaving or a new group photo (3) -- show inside the thread but never become
-// its preview or move it in the list.
-const _groupEventItemTypes = [1, 2, 3];
+// Messages lists a thread by its newest ordinary item (item type 0): a
+// message, attachment or reaction. Every other item type -- people added or
+// removed, a rename or removed name, someone leaving, a group photo, location
+// sharing and other status lines -- shows inside the thread but never becomes
+// its preview or moves it in the list. Messages counts unread the same way.
 
 /// Whether [message] can be its thread's preview and set its place in the list.
-bool listsThread(Message message) => !_groupEventItemTypes.contains(message.itemType ?? 0);
+bool listsThread(Message message) => (message.itemType ?? 0) == 0;
 
 /// [listsThread] as a database condition.
-Condition<Message> get listsThreadCondition =>
-    Message_.itemType.isNull().or(Message_.itemType.notOneOf(_groupEventItemTypes));
+Condition<Message> get listsThreadCondition => Message_.itemType.isNull().or(Message_.itemType.equals(0));
 
 /// The newest message, deleted ones excluded, of the local chat [chatId]. With
 /// [listing], only a message that [listsThread].
@@ -31,8 +30,8 @@ Message? newestMessageIn(int chatId, {bool listing = true}) {
 
 /// Points [thread] at the newest of [messages] that [listsThread]. A thread can
 /// be a copy holding only a rename, and copies folded into it bring newer
-/// messages, so its stored preview can be stale or a group event. A thread
-/// whose messages are all group events lists nothing. Returns whether [thread]
+/// messages, so its stored preview can be stale or a status item. A thread
+/// holding only status items lists nothing. Returns whether [thread]
 /// changed; the caller saves it.
 bool refreshThreadLatest(Chat thread, Iterable<Message> messages) {
   final live = messages.where((m) => m.dateDeleted == null && m.dateCreated != null).toList();
@@ -51,8 +50,8 @@ bool refreshThreadLatestFromDb(Chat chat) {
   return refreshThreadLatest(chat, [?newest]);
 }
 
-/// Chats still listed by a group event are pointed at their newest real
-/// message. Must run inside a write transaction. Returns the chats that changed.
+/// Chats still listed by a status item are pointed at their newest ordinary
+/// item. Must run inside a write transaction. Returns the chats that changed.
 List<Chat> relistChatsShownByEvents(Iterable<Chat> chats) {
   final changed = <Chat>[];
   for (final chat in chats) {

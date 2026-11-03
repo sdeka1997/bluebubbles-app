@@ -139,7 +139,7 @@ class SyncService {
       }
       Logger.info(
         'Refreshed metadata for ${changed.length} chats; folded ${folded.length} service twins; '
-        'relisted ${relisted.length} chats shown by a group event',
+        'relisted ${relisted.length} chats shown by a status item',
         tag: 'Service Twins',
       );
     } catch (e, stack) {
