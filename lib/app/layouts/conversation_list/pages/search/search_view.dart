@@ -352,11 +352,8 @@ class SearchViewState extends State<SearchView> with ThemeHelpers {
                             overflow: TextOverflow.ellipsis,
                           ),
                           leading: ContactAvatarGroupWidget(chat: chat, size: 40, editable: false),
-                          onTap: () => NavigationSvc.pushAndRemoveUntil(
-                            context,
-                            ConversationView(chat: chat),
-                            (route) => route.isFirst,
-                          ),
+                          // Opened over the search, so Back returns to the results.
+                          onTap: () => NavigationSvc.push(context, ConversationView(chat: chat)),
                         ),
                       if (currentSearch.value!.results.isNotEmpty)
                         SettingsHeader(iosSubtitle: iosSubtitle, materialSubtitle: materialSubtitle, text: "Messages"),
@@ -376,36 +373,14 @@ class SearchViewState extends State<SearchView> with ThemeHelpers {
                         // Create the textspans
                         List<InlineSpan> spans = [];
 
-                        // Get the current position of the search term
-                        int termStart = message.fullText.toLowerCase().indexOf(currentSearchTerm.value!.toLowerCase());
-                        int termEnd = termStart + currentSearchTerm.value!.length;
-
-                        if (termStart >= 0) {
-                          // We only want a snippet of the text, so only get a 50x50 range
-                          // of characters from the string, with the search term in the middle
-                          String subText = message.fullText.substring(
-                            (termStart - 50).clamp(0, double.infinity).toInt(),
-                            (termEnd + 50).clamp(0, message.fullText.length),
-                          );
-
-                          // Recalculate the term position in the snippet
-                          termStart = subText.toLowerCase().indexOf(currentSearchTerm.value!.toLowerCase());
-                          termEnd = termStart + currentSearchTerm.value!.length;
-
-                          // Add the beginning string
-                          spans.add(TextSpan(text: subText.substring(0, termStart).trimLeft(), style: subtitleStyle));
-
-                          // Add the search term (bolded with color)
-                          spans.add(
-                            TextSpan(
-                                text: subText.substring(termStart, termEnd),
-                                style:
-                                    subtitleStyle.apply(color: context.theme.colorScheme.primary, fontWeightDelta: 2)),
-                          );
-
-                          // Add the ending string
+                        final snippet = searchSnippet(message.fullText, currentSearchTerm.value!);
+                        if (snippet != null) {
+                          spans.add(TextSpan(text: snippet.before, style: subtitleStyle));
+                          // The search term, bolded with color
                           spans.add(TextSpan(
-                              text: subText.substring(termEnd, subText.length).trimRight(), style: subtitleStyle));
+                              text: snippet.match,
+                              style: subtitleStyle.apply(color: context.theme.colorScheme.primary, fontWeightDelta: 2)));
+                          spans.add(TextSpan(text: snippet.after, style: subtitleStyle));
                         } else {
                           spans.add(TextSpan(text: message.text, style: subtitleStyle));
                         }
@@ -458,14 +433,14 @@ class SearchViewState extends State<SearchView> with ThemeHelpers {
                               final service = maybeFindMessagesSvc(chat.guid) ?? MessagesService(chat.guid);
                               service.method = local.value ? SearchMode.local.name : SearchMode.network.name;
                               service.struct.addMessages([message]);
-                              NavigationSvc.pushAndRemoveUntil(
+                              // Opened over the search, so Back returns to the results.
+                              NavigationSvc.push(
                                 context,
                                 ConversationView(
                                   chat: chat,
                                   customService: service,
                                   initialScrollToGuid: message.guid,
                                 ),
-                                (route) => route.isFirst,
                               );
                             },
                           ),

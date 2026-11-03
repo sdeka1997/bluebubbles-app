@@ -171,3 +171,22 @@ class SearchQueryHelper {
     return items;
   }
 }
+
+/// The part of [text] a search result previews: the line holding [term], cut
+/// to 50 characters either side of it, split around the match. The preview
+/// shows only a line or two, so a match below the first lines must lead it.
+/// Null when [text] doesn't contain [term].
+({String before, String match, String after})? searchSnippet(String text, String term) {
+  final start = text.toLowerCase().indexOf(term.toLowerCase());
+  if (term.isEmpty || start < 0) return null;
+  final end = start + term.length;
+  final lineStart = text.lastIndexOf('\n', start) + 1;
+  final lineEnd = text.indexOf('\n', end);
+  final from = (start - 50).clamp(lineStart, start);
+  final to = (end + 50).clamp(end, lineEnd < 0 ? text.length : lineEnd);
+  return (
+    before: text.substring(from, start).trimLeft(),
+    match: text.substring(start, end),
+    after: text.substring(end, to).trimRight(),
+  );
+}
