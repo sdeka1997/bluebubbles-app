@@ -572,7 +572,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(13, 4148278195232901830),
     name: 'Message',
-    lastPropertyId: const obx_int.IdUid(55, 4587135438258839479),
+    lastPropertyId: const obx_int.IdUid(56, 6460900906087741854),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -850,6 +850,12 @@ final _entities = <obx_int.ModelEntity>[
       obx_int.ModelProperty(
         id: const obx_int.IdUid(55, 4587135438258839479),
         name: 'service',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(56, 6460900906087741854),
+        name: 'appleChatGuid',
         type: 9,
         flags: 0,
       ),
@@ -2089,7 +2095,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final serviceOffset = object.service == null
             ? null
             : fbb.writeString(object.service!);
-        fbb.startTable(56);
+        final appleChatGuidOffset = object.appleChatGuid == null
+            ? null
+            : fbb.writeString(object.appleChatGuid!);
+        fbb.startTable(57);
         fbb.addInt64(0, object.id ?? 0);
         fbb.addInt64(1, object.originalROWID);
         fbb.addOffset(2, guidOffset);
@@ -2135,6 +2144,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addBool(52, object.hasEffectPlayed);
         fbb.addOffset(53, metadataOffset);
         fbb.addOffset(54, serviceOffset);
+        fbb.addOffset(55, appleChatGuidOffset);
         fbb.finish(fbb.endTable());
         return object.id ?? 0;
       },
@@ -2289,6 +2299,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final threadOriginatorGuidParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGetNullable(buffer, rootOffset, 72);
+        final appleChatGuidParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGetNullable(buffer, rootOffset, 114);
         final threadOriginatorPartParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGetNullable(buffer, rootOffset, 74);
@@ -2352,6 +2365,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
                 dateDeleted: dateDeletedParam,
                 metadata: metadataParam,
                 threadOriginatorGuid: threadOriginatorGuidParam,
+                appleChatGuid: appleChatGuidParam,
                 threadOriginatorPart: threadOriginatorPartParam,
                 hasApplePayloadData: hasApplePayloadDataParam,
                 dateEdited: dateEditedParam,
@@ -3369,6 +3383,11 @@ class Message_ {
   /// See [Message.service].
   static final service = obx.QueryStringProperty<Message>(
     _entities[5].properties[44],
+  );
+
+  /// See [Message.appleChatGuid].
+  static final appleChatGuid = obx.QueryStringProperty<Message>(
+    _entities[5].properties[45],
   );
 
   /// see [Message.dbAttachments]

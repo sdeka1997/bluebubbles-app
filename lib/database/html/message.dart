@@ -43,6 +43,9 @@ class Message {
   DateTime? dateDeleted;
   Map<String, dynamic>? metadata;
   String? threadOriginatorGuid;
+  // The Apple chat (exact guid) this message came through; a thread can hold
+  // several, and sends go back through one of them.
+  String? appleChatGuid;
   String? threadOriginatorPart;
   List<Attachment?> attachments = [];
   List<Message> associatedMessages = [];
@@ -107,6 +110,7 @@ class Message {
     this.dateDeleted,
     this.metadata,
     this.threadOriginatorGuid,
+    this.appleChatGuid,
     this.threadOriginatorPart,
     this.attributedBody = const [],
     this.messageSummaryInfo = const [],
@@ -204,6 +208,7 @@ class Message {
       dateDeleted: parseDate(json["dateDeleted"]),
       metadata: metadata is String ? null : metadata,
       threadOriginatorGuid: json['threadOriginatorGuid'],
+      appleChatGuid: json['appleChatGuid'] ?? _firstChatGuid(json['chats']),
       threadOriginatorPart: json['threadOriginatorPart'],
       attributedBody: attributedBody,
       messageSummaryInfo: msi,
@@ -517,6 +522,7 @@ class Message {
     existing.id ??= newMessage.id;
     existing.guid ??= newMessage.guid;
     existing.service ??= newMessage.service;
+    existing.appleChatGuid ??= newMessage.appleChatGuid;
 
     // Update date created
     if ((existing.dateCreated == null && newMessage.dateCreated != null) ||
@@ -661,6 +667,7 @@ class Message {
       "dateDeleted": dateDeleted?.millisecondsSinceEpoch,
       "metadata": jsonEncode(metadata),
       "threadOriginatorGuid": threadOriginatorGuid,
+      "appleChatGuid": appleChatGuid,
       "threadOriginatorPart": threadOriginatorPart,
       "hasApplePayloadData": hasApplePayloadData,
       "dateEdited": dateEdited,
@@ -673,4 +680,12 @@ class Message {
       "payloadData": payloadData?.toJson(),
     };
   }
+}
+
+String? _firstChatGuid(dynamic chats) {
+  if (chats is! List) return null;
+  for (final chat in chats) {
+    if (chat is Map && chat['guid'] is String) return chat['guid'] as String;
+  }
+  return null;
 }
