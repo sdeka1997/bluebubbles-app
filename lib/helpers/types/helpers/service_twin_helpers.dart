@@ -147,7 +147,16 @@ Map<String, Chat> foldServiceTwins(Iterable<Chat> chats) {
   final regrouped = assignThreadKeys(Database.chats.getAll());
   if (regrouped.isNotEmpty) Database.chats.putMany(regrouped);
   final folded = <String, Chat>{};
-  final candidates = {for (final c in [...chats, ...regrouped]) c.guid: c}.values;
+  // A thread's first chat can change when a chat joins it, so every chat in a
+  // touched thread is checked, not only the ones whose key changed.
+  final touched = {for (final c in [...chats, ...regrouped]) c.guid: c};
+  final keys = {for (final c in touched.values) c.threadKey}..remove(null);
+  for (final key in keys) {
+    for (final c in _chatsInThread(key)) {
+      touched.putIfAbsent(c.guid, () => c);
+    }
+  }
+  final candidates = touched.values;
   for (final twin in candidates) {
     final stored = twin.id == null ? Chat.findOne(guid: twin.guid) : twin;
     if (stored == null) continue;
