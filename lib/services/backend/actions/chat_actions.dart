@@ -166,6 +166,10 @@ class ChatActions {
             chat.dbOnlyLatestMessageDate = DateTime.fromMillisecondsSinceEpoch(latestMessageDateMs);
           }
         } else {
+          if (chat.dbOnlyLatestMessageDate != null) {
+            Logger.info("${chat.guid}: stored latest date cleared (was ${chat.dbOnlyLatestMessageDate!.toIso8601String()})",
+                tag: "ThreadCheck");
+          }
           chat.dbLatestMessage.target = null;
           chat.dbOnlyLatestMessageDate = null;
         }

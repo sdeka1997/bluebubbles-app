@@ -79,6 +79,7 @@ class Chat {
   /// any messages for. The counterpart to [setLatestMessage]; without it the
   /// stale pointer keeps feeding the conversation tile's preview.
   void clearLatestMessage() {
+    Logger.info("$guid: latest message cleared", tag: "ThreadCheck", trace: StackTrace.current);
     dbLatestMessage.target = null;
     dbOnlyLatestMessageDate = null;
     unawaited(saveAsync(updateLatestMessage: true));
@@ -87,6 +88,13 @@ class Chat {
   /// Update the latest-message relation and its sort-key in one step.
   /// Persists both fields to the DB asynchronously (fire-and-forget).
   void setLatestMessage(Message m) {
+    // The save sends only the message's id, and a missing id reads as
+    // "cleared", which wipes the stored date and drops the thread to the
+    // bottom of the list. Logged to find the caller.
+    if (m.id == null || m.id == 0) {
+      Logger.warn("$guid: latest message ${m.guid} has no id, so its date will be cleared",
+          tag: "ThreadCheck", trace: StackTrace.current);
+    }
     dbLatestMessage.target = m;
     dbOnlyLatestMessageDate = m.dateCreated;
     unawaited(saveAsync(updateLatestMessage: true));
