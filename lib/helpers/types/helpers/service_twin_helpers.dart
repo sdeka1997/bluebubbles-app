@@ -146,6 +146,21 @@ bool carryOverThreadSettings(Chat thread, Iterable<Chat> twins) {
   return changed;
 }
 
+/// Points [thread] at the newest of [messages], its own and those of the
+/// chats folded into it. A thread can be a copy holding only a rename, so its
+/// stored preview may be older than messages that just moved in. Returns
+/// whether [thread] changed; the caller saves it.
+bool refreshThreadLatest(Chat thread, Iterable<Message> messages) {
+  final newest = messages
+      .where((m) => m.dateDeleted == null && m.dateCreated != null)
+      .sortedBy<num>((m) => m.dateCreated!.millisecondsSinceEpoch)
+      .lastOrNull;
+  if (newest == null || thread.dbLatestMessage.target?.guid == newest.guid) return false;
+  thread.dbLatestMessage.target = newest;
+  thread.dbOnlyLatestMessageDate = newest.dateCreated;
+  return true;
+}
+
 /// Regroups every local chat, then moves the messages of each folded chat in
 /// [chats], or whose thread changed, to its thread. Must run inside a write
 /// transaction. Returns each folded chat's guid mapped to its thread.
@@ -153,6 +168,7 @@ Map<String, Chat> foldServiceTwins(Iterable<Chat> chats) {
   final regrouped = assignThreadKeys(Database.chats.getAll());
   if (regrouped.isNotEmpty) Database.chats.putMany(regrouped);
   final folded = <String, Chat>{};
+  final threads = <int, Chat>{};
   // A thread's first chat can change when a chat joins it, so every chat in a
   // touched thread is checked, not only the ones whose key changed.
   final touched = {for (final c in [...chats, ...regrouped]) c.guid: c};
@@ -167,8 +183,10 @@ Map<String, Chat> foldServiceTwins(Iterable<Chat> chats) {
     final stored = twin.id == null ? Chat.findOne(guid: twin.guid) : twin;
     if (stored == null) continue;
     stored.threadKey ??= twin.threadKey;
-    final canonical = findCanonicalTwin(stored);
-    if (canonical == null) continue;
+    final found = findCanonicalTwin(stored);
+    if (found == null) continue;
+    // One instance per thread, so the preview refresh below reaches the caller.
+    final canonical = threads.putIfAbsent(found.id!, () => found);
     folded[twin.guid] = canonical;
     if (carryOverThreadSettings(canonical, [stored])) Database.chats.put(canonical);
 
@@ -182,6 +200,16 @@ Map<String, Chat> foldServiceTwins(Iterable<Chat> chats) {
       m.chat.target = canonical;
     }
     Database.messages.putMany(messages);
+  }
+  for (final thread in threads.values) {
+    final query = (Database.messages.query(Message_.dateDeleted.isNull())
+          ..link(Message_.chat, Chat_.id.equals(thread.id!))
+          ..order(Message_.dateCreated, flags: Order.descending))
+        .build();
+    query.limit = 1;
+    final newest = query.find();
+    query.close();
+    if (refreshThreadLatest(thread, newest)) Database.chats.put(thread);
   }
   return folded;
 }
