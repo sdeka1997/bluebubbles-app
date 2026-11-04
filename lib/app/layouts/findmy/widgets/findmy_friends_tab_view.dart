@@ -1,4 +1,5 @@
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_load_state.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_friend_list_tile.dart';
 import 'package:bluebubbles/app/layouts/settings/widgets/settings_widgets.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
@@ -24,10 +25,9 @@ class FindMyFriendsTabView extends StatelessWidget {
 
       return SliverList(
         delegate: SliverChildListDelegate([
-          if (controller.fetching2.value == null ||
-              controller.fetching2.value == true ||
-              (controller.fetching2.value == false && controller.friends.isEmpty))
-            _buildEmptyState(context),
+          // A failure is shown even over saved rows, so stale data never passes as current.
+          if (controller.friends.isEmpty || controller.friendsState.value.load == FindMyLoad.failed)
+            _buildEmptyState(context, controller.friendsState.value),
           if (controller.friendsWithLocation.isNotEmpty)
             SettingsHeader(iosSubtitle: iosSubtitle, materialSubtitle: materialSubtitle, text: "Friends"),
           if (controller.friendsWithLocation.isNotEmpty)
@@ -81,7 +81,7 @@ class FindMyFriendsTabView extends StatelessWidget {
     });
   }
 
-  Widget _buildEmptyState(BuildContext context) {
+  Widget _buildEmptyState(BuildContext context, FindMySourceState state) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.only(top: 100),
@@ -90,15 +90,16 @@ class FindMyFriendsTabView extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: Text(
-                controller.fetching2.value == null
-                    ? "Something went wrong!"
-                    : controller.fetching2.value == false
-                    ? "You have no friends."
-                    : "Getting FindMy data...",
+                switch (state.load) {
+                  FindMyLoad.failed => "Something went wrong: ${state.error}",
+                  FindMyLoad.loaded => "You have no friends.",
+                  _ => "Getting FindMy data...",
+                },
                 style: context.theme.textTheme.labelLarge,
+                textAlign: TextAlign.center,
               ),
             ),
-            if (controller.fetching2.value == true) buildProgressIndicator(context, size: 15),
+            if (state.isLoading) buildProgressIndicator(context, size: 15),
           ],
         ),
       ),

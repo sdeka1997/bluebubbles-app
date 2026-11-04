@@ -1,165 +1,110 @@
-import "dart:async";
-
 import "package:bluebubbles/app/layouts/findmy/findmy_controller.dart";
-import "package:bluebubbles/database/models.dart";
-import "package:bluebubbles/services/backend/settings/actions/shared_preferences_findmy_actions.dart";
-import "package:bluebubbles/services/network/api/icloud_api.dart";
-import "package:bluebubbles/services/services.dart";
-import "package:bluebubbles/utils/logger/logger.dart";
-import "package:dio/dio.dart";
+import "package:bluebubbles/app/layouts/findmy/findmy_load_state.dart";
 import "package:fake_async/fake_async.dart";
 import "package:flutter_test/flutter_test.dart" hide EventDispatcher;
-import "package:geolocator_platform_interface/geolocator_platform_interface.dart";
 import "package:get/get.dart" hide Response;
-import "package:get_it/get_it.dart";
-import "package:plugin_platform_interface/plugin_platform_interface.dart";
 
-class FakeGeolocator extends GeolocatorPlatform with MockPlatformInterfaceMixin {
-  @override
-  Future<LocationPermission> checkPermission() async => LocationPermission.denied;
-
-  @override
-  Future<LocationPermission> requestPermission() async => LocationPermission.deniedForever;
-}
-
-class FakeFindMyPrefs extends SharedPreferencesFindMyActions {
-  FakeFindMyPrefs(super.service);
-
-  @override
-  String? getLocationCache() => null;
-
-  @override
-  Future<void> setLocationCache(String json) async {}
-}
-
-/// Holds every Find My request open until the test answers it, so a request
-/// that the tunnel cancelled mid-flight can be modelled as one that simply
-/// never completes.
-class FakeICloudApi extends iCloudApi {
-  FakeICloudApi(super.svc);
-
-  final Map<String, List<Completer<Response>>> requests = {};
-
-  Future<Response> _request(String name) {
-    final completer = Completer<Response>();
-    requests.putIfAbsent(name, () => []).add(completer);
-    return completer.future;
-  }
-
-  void answer(String name, {Object data = const []}) => requests[name]!
-      .removeAt(0)
-      .complete(
-        Response(
-          requestOptions: RequestOptions(path: ""),
-          statusCode: 200,
-          data: {"data": data},
-        ),
-      );
-
-  @override
-  Future<Response> refreshFriends({CancelToken? cancelToken}) => _request("refreshFriends");
-
-  @override
-  Future<Response> getFriends({CancelToken? cancelToken}) => _request("getFriends");
-
-  @override
-  Future<Response> refreshDevices({CancelToken? cancelToken}) => _request("refreshDevices");
-
-  @override
-  Future<Response> getDevices({CancelToken? cancelToken}) => _request("getDevices");
-}
+import "findmy_test_support.dart";
 
 void main() {
   late FakeICloudApi icloud;
 
-  setUp(() {
-    GeolocatorPlatform.instance = FakeGeolocator();
-    final settings = SettingsService()..settings = Settings();
-    final prefs = SharedPreferencesService();
-    prefs.findMy = FakeFindMyPrefs(prefs);
-    final http = HttpService();
-    icloud = FakeICloudApi(http);
-    http.icloud = icloud;
-    GetIt.I
-      ..registerSingleton<BaseLogger>(BaseLogger())
-      ..registerSingleton<SettingsService>(settings)
-      ..registerSingleton<SharedPreferencesService>(prefs)
-      ..registerSingleton<EventDispatcher>(EventDispatcher())
-      ..registerSingleton<HttpService>(http);
-  });
-
-  tearDown(() async {
-    Get.reset();
-    await GetIt.I.reset();
-  });
+  setUp(() => icloud = registerFindMyServices());
+  tearDown(resetFindMyServices);
 
   // Observed 2026-10-31 20:36: the phone POSTed /findmy/devices/refresh, the
   // Cloudflare tunnel tore the connection down ("Incoming request ended
   // abruptly: context canceled"), and the server finished the work 24.8 s
   // later into a socket nobody held. Dio's receive window for this one call is
-  // apiTimeout x 12 = 6 minutes, so the await outlived any map the user was
-  // waiting on. `fetching`/`fetching2` start true and are cleared only after
-  // the await, so the map spun until the process was restarted.
+  // apiTimeout x 12 = 6 minutes, so a request that never answers has to be
+  // bounded by the page itself.
 
-  test("a friends fetch that never answers stops blocking the map", () {
+  test("a read that never answers fails at its deadline and is cancelled", () {
     fakeAsync((async) {
       final controller = Get.put(FindMyController());
       async.flushMicrotasks();
+      expect(controller.friendsState.value.load, FindMyLoad.loading);
+      expect(controller.devicesState.value.load, FindMyLoad.loading);
 
-      expect(controller.fetching2.value, isTrue, reason: "starts loading");
+      async.elapse(FindMyController.readDeadline);
 
-      // The tunnel dropped it: the response never arrives.
-      async.elapse(const Duration(minutes: 2));
-
-      expect(
-        controller.fetching2.value,
-        isNot(isTrue),
-        reason: "a fetch that never answers must not pin the loading state forever",
-      );
+      expect(controller.friendsState.value.load, FindMyLoad.failed);
+      expect(controller.devicesState.value.load, FindMyLoad.failed);
+      expect(controller.devicesState.value.error, isNotNull);
+      expect(icloud.tokens["getDevices"]!.single!.isCancelled, isTrue);
     });
   });
 
-  test("a devices fetch that never answers stops blocking the map", () {
+  test("a device refresh that never answers releases the refresh button", () {
     fakeAsync((async) {
       final controller = Get.put(FindMyController());
       async.flushMicrotasks();
-      icloud.answer("refreshFriends");
-      async.flushMicrotasks();
-
-      expect(controller.fetching.value, isTrue, reason: "devices still loading");
-
-      // getDevices is never answered.
-      async.elapse(const Duration(minutes: 2));
-
-      expect(
-        controller.fetching.value,
-        isNot(isTrue),
-        reason: "a devices fetch that never answers must not pin the loading state forever",
-      );
-    });
-  });
-
-  test("a manual refresh that never answers releases the refresh button", () {
-    fakeAsync((async) {
-      final controller = Get.put(FindMyController());
-      async.flushMicrotasks();
-      icloud.answer("refreshFriends");
-      async.flushMicrotasks();
+      icloud.answer("getFriends");
       icloud.answer("getDevices");
-      async.elapse(const Duration(seconds: 31));
-
-      controller.refreshing.value = true;
-      controller.refreshing2.value = true;
-      controller.getLocations(refreshDevices: true);
       async.flushMicrotasks();
       icloud.answer("refreshFriends");
+      async.elapse(const Duration(minutes: 1));
+      expect(controller.isRefreshing, isFalse);
+
+      controller.refreshLocations(refreshDevices: true);
+      async.flushMicrotasks();
+      icloud.answer("refreshFriends");
+      async.elapse(FindMyController.deviceRefreshDeadline);
+
+      expect(controller.devicesState.value.load, FindMyLoad.failed);
+      expect(controller.isRefreshing, isFalse, reason: "the user must be able to try again");
+      expect(icloud.tokens["refreshDevices"]!.single!.isCancelled, isTrue);
+    });
+  });
+
+  test("an answer that arrives after its deadline is ignored", () {
+    fakeAsync((async) {
+      icloud.honourCancel = false;
+      final controller = Get.put(FindMyController());
+      async.flushMicrotasks();
+      async.elapse(FindMyController.readDeadline);
+      expect(controller.devicesState.value.load, FindMyLoad.failed);
+
+      icloud.answer("getDevices", data: [phoneJson]);
       async.flushMicrotasks();
 
-      // The device refresh is the slow call that got cancelled; never answer it.
-      async.elapse(const Duration(minutes: 2));
+      expect(controller.devices, isEmpty);
+      expect(controller.devicesState.value.load, FindMyLoad.failed);
+    });
+  });
 
-      expect(controller.refreshing.value, isFalse, reason: "spinner must not hang");
-      expect(controller.canRefresh.value, isTrue, reason: "user must be able to retry");
+  test("a manual refresh cancels the opening load and ignores its late answers", () {
+    fakeAsync((async) {
+      icloud.honourCancel = false;
+      final controller = Get.put(FindMyController());
+      async.flushMicrotasks();
+
+      controller.refreshLocations(refreshDevices: true);
+      async.flushMicrotasks();
+      expect(icloud.tokens["getDevices"]!.single!.isCancelled, isTrue);
+      expect(icloud.tokens["getFriends"]!.single!.isCancelled, isTrue);
+
+      icloud.answer("getDevices", data: [phoneJson]);
+      async.flushMicrotasks();
+      expect(controller.devices, isEmpty, reason: "the superseded load must not write state");
+      expect(controller.devicesState.value.load, FindMyLoad.loading);
+
+      icloud.answer("refreshDevices", data: [phoneJson]);
+      async.flushMicrotasks();
+      expect(controller.devices.map((d) => d.id), ["phone"]);
+      expect(controller.devicesState.value.load, FindMyLoad.loaded);
+    });
+  });
+
+  test("closing the page cancels what is in flight", () {
+    fakeAsync((async) {
+      Get.put(FindMyController());
+      async.flushMicrotasks();
+      Get.delete<FindMyController>();
+      async.flushMicrotasks();
+
+      expect(icloud.tokens["getFriends"]!.single!.isCancelled, isTrue);
+      expect(icloud.tokens["getDevices"]!.single!.isCancelled, isTrue);
     });
   });
 }

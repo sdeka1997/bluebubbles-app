@@ -1,4 +1,5 @@
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_load_state.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_device_list_tile.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_items_tab_view.dart';
@@ -51,10 +52,8 @@ class FindMyDevicesTabView extends StatelessWidget {
 
       return SliverList(
         delegate: SliverChildListDelegate([
-          if (controller.fetching.value == null ||
-              controller.fetching.value == true ||
-              (controller.fetching.value == false && allDevices.isEmpty))
-            _buildEmptyState(context),
+          if (allDevices.isEmpty || controller.devicesState.value.load == FindMyLoad.failed)
+            _buildEmptyState(context, controller.devicesState.value),
           if (myDevices.isNotEmpty)
             SettingsHeader(iosSubtitle: iosSubtitle, materialSubtitle: materialSubtitle, text: "My Devices"),
           if (myDevices.isNotEmpty)
@@ -96,7 +95,7 @@ class FindMyDevicesTabView extends StatelessWidget {
     });
   }
 
-  Widget _buildEmptyState(BuildContext context) {
+  Widget _buildEmptyState(BuildContext context, FindMySourceState state) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.only(top: 100),
@@ -105,15 +104,16 @@ class FindMyDevicesTabView extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: Text(
-                controller.fetching.value == null
-                    ? "Something went wrong!"
-                    : controller.fetching.value == false
-                    ? "You have no devices."
-                    : "Getting FindMy data...",
+                switch (state.load) {
+                  FindMyLoad.failed => "Something went wrong: ${state.error}",
+                  FindMyLoad.loaded => "You have no devices.",
+                  _ => "Getting FindMy data...",
+                },
                 style: context.theme.textTheme.labelLarge,
+                textAlign: TextAlign.center,
               ),
             ),
-            if (controller.fetching.value == true) buildProgressIndicator(context, size: 15),
+            if (state.isLoading) buildProgressIndicator(context, size: 15),
           ],
         ),
       ),

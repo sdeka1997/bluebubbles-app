@@ -104,13 +104,32 @@ void applyCachedDeviceLocation(FindMyDevice device, FindMyCachedLocation cached)
 /// account it was filled from, and starts empty when either changes so one
 /// account's locations never show up under another.
 class FindMyLocationCache {
-  FindMyLocationCache(this.server, this.account, [Map<String, FindMyCachedLocation>? entries])
-    : _entries = entries ?? {};
+  FindMyLocationCache(
+    this.server,
+    this.account, [
+    Map<String, FindMyCachedLocation>? entries,
+    List<Map<String, dynamic>>? friends,
+    List<Map<String, dynamic>>? devices,
+  ]) : _entries = entries ?? {},
+       _friends = friends ?? const [],
+       _devices = devices ?? const [];
+
+  /// The layout written by [save]. The saved friend and device lists are only
+  /// read back from this version; an older cache keeps its locations and
+  /// simply opens without them.
+  static const int version = 2;
 
   final String server;
   final String account;
   final Map<String, FindMyCachedLocation> _entries;
+  List<Map<String, dynamic>> _friends;
+  List<Map<String, dynamic>> _devices;
   bool _dirty = false;
+
+  /// The last friend list and device list the server sent, as it sent them,
+  /// so the page can show them before any network answer.
+  List<Map<String, dynamic>> get friends => _friends;
+  List<Map<String, dynamic>> get devices => _devices;
 
   /// Whether friends' coordinates may be written to disk at all. Redacted
   /// mode exists so the device can be shown to others without exposing
@@ -144,7 +163,15 @@ class FindMyLocationCache {
         final location = FindMyCachedLocation.fromJson(entry.value as Map<String, dynamic>);
         if (location != null) entries[entry.key] = location;
       }
-      return FindMyLocationCache(server, account.isNotEmpty ? account : savedAccount, entries);
+      List<Map<String, dynamic>>? list(String key) =>
+          json['version'] == version ? (json[key] as List?)?.cast<Map<String, dynamic>>() : null;
+      return FindMyLocationCache(
+        server,
+        account.isNotEmpty ? account : savedAccount,
+        entries,
+        list('friends'),
+        list('devices'),
+      );
     } catch (e, s) {
       Logger.warn("Failed to read the Find My location cache", error: e, trace: s, tag: 'FindMyLocationCache');
       return FindMyLocationCache(server, account);
@@ -161,15 +188,28 @@ class FindMyLocationCache {
     _dirty = true;
   }
 
+  void rememberFriends(List<Map<String, dynamic>> raw) {
+    _friends = raw;
+    _dirty = true;
+  }
+
+  void rememberDevices(List<Map<String, dynamic>> raw) {
+    _devices = raw;
+    _dirty = true;
+  }
+
   Future<void> save() async {
     if (!_dirty) return;
     _dirty = false;
     if (!persistenceAllowed) return;
     await PrefsSvc.findMy.setLocationCache(
       jsonEncode({
+        'version': version,
         'server': server,
         'account': account,
         'entries': _entries.map((key, value) => MapEntry(key, value.toJson())),
+        'friends': _friends,
+        'devices': _devices,
       }),
     );
   }

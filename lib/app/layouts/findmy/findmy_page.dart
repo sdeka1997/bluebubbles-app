@@ -425,16 +425,9 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
 
   /// The round refresh button doubles as the refresh indicator: it spins for
   /// the whole refresh window, including the automatic one on open.
-  bool get _isRefreshing => !controller.canRefresh.value || controller.refreshing.value || controller.refreshing2.value;
+  bool get _isRefreshing => controller.isRefreshing;
 
-  /// A tap that lands before the spinner replaces the button must not start a
-  /// second, overlapping refresh.
-  void _startRefresh({required bool refreshDevices}) {
-    if (_isRefreshing) return;
-    controller.refreshing.value = true;
-    controller.refreshing2.value = true;
-    controller.getLocations(refreshDevices: refreshDevices);
-  }
+  void _startRefresh({required bool refreshDevices}) => controller.refreshLocations(refreshDevices: refreshDevices);
 
   Widget _buildRefreshButton(BuildContext context, {required bool isTablet}) {
     return Positioned(

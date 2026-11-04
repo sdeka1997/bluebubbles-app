@@ -73,12 +73,17 @@ void main() {
     ),
   );
 
-  /// Answers the opening load so nothing is left waiting when the test ends.
-  Future<void> settle(WidgetTester tester) async {
-    icloud.answer('refreshFriends');
-    await tester.pump();
+  Future<void> answerOpening(WidgetTester tester) async {
+    icloud.answer('getFriends');
     icloud.answer('getDevices');
     await tester.pump();
+    icloud.answer('refreshFriends');
+    await tester.pump();
+  }
+
+  /// Answers the opening load so nothing is left waiting when the test ends.
+  Future<void> settle(WidgetTester tester) async {
+    await answerOpening(tester);
     await tester.pumpWidget(const SizedBox());
     Get.delete<FindMyController>();
     await tester.pump(const Duration(minutes: 2));
@@ -134,10 +139,7 @@ void main() {
   testWidgets('says so over the map when a tab has nothing to show', (tester) async {
     final controller = openController();
     await tester.pumpWidget(page(controller));
-    icloud.answer('refreshFriends');
-    await tester.pump();
-    icloud.answer('getDevices');
-    await tester.pump();
+    await answerOpening(tester);
 
     expect(find.byType(FlutterMap), findsOneWidget);
     expect(find.text('Location unavailable'), findsOneWidget);
@@ -153,10 +155,7 @@ void main() {
     final controller = openController();
     await tester.pumpWidget(page(controller));
     await tester.pump();
-    icloud.answer('refreshFriends');
-    await tester.pump();
-    icloud.answer('getDevices');
-    await tester.pump();
+    await answerOpening(tester);
 
     geolocator.fix.complete(position(32.78, -96.80));
     await tester.pump();

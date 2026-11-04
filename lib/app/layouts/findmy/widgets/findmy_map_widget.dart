@@ -135,7 +135,7 @@ class _FindMyMapWidgetState extends State<FindMyMapWidget> {
               ],
             ),
             Obx(() {
-              final isLoading = controller.fetching.value == true || controller.fetching2.value == true;
+              final isLoading = controller.friendsState.value.isLoading || controller.devicesState.value.isLoading;
               if (isLoading || controller.cameraFocusForTab().isNotEmpty) return const SizedBox.shrink();
               return IgnorePointer(
                 child: Center(

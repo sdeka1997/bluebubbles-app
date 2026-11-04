@@ -56,12 +56,16 @@ class FakeICloudApi extends iCloudApi {
   final Map<String, List<Completer<Response>>> requests = {};
   final Map<String, List<CancelToken?>> tokens = {};
 
+  /// Off models a transport that never noticed the cancel, so a request can
+  /// still answer after the page gave up on it.
+  bool honourCancel = true;
+
   Future<Response> _request(String name, CancelToken? cancelToken) {
     final completer = Completer<Response>();
     requests.putIfAbsent(name, () => []).add(completer);
     tokens.putIfAbsent(name, () => []).add(cancelToken);
     cancelToken?.whenCancel.then((_) {
-      if (completer.isCompleted) return;
+      if (!honourCancel || completer.isCompleted) return;
       completer.completeError(
         DioException.requestCancelled(requestOptions: RequestOptions(path: name), reason: 'cancelled'),
       );
@@ -121,3 +125,11 @@ Future<void> resetFindMyServices() async {
   Get.reset();
   await GetIt.I.reset();
 }
+
+/// A device as the server sends it, with a usable location.
+const Map<String, dynamic> phoneJson = {
+  "id": "phone",
+  "name": "Phone",
+  "deviceClass": "iPhone",
+  "location": {"latitude": 32.78, "longitude": -96.80, "timeStamp": 1790000000000},
+};

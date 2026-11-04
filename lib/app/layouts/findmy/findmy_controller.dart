@@ -20,6 +20,7 @@ import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_contact.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_format.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_load_state.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_cache.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_refresh_progress.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_scroll.dart';
@@ -63,10 +64,6 @@ class FindMyController extends GetxController {
   final Set<String> _deviceMarkerKeys = <String>{};
   final Set<String> _itemMarkerKeys = <String>{};
   final Rxn<Position> location = Rxn<Position>();
-  final Rxn<bool> fetching = Rxn<bool>(true);
-  final RxBool refreshing = false.obs;
-  final Rxn<bool> fetching2 = Rxn<bool>(true);
-  final RxBool refreshing2 = false.obs;
   final RxBool canRefresh = false.obs;
   final Rx<FindMyRefreshProgress> friendRefreshProgress = FindMyRefreshProgress.idle().obs;
 
@@ -97,7 +94,7 @@ class FindMyController extends GetxController {
   void onInit() {
     super.onInit();
     unawaited(_startLocationUpdates());
-    getLocations();
+    _open();
 
     // Listen via the event dispatcher rather than the socket itself — the socket is
     // torn down and rebuilt on every restart (backgrounding, a server URL refresh),
@@ -117,16 +114,6 @@ class FindMyController extends GetxController {
   }
 
   bool get _isAlive => !isClosed;
-
-  /// How long a whole fetch may take before the page stops waiting on it.
-  ///
-  /// Dio's own receive window for the device refresh is `apiTimeout * 12`, i.e.
-  /// six minutes by default, and a tunnel can cancel the connection without
-  /// either side raising an error — so the await alone is not a bound the user
-  /// ever sees. The server's device refresh legitimately takes ~25 s (measured
-  /// 24.8 s and 25.3 s), so this has to clear that with room to spare while
-  /// still failing fast enough to show cached pins instead of a dead spinner.
-  static const Duration fetchDeadline = Duration(seconds: 75);
 
   void _scheduleRefreshGate() {
     _refreshTimer?.cancel();
@@ -436,151 +423,211 @@ class FindMyController extends GetxController {
     }
   }
 
-  /// Fetches the FindMy data from the server.
-  /// The toggles for refresh friends & devices are separate due to an inconsistency in the server API.
-  /// As of v1.9.7 (server), the refresh devices endpoint doesn't return the devices data,
-  /// however, the refresh friends endpoint does. The way this was coded assumes that the server
-  /// will return the data for both endpoints. A server update will fix this, but for now,
-  /// we will "patch" it by only "refreshing" devices when the user manually refreshes the data.
-  Future<void> getLocations({bool refreshFriends = true, bool refreshDevices = false}) async {
-    try {
-      await _fetchLocations(
-        refreshFriends: refreshFriends,
-        refreshDevices: refreshDevices,
-      ).timeout(fetchDeadline);
-    } on TimeoutException catch (e) {
-      Logger.warn("FindMy fetch gave no answer within $fetchDeadline", error: e, tag: 'FindMyController');
-    } finally {
-      // Every path should already clear these; this covers a throw (e.g. from the
-      // location permission check) or a request that never answers at all, either
-      // of which would otherwise leave the refresh button spinning and the map
-      // pinned on a loading spinner until the page is reopened.
-      if (_isAlive) {
-        refreshing.value = false;
-        refreshing2.value = false;
-        // null is the "tried and failed" state, as used by the parse-error paths.
-        // It lets the map draw whatever cached markers it has — or say plainly
-        // that there is no location — instead of waiting on a dead request.
-        if (fetching.value == true) fetching.value = null;
-        if (fetching2.value == true) fetching2.value = null;
-      }
-    }
+  /// How long a read of the server's stored friends or devices may take. The
+  /// server answers these from memory (devices measured at 30 ms), so this only
+  /// has to ride out a slow tunnel, and fails fast enough that the user is left
+  /// looking at saved pins rather than a spinner.
+  static const Duration readDeadline = Duration(seconds: 20);
+
+  /// How long asking the server to locate friends may take: measured at
+  /// 0.85-5 s, so six times the slowest.
+  static const Duration friendRefreshDeadline = Duration(seconds: 30);
+
+  /// How long asking the server to locate devices may take. Measured at 24.8 s
+  /// and 25.3 s; a little over twice that lets a slow iCloud round land, well
+  /// inside Dio's own six-minute window for this call, which a tunnel that
+  /// drops the connection silently would otherwise leave the page waiting on.
+  static const Duration deviceRefreshDeadline = Duration(seconds: 60);
+
+  final Rx<FindMySourceState> friendsState = FindMySourceState.idle.obs;
+  final Rx<FindMySourceState> devicesState = FindMySourceState.idle.obs;
+
+  /// Each load is one session; answers from an older one are ignored.
+  int _generation = 0;
+  bool _manualSession = false;
+  final List<CancelToken> _sessionTokens = [];
+  final RxInt _pendingRequests = 0.obs;
+
+  /// Whether the refresh button shows as busy.
+  bool get isRefreshing => !canRefresh.value || _pendingRequests.value > 0;
+
+  /// Asks the server to locate friends, and devices too when [refreshDevices]
+  /// (the slow one, so only on request). Ignored while a manual refresh is
+  /// still waiting on the server; otherwise replaces whatever load is running.
+  void refreshLocations({bool refreshDevices = true}) {
+    if (_manualSession && _pendingRequests.value > 0) return;
+    _startSession(manual: true, refreshDevices: refreshDevices);
   }
 
-  Future<void> _fetchLocations({required bool refreshFriends, required bool refreshDevices}) async {
+  /// The opening load: shows what was saved last time at once, reads the
+  /// server's stored friends and devices side by side, rendering each as it
+  /// arrives, then asks the server to locate friends in the background.
+  void _open() {
+    _showSaved();
+    _startSession(manual: false, refreshDevices: false);
+  }
+
+  void _startSession({required bool manual, required bool refreshDevices}) {
     if (!_isAlive) return;
-    // Open the refresh window before awaiting anything, so progress shows for the
-    // whole session rather than only after the slower device request returns.
-    // Only events from this client-owned refresh session can count.
+    _cancelSession();
+    final generation = ++_generation;
+    _manualSession = manual;
+    _pendingRequests.value = 0;
+    // Open the refresh window before awaiting anything, so progress shows for
+    // the whole session. Only events from this session can count.
     friendRefreshProgress.value = FindMyRefreshProgress.start();
     canRefresh.value = false;
     _scheduleRefreshGate();
 
-    // Fetch friends data
-    final response2 = refreshFriends
-        ? await HttpSvc.icloud.refreshFriends().catchError((_) async {
-            if (!_isAlive) return Response(requestOptions: RequestOptions(path: ''));
-            refreshing2.value = false;
-            showSnackbar("Error", "Something went wrong refreshing FindMy Friends data!", type: SnackbarType.error);
-            return Response(requestOptions: RequestOptions(path: ''));
-          })
-        : await HttpSvc.icloud.getFriends().catchError((_) async {
-            if (!_isAlive) return Response(requestOptions: RequestOptions(path: ''));
-            fetching2.value = null;
-            return Response(requestOptions: RequestOptions(path: ''));
-          });
-    if (!_isAlive) return;
+    friendsState.value = friendsState.value.loading();
+    devicesState.value = devicesState.value.loading();
+    void locateFriends() => _request(
+      generation,
+      friendsState,
+      HttpSvc.icloud.refreshFriends,
+      friendRefreshDeadline,
+      _applyFriends(refreshed: true),
+    );
+    if (manual) {
+      locateFriends();
+    } else {
+      _request(generation, friendsState, HttpSvc.icloud.getFriends, readDeadline, (response) {
+        _applyFriends(refreshed: false)(response);
+        // Fresh fixes also arrive one by one over the socket while this runs.
+        if (friendsState.value.load == FindMyLoad.loaded) locateFriends();
+      });
+    }
+    _request(
+      generation,
+      devicesState,
+      refreshDevices ? HttpSvc.icloud.refreshDevices : HttpSvc.icloud.getDevices,
+      refreshDevices ? deviceRefreshDeadline : readDeadline,
+      _applyDevices,
+    );
+  }
 
-    if (response2.statusCode == 200 && response2.data['data'] != null) {
-      try {
-        final roster = (response2.data['data'] as List)
-            .map((e) => FindMyFriend.fromJson(e))
-            .toList()
-            .cast<FindMyFriend>();
-        friends.value = _withCachedFriendLocations(roster);
-        if (refreshFriends) {
+  void _cancelSession() {
+    for (final token in _sessionTokens) {
+      token.cancel('superseded');
+    }
+    _sessionTokens.clear();
+  }
+
+  /// Sends one request of session [generation] and hands its answer to
+  /// [onResponse], unless the session has since been replaced. A request with
+  /// no answer by [deadline] is cancelled and counts as failed.
+  void _request(
+    int generation,
+    Rx<FindMySourceState> state,
+    Future<Response> Function({CancelToken? cancelToken}) send,
+    Duration deadline,
+    void Function(Response response) onResponse,
+  ) {
+    final token = CancelToken();
+    _sessionTokens.add(token);
+    _pendingRequests.value++;
+    bool current() => _isAlive && generation == _generation;
+
+    send(cancelToken: token)
+        .timeout(
+          deadline,
+          onTimeout: () {
+            token.cancel('deadline');
+            throw FindMyDeadlineException(deadline);
+          },
+        )
+        .then(
+          (response) {
+            if (!current()) return;
+            _pendingRequests.value--;
+            onResponse(response);
+          },
+          onError: (Object e, StackTrace s) {
+            if (!current()) return;
+            _pendingRequests.value--;
+            Logger.warn("Find My ${state == friendsState ? 'friends' : 'devices'} request failed", error: e, tag: 'FindMyController');
+            state.value = state.value.failed(describeFindMyError(e));
+          },
+        );
+  }
+
+  /// The list a Find My response carries, or null when it carries none (the
+  /// device refresh endpoint of some server versions answers without data).
+  List? _dataOf(Response response) => response.data is Map ? response.data['data'] as List? : null;
+
+  void Function(Response) _applyFriends({required bool refreshed}) => (response) {
+    try {
+      final data = _dataOf(response);
+      if (data != null) {
+        final roster = data.map((e) => FindMyFriend.fromJson(e)).toList();
+        _locationCache.rememberFriends(data.cast<Map<String, dynamic>>());
+        if (refreshed) {
           friendRefreshProgress.value = friendRefreshProgress.value.withRoster(roster.map(findMyFriendRefreshIdFor));
         }
+        _showFriends(roster);
         _locationCache.save();
-
-        _updateFriendLists();
-
-        _clearFriendMarkers();
-        for (FindMyFriend e in friends.where(hasUsableFindMyLocation)) {
-          buildFriendMarker(e);
-          unawaited(resolveFriendAddress(e));
-        }
-        fitCameraToTab();
-        fetching2.value = false;
-        refreshing2.value = false;
-      } catch (e, s) {
-        Logger.error("Failed to parse FindMy Friends location data!", error: e, trace: s);
-        fetching2.value = null;
-        refreshing2.value = false;
-        // Fall through: devices still load, and only that path clears a manual
-        // refresh, so returning here left the refresh button spinning.
       }
-    } else {
-      fetching2.value = false;
-      refreshing2.value = false;
+      friendsState.value = friendsState.value.loaded(DateTime.now());
+    } catch (e, s) {
+      Logger.error("Failed to parse FindMy Friends location data!", error: e, trace: s);
+      friendsState.value = friendsState.value.failed(describeFindMyError(e));
     }
+  };
 
-    // Fetch devices data
-    final response = refreshDevices
-        ? await HttpSvc.icloud.refreshDevices().catchError((_) async {
-            if (!_isAlive) return Response(requestOptions: RequestOptions(path: ''));
-            refreshing.value = false;
-            showSnackbar("Error", "Something went wrong refreshing FindMy Devices data!", type: SnackbarType.error);
-            return Response(requestOptions: RequestOptions(path: ''));
-          })
-        : await HttpSvc.icloud.getDevices().catchError((_) async {
-            if (!_isAlive) return Response(requestOptions: RequestOptions(path: ''));
-            fetching.value = null;
-            return Response(requestOptions: RequestOptions(path: ''));
-          });
-    if (!_isAlive) return;
-
-    if (response.statusCode == 200 && response.data['data'] != null) {
-      try {
-        devices.value = (response.data['data'] as List)
-            .map((e) => FindMyDevice.fromJson(e))
-            .toList()
-            .cast<FindMyDevice>();
-
-        // Apply safe location name as the display label once, here rather than during build.
-        for (final device in devices) {
-          if (device.safeLocations.isNotEmpty && device.safeLocations.first.name != null) {
-            device.address?.label = device.safeLocations.first.name;
-          }
-        }
-        _applyCachedDeviceLocations(devices);
+  void _applyDevices(Response response) {
+    try {
+      final data = _dataOf(response);
+      if (data != null) {
+        final parsed = data.map((e) => FindMyDevice.fromJson(e)).toList();
+        _locationCache.rememberDevices(data.cast<Map<String, dynamic>>());
+        _showDevices(parsed);
         _locationCache.save();
-
-        _clearDeviceMarkers();
-        for (FindMyDevice e in devices.where(
-          (e) => isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude),
-        )) {
-          buildDeviceMarker(e);
-        }
-        fitCameraToTab();
-        fetching.value = false;
-        refreshing.value = false;
-      } catch (e, s) {
-        Logger.error("Failed to parse FindMy Devices location data!", error: e, trace: s);
-        fetching.value = null;
-        refreshing.value = false;
-        return;
       }
-    } else {
-      fetching.value = false;
-      refreshing.value = false;
+      devicesState.value = devicesState.value.loaded(DateTime.now());
+    } catch (e, s) {
+      Logger.error("Failed to parse FindMy Devices location data!", error: e, trace: s);
+      devicesState.value = devicesState.value.failed(describeFindMyError(e));
     }
+  }
 
-    // Call the FindMy Friends refresh anyways so that new data comes through the socket
-    if (!refreshFriends) {
-      friendRefreshProgress.value = friendRefreshProgress.value.withRoster(friends.map(findMyFriendRefreshIdFor));
-      HttpSvc.icloud.refreshFriends();
+  /// Puts the friends and devices saved last time on the map, before any
+  /// network answer.
+  void _showSaved() {
+    try {
+      final savedFriends = _locationCache.friends.map(FindMyFriend.fromJson).toList();
+      final savedDevices = _locationCache.devices.map(FindMyDevice.fromJson).toList();
+      if (savedFriends.isNotEmpty) _showFriends(savedFriends);
+      if (savedDevices.isNotEmpty) _showDevices(savedDevices);
+    } catch (e, s) {
+      Logger.warn("Failed to show saved Find My locations", error: e, trace: s, tag: 'FindMyController');
     }
+  }
+
+  void _showFriends(List<FindMyFriend> roster) {
+    friends.value = _withCachedFriendLocations(roster);
+    _updateFriendLists();
+    _clearFriendMarkers();
+    for (final friend in friends.where(hasUsableFindMyLocation)) {
+      buildFriendMarker(friend);
+      unawaited(resolveFriendAddress(friend));
+    }
+    fitCameraToTab();
+  }
+
+  void _showDevices(List<FindMyDevice> source) {
+    // Apply safe location name as the display label once, here rather than during build.
+    for (final device in source) {
+      if (device.safeLocations.isNotEmpty && device.safeLocations.first.name != null) {
+        device.address?.label = device.safeLocations.first.name;
+      }
+    }
+    _applyCachedDeviceLocations(source);
+    devices.value = source;
+    _clearDeviceMarkers();
+    for (final device in source.where((e) => isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))) {
+      buildDeviceMarker(device);
+    }
+    fitCameraToTab();
   }
 
   /// How long the first location fix may take before the page stops waiting
@@ -839,6 +886,7 @@ class FindMyController extends GetxController {
   @override
   void onClose() {
     _tabWorker?.dispose();
+    _cancelSession();
     _refreshTimer?.cancel();
     _redactedModeListener?.cancel();
     _hideContactInfoListener?.cancel();

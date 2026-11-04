@@ -1,4 +1,5 @@
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_load_state.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_device_list_tile.dart';
 import 'package:bluebubbles/app/layouts/settings/widgets/settings_widgets.dart';
@@ -139,7 +140,6 @@ class FindMyItemsTabView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Obx(() {
       final items = findMyItemProducts(controller.devices);
-      final allItems = items;
       final itemsWithLocation = items.where(_hasDisplayLocation).toList();
       final itemsWithoutLocation = items.where((item) => !_hasDisplayLocation(item)).toList();
 
@@ -154,10 +154,8 @@ class FindMyItemsTabView extends StatelessWidget {
 
       return SliverList(
         delegate: SliverChildListDelegate([
-          if (controller.fetching.value == null ||
-              controller.fetching.value == true ||
-              (controller.fetching.value == false && allItems.isEmpty))
-            _buildEmptyState(context),
+          if (items.isEmpty || controller.devicesState.value.load == FindMyLoad.failed)
+            _buildEmptyState(context, controller.devicesState.value),
           if (itemsWithLocation.isNotEmpty)
             SettingsHeader(iosSubtitle: iosSubtitle, materialSubtitle: materialSubtitle, text: "Items"),
           if (itemsWithLocation.isNotEmpty)
@@ -205,7 +203,7 @@ class FindMyItemsTabView extends StatelessWidget {
     });
   }
 
-  Widget _buildEmptyState(BuildContext context) {
+  Widget _buildEmptyState(BuildContext context, FindMySourceState state) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.only(top: 100),
@@ -214,15 +212,16 @@ class FindMyItemsTabView extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: Text(
-                controller.fetching.value == null
-                    ? "Something went wrong!"
-                    : controller.fetching.value == false
-                    ? "You have no accessories."
-                    : "Getting FindMy data...",
+                switch (state.load) {
+                  FindMyLoad.failed => "Something went wrong: ${state.error}",
+                  FindMyLoad.loaded => "You have no accessories.",
+                  _ => "Getting FindMy data...",
+                },
                 style: context.theme.textTheme.labelLarge,
+                textAlign: TextAlign.center,
               ),
             ),
-            if (controller.fetching.value == true) buildProgressIndicator(context, size: 15),
+            if (state.isLoading) buildProgressIndicator(context, size: 15),
           ],
         ),
       ),

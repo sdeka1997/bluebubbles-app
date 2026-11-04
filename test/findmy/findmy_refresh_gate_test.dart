@@ -1,210 +1,80 @@
 import "dart:async";
+import "dart:convert";
 
 import "package:bluebubbles/app/layouts/findmy/findmy_controller.dart";
-import "package:bluebubbles/database/models.dart";
-import "package:bluebubbles/services/backend/settings/actions/shared_preferences_findmy_actions.dart";
-import "package:bluebubbles/services/network/api/icloud_api.dart";
+import "package:bluebubbles/app/layouts/findmy/findmy_load_state.dart";
 import "package:bluebubbles/services/services.dart";
-import "package:bluebubbles/utils/logger/logger.dart";
-import "package:dio/dio.dart";
-import "package:flutter/services.dart" show PlatformException;
 import "package:fake_async/fake_async.dart";
+import "package:flutter/services.dart" show PlatformException;
 import "package:flutter_test/flutter_test.dart" hide EventDispatcher;
 import "package:geolocator_platform_interface/geolocator_platform_interface.dart";
 import "package:get/get.dart" hide Response;
-import "package:get_it/get_it.dart";
 import "package:plugin_platform_interface/plugin_platform_interface.dart";
 
-class FakeGeolocator extends GeolocatorPlatform with MockPlatformInterfaceMixin {
-  @override
-  Future<LocationPermission> checkPermission() async => LocationPermission.denied;
-
-  @override
-  Future<LocationPermission> requestPermission() async => LocationPermission.deniedForever;
-}
+import "findmy_test_support.dart";
 
 class ThrowingGeolocator extends GeolocatorPlatform with MockPlatformInterfaceMixin {
   @override
   Future<LocationPermission> checkPermission() async => throw PlatformException(code: "unavailable");
 }
 
-class FakeFindMyPrefs extends SharedPreferencesFindMyActions {
-  FakeFindMyPrefs(super.service);
-
+/// A permission prompt the user never answers.
+class SilentGeolocator extends GeolocatorPlatform with MockPlatformInterfaceMixin {
   @override
-  String? getLocationCache() => null;
-
-  @override
-  Future<void> setLocationCache(String json) async {}
-}
-
-/// Holds every Find My request open until the test answers it.
-class FakeICloudApi extends iCloudApi {
-  FakeICloudApi(super.svc);
-
-  final Map<String, List<Completer<Response>>> requests = {};
-
-  Future<Response> _request(String name) {
-    final completer = Completer<Response>();
-    requests.putIfAbsent(name, () => []).add(completer);
-    return completer.future;
-  }
-
-  void answer(String name, {Object data = const []}) => requests[name]!
-      .removeAt(0)
-      .complete(
-        Response(
-          requestOptions: RequestOptions(path: ""),
-          statusCode: 200,
-          data: {"data": data},
-        ),
-      );
-
-  @override
-  Future<Response> refreshFriends({CancelToken? cancelToken}) => _request("refreshFriends");
-
-  @override
-  Future<Response> getFriends({CancelToken? cancelToken}) => _request("getFriends");
-
-  @override
-  Future<Response> refreshDevices({CancelToken? cancelToken}) => _request("refreshDevices");
-
-  @override
-  Future<Response> getDevices({CancelToken? cancelToken}) => _request("getDevices");
+  Future<LocationPermission> checkPermission() => Completer<LocationPermission>().future;
 }
 
 void main() {
   late FakeICloudApi icloud;
 
-  setUp(() {
-    GeolocatorPlatform.instance = FakeGeolocator();
-    final settings = SettingsService()..settings = Settings();
-    final prefs = SharedPreferencesService();
-    prefs.findMy = FakeFindMyPrefs(prefs);
-    final http = HttpService();
-    icloud = FakeICloudApi(http);
-    http.icloud = icloud;
-    GetIt.I
-      ..registerSingleton<BaseLogger>(BaseLogger())
-      ..registerSingleton<SettingsService>(settings)
-      ..registerSingleton<SharedPreferencesService>(prefs)
-      ..registerSingleton<EventDispatcher>(EventDispatcher())
-      ..registerSingleton<HttpService>(http);
-  });
+  setUp(() => icloud = registerFindMyServices());
+  tearDown(resetFindMyServices);
 
-  tearDown(() async {
-    Get.reset();
-    await GetIt.I.reset();
-  });
-
-  /// Opens the page and lets its initial load and refresh window run out.
+  /// Opens the page and lets its opening load and refresh window run out.
   FindMyController openIdlePage(FakeAsync async) {
     final controller = Get.put(FindMyController());
     async.flushMicrotasks();
-    icloud.answer("refreshFriends");
-    async.flushMicrotasks();
+    icloud.answer("getFriends");
     icloud.answer("getDevices");
+    async.flushMicrotasks();
+    icloud.answer("refreshFriends");
     async.elapse(const Duration(seconds: 31));
-    expect(controller.canRefresh.value, isTrue);
+    expect(controller.isRefreshing, isFalse);
     return controller;
   }
 
-  test("manual refresh shows progress for one window that starts with the refresh", () {
+  test("opening reads friends and devices at once, then refreshes friends in the background", () {
     fakeAsync((async) {
-      final controller = openIdlePage(async);
-
-      controller.getLocations(refreshDevices: true);
-      expect(controller.canRefresh.value, isFalse);
-
+      final controller = Get.put(FindMyController());
       async.flushMicrotasks();
-      icloud.answer("refreshFriends");
-      async.elapse(const Duration(seconds: 23));
-      expect(controller.canRefresh.value, isFalse);
-      expect(controller.friendRefreshProgress.value.active, isTrue);
 
-      icloud.answer("refreshDevices");
-      async.elapse(const Duration(seconds: 6));
-      expect(controller.canRefresh.value, isFalse);
+      expect(icloud.pending("getFriends"), 1);
+      expect(icloud.pending("getDevices"), 1);
+      expect(icloud.requests["refreshFriends"], isNull);
+      expect(icloud.requests["refreshDevices"], isNull);
 
-      async.elapse(const Duration(seconds: 1));
-      expect(controller.canRefresh.value, isTrue);
-      expect(controller.friendRefreshProgress.value.active, isFalse);
-    });
-  });
-
-  test("a cached-roster refresh shows progress at once and still asks the server to push friends", () {
-    fakeAsync((async) {
-      final controller = openIdlePage(async);
-
-      controller.getLocations(refreshFriends: false);
-      expect(controller.canRefresh.value, isFalse);
-
+      icloud.answer("getDevices", data: [phoneJson]);
       async.flushMicrotasks();
+      expect(controller.devices.map((d) => d.id), ["phone"], reason: "each source renders as it arrives");
+      expect(controller.devicesState.value.load, FindMyLoad.loaded);
+      expect(controller.friendsState.value.load, FindMyLoad.loading);
+
       icloud.answer("getFriends");
-      async.elapse(const Duration(seconds: 23));
-      icloud.answer("getDevices");
       async.flushMicrotasks();
-      expect(icloud.requests["refreshFriends"], hasLength(1));
-      expect(controller.friendRefreshProgress.value.active, isTrue);
-
-      async.elapse(const Duration(seconds: 7));
-      expect(controller.canRefresh.value, isTrue);
-      expect(controller.friendRefreshProgress.value.active, isFalse);
+      expect(controller.friendsState.value.load, FindMyLoad.loaded);
+      expect(icloud.pending("refreshFriends"), 1);
+      expect(icloud.requests["refreshDevices"], isNull, reason: "devices refresh only on a manual refresh");
     });
   });
 
-  test("a cached-roster refresh that outlasts its window does not reopen progress", () {
+  test("Find My data does not wait on the location permission prompt", () {
     fakeAsync((async) {
-      final controller = openIdlePage(async);
-
-      controller.getLocations(refreshFriends: false);
-      async.flushMicrotasks();
-      icloud.answer("getFriends");
-      async.elapse(const Duration(seconds: 31));
-      expect(controller.canRefresh.value, isTrue);
-
-      icloud.answer("getDevices");
-      async.flushMicrotasks();
-      expect(icloud.requests["refreshFriends"], hasLength(1));
-      expect(controller.canRefresh.value, isTrue);
-      expect(controller.friendRefreshProgress.value.active, isFalse);
-    });
-  });
-
-  test("a friends response that fails to parse still clears the manual refresh and loads devices", () {
-    fakeAsync((async) {
-      final controller = openIdlePage(async);
-
-      controller.refreshing.value = true;
-      controller.refreshing2.value = true;
-      controller.getLocations(refreshDevices: true);
-      async.flushMicrotasks();
-      icloud.answer("refreshFriends", data: "not a list");
+      GeolocatorPlatform.instance = SilentGeolocator();
+      Get.put(FindMyController());
       async.flushMicrotasks();
 
-      expect(controller.refreshing2.value, isFalse);
-      expect(icloud.requests["refreshDevices"], hasLength(1));
-      icloud.answer("refreshDevices");
-      async.flushMicrotasks();
-      expect(controller.refreshing.value, isFalse);
-    });
-  });
-
-  test("a devices response that fails to parse still clears the manual refresh", () {
-    fakeAsync((async) {
-      final controller = openIdlePage(async);
-
-      controller.refreshing.value = true;
-      controller.refreshing2.value = true;
-      controller.getLocations(refreshDevices: true);
-      async.flushMicrotasks();
-      icloud.answer("refreshFriends");
-      async.flushMicrotasks();
-      icloud.answer("refreshDevices", data: "not a list");
-      async.flushMicrotasks();
-
-      expect(controller.refreshing.value, isFalse);
-      expect(controller.refreshing2.value, isFalse);
+      expect(icloud.pending("getFriends"), 1);
+      expect(icloud.pending("getDevices"), 1);
     });
   });
 
@@ -214,12 +84,125 @@ void main() {
       Get.put(FindMyController());
       async.flushMicrotasks();
 
-      expect(icloud.requests["refreshFriends"], hasLength(1));
-      icloud.answer("refreshFriends");
+      expect(icloud.pending("getFriends"), 1);
+      expect(icloud.pending("getDevices"), 1);
+    });
+  });
+
+  test("saved pins are on the map before the server answers", () {
+    fakeAsync((async) {
+      registerSavedCache({
+        "version": 2,
+        "server": "",
+        "account": "",
+        "entries": {},
+        "devices": [phoneJson],
+      });
+      final controller = Get.put(FindMyController());
+
+      expect(controller.devices.map((d) => d.id), ["phone"]);
+      expect(controller.markers.keys, contains("phone"));
+      expect(controller.devicesState.value.load, FindMyLoad.loading);
       async.flushMicrotasks();
-      expect(icloud.requests["getDevices"], hasLength(1));
-      icloud.answer("getDevices");
+    });
+  });
+
+  test("a cache from an older version still opens, without its roster", () {
+    fakeAsync((async) {
+      registerSavedCache({"server": "", "account": "", "entries": {}, "devices": [phoneJson]});
+      final controller = Get.put(FindMyController());
+
+      expect(controller.devices, isEmpty);
+      async.flushMicrotasks();
+      expect(icloud.pending("getDevices"), 1);
+    });
+  });
+
+  test("a failed read shows as failed with its reason, not as an empty list", () {
+    fakeAsync((async) {
+      final controller = Get.put(FindMyController());
+      async.flushMicrotasks();
+
+      icloud.fail("getDevices");
+      async.flushMicrotasks();
+
+      expect(controller.devicesState.value.load, FindMyLoad.failed);
+      expect(controller.devicesState.value.error, isNotEmpty);
+      expect(controller.friendsState.value.load, FindMyLoad.loading);
+    });
+  });
+
+  test("a devices response that fails to parse does not block friends", () {
+    fakeAsync((async) {
+      final controller = Get.put(FindMyController());
+      async.flushMicrotasks();
+
+      icloud.answer("getDevices", data: "not a list");
+      async.flushMicrotasks();
+      expect(controller.devicesState.value.load, FindMyLoad.failed);
+
+      icloud.answer("getFriends");
+      async.flushMicrotasks();
+      expect(controller.friendsState.value.load, FindMyLoad.loaded);
+    });
+  });
+
+  test("manual refresh asks the server to refresh friends and devices together", () {
+    fakeAsync((async) {
+      final controller = openIdlePage(async);
+
+      controller.refreshLocations(refreshDevices: true);
+      async.flushMicrotasks();
+      expect(controller.isRefreshing, isTrue);
+      expect(icloud.pending("refreshFriends"), 1);
+      expect(icloud.pending("refreshDevices"), 1);
+      expect(controller.friendsState.value.load, FindMyLoad.loading);
+      expect(controller.devicesState.value.load, FindMyLoad.loading);
+
+      icloud.answer("refreshFriends");
+      icloud.answer("refreshDevices");
+      async.elapse(const Duration(seconds: 31));
+      expect(controller.isRefreshing, isFalse);
+      expect(controller.friendsState.value.load, FindMyLoad.loaded);
+      expect(controller.devicesState.value.load, FindMyLoad.loaded);
+    });
+  });
+
+  test("a second refresh while one is running does not start another", () {
+    fakeAsync((async) {
+      final controller = openIdlePage(async);
+
+      controller.refreshLocations(refreshDevices: true);
+      async.flushMicrotasks();
+      controller.refreshLocations(refreshDevices: true);
+      async.flushMicrotasks();
+
+      expect(icloud.requests["refreshDevices"], hasLength(1));
+      expect(icloud.tokens["refreshDevices"]!.single!.isCancelled, isFalse);
+      icloud.answer("refreshFriends");
+      icloud.answer("refreshDevices");
       async.elapse(const Duration(seconds: 31));
     });
   });
+
+  test("a friends response that fails to parse still loads devices and releases the button", () {
+    fakeAsync((async) {
+      final controller = openIdlePage(async);
+
+      controller.refreshLocations(refreshDevices: true);
+      async.flushMicrotasks();
+      icloud.answer("refreshFriends", data: "not a list");
+      icloud.answer("refreshDevices", data: [phoneJson]);
+      async.elapse(const Duration(seconds: 31));
+
+      expect(controller.friendsState.value.load, FindMyLoad.failed);
+      expect(controller.devices.map((d) => d.id), ["phone"]);
+      expect(controller.isRefreshing, isFalse);
+    });
+  });
+}
+
+/// Puts [json] where the location cache reads it from.
+void registerSavedCache(Map<String, dynamic> json) {
+  (PrefsSvc.findMy as FakeFindMyPrefs).saved = jsonEncode(json);
 }
