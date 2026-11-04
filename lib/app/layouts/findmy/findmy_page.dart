@@ -262,7 +262,7 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
   }
 
   Widget _buildNormalLayout(BuildContext context) {
-    const minPanelHeight = 50.0;
+    const minPanelHeight = findMyPanelMinHeight;
     final maxPanelHeight = MediaQuery.of(context).size.height * 0.75;
     const snapPoint = findMyPanelSnapPoint;
     return Obx(
@@ -276,14 +276,11 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
             LayoutBuilder(
               builder: (context, constraints) {
                 // The panel sizes its map to the full screen height, so the map runs
-                // under the bottom navigation bar. Frame the map for the part left
-                // visible above the halfway drawer; it stays put while the drawer moves.
-                final hiddenBelowPanel = max(0.0, MediaQuery.of(context).size.height - constraints.maxHeight);
-                controller.cameraPadding = EdgeInsets.fromLTRB(
-                  40,
-                  MediaQuery.of(context).padding.top + 80,
-                  40,
-                  hiddenBelowPanel + minPanelHeight + snapPoint * (maxPanelHeight - minPanelHeight) + 40,
+                // under the bottom navigation bar.
+                final cameraPadding = findMyCameraPadding(
+                  topInset: MediaQuery.of(context).padding.top,
+                  hiddenBelowPanel: max(0.0, MediaQuery.of(context).size.height - constraints.maxHeight),
+                  maxPanelHeight: maxPanelHeight,
                 );
                 return SlidingUpPanel(
                   controller: controller.panelController,
@@ -343,17 +340,17 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
                       );
                     },
                   ),
-                  body: FindMyMapWidget(controller: controller),
+                  body: FindMyMapWidget(controller: controller, cameraPadding: cameraPadding),
                 );
               },
             ),
             if (!context.samsung)
               Positioned(
-                top: 10 + (kIsDesktop ? appWindow.titleBarHeight : MediaQuery.of(context).padding.top),
+                top: findMyMapButtonInset + (kIsDesktop ? appWindow.titleBarHeight : MediaQuery.of(context).padding.top),
                 left: 20,
                 child: Container(
-                  width: 48,
-                  height: 48,
+                  width: findMyMapButtonSize,
+                  height: findMyMapButtonSize,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.9),
@@ -431,12 +428,12 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
 
   Widget _buildRefreshButton(BuildContext context, {required bool isTablet}) {
     return Positioned(
-      top: 10 + (kIsDesktop ? appWindow.titleBarHeight : MediaQuery.of(context).padding.top),
+      top: findMyMapButtonInset + (kIsDesktop ? appWindow.titleBarHeight : MediaQuery.of(context).padding.top),
       right: 20,
       child: Obx(
         () => Container(
-          width: 48,
-          height: 48,
+          width: findMyMapButtonSize,
+          height: findMyMapButtonSize,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.9),

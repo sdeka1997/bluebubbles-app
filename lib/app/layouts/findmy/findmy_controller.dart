@@ -22,6 +22,7 @@ import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_format.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_load_state.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_cache.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_panel.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_refresh_progress.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_scroll.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_tiles.dart';
@@ -66,11 +67,15 @@ class FindMyController extends GetxController {
   final Rxn<Position> location = Rxn<Position>();
   final Rx<FindMyRefreshProgress> friendRefreshProgress = FindMyRefreshProgress.idle().obs;
 
-  /// Insets of the map area the opening camera frames. On phones this is the
-  /// part left visible with the drawer at its halfway point, so the framing
-  /// stays put however the drawer is dragged.
-  EdgeInsets cameraPadding = const EdgeInsets.all(40);
+  /// Insets of the map area the opening camera frames; see [findMyCameraPadding].
+  EdgeInsets cameraPadding = const EdgeInsets.all(findMyCameraMargin);
   bool _cameraMovedByUser = false;
+
+  /// Bumped by everything that can change the opening framing: the tab, a new
+  /// friend or device list, the first location fix and the map becoming
+  /// ready. The camera frames once they settle.
+  final RxInt _framingChanged = 0.obs;
+  Worker? _framingWorker;
   late final FindMyLocationCache _locationCache = FindMyLocationCache.load();
   Worker? _tabWorker;
 
@@ -104,11 +109,14 @@ class FindMyController extends GetxController {
 
     _setupRedactionListeners();
 
+    _framingWorker = debounce(_framingChanged, (_) => _maybeFitCamera(), time: findMyCameraSettle);
+    completer.future.then((_) => _framingChanged.value++);
+
     // Each tab opens on its own framing, as Find My does.
     _tabWorker = ever(tabIndex, (_) {
       clearSelection();
       _cameraMovedByUser = false;
-      fitCameraToTab();
+      _framingChanged.value++;
     });
   }
 
@@ -230,7 +238,7 @@ class FindMyController extends GetxController {
 
   /// Frames the current tab's locations, unless the user has since moved the
   /// map themselves.
-  void fitCameraToTab() {
+  void _maybeFitCamera() {
     if (!_isAlive || !completer.isCompleted || _cameraMovedByUser) return;
     final focus = cameraFocusForTab();
     if (focus.isEmpty) return;
@@ -285,7 +293,7 @@ class FindMyController extends GetxController {
     selectedMarkerKey.value = markerKey;
     _rebuildAllMarkers();
     popupController.hideAllPopups();
-    if (!completer.isCompleted) await completer.future;
+    await completer.future;
     if (!selectionIsCurrent()) return;
     if (panelController.isAttached) await panelController.animatePanelToSnapPoint();
     if (!selectionIsCurrent()) return;
@@ -302,7 +310,7 @@ class FindMyController extends GetxController {
     clearSelection();
     _cameraMovedByUser = false;
     popupController.hideAllPopups();
-    fitCameraToTab();
+    _framingChanged.value++;
   }
 
   void noteCameraGesture() {
@@ -315,7 +323,9 @@ class FindMyController extends GetxController {
   void focusMap(LatLng point) {
     _cameraMovedByUser = true;
     popupController.hideAllPopups();
-    mapController.fitCamera(CameraFit.coordinates(coordinates: [point], padding: cameraPadding, maxZoom: 16));
+    mapController.fitCamera(
+      CameraFit.coordinates(coordinates: [point], padding: cameraPadding, maxZoom: findMyDetailZoom),
+    );
   }
 
   /// Zooms into a capsule until its logical products become individual markers.
@@ -616,7 +626,7 @@ class FindMyController extends GetxController {
       buildFriendMarker(friend);
       unawaited(resolveFriendAddress(friend));
     }
-    fitCameraToTab();
+    _framingChanged.value++;
   }
 
   void _showDevices(List<FindMyDevice> source) {
@@ -632,7 +642,7 @@ class FindMyController extends GetxController {
     for (final device in source.where((e) => isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))) {
       buildDeviceMarker(device);
     }
-    fitCameraToTab();
+    _framingChanged.value++;
   }
 
   /// How long the first location fix may take before the page stops waiting
@@ -693,7 +703,7 @@ class FindMyController extends GetxController {
     // far enough to change anything visible; refreshes re-sort unconditionally.
     if (_shouldResortForMove(position)) _updateFriendLists();
     buildLocationMarker(position);
-    if (frame) fitCameraToTab();
+    if (frame) _framingChanged.value++;
   }
 
   Position? _lastSortedPosition;
@@ -891,6 +901,7 @@ class FindMyController extends GetxController {
   @override
   void onClose() {
     _tabWorker?.dispose();
+    _framingWorker?.dispose();
     _cancelSession();
     _refreshWindow?.cancel();
     _redactedModeListener?.cancel();

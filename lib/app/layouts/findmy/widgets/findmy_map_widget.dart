@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_device_glyph.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_panel.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_items_tab_view.dart';
 import 'package:bluebubbles/app/wrappers/trackpad_bug_wrapper.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -17,7 +18,14 @@ import 'package:url_launcher/url_launcher.dart';
 class FindMyMapWidget extends StatefulWidget {
   final FindMyController controller;
 
-  const FindMyMapWidget({super.key, required this.controller});
+  /// The part of the map the opening camera frames; see [findMyCameraPadding].
+  final EdgeInsets cameraPadding;
+
+  const FindMyMapWidget({
+    super.key,
+    required this.controller,
+    this.cameraPadding = const EdgeInsets.all(findMyCameraMargin),
+  });
 
   @override
   State<FindMyMapWidget> createState() => _FindMyMapWidgetState();
@@ -35,6 +43,7 @@ class _FindMyMapWidgetState extends State<FindMyMapWidget> {
   @override
   void initState() {
     super.initState();
+    controller.cameraPadding = widget.cameraPadding;
     // Tiles that failed while the app was away or offline get another try.
     _lifecycle = AppLifecycleListener(onResume: () => controller.tiles.reload());
     _connectivity = Connectivity().onConnectivityChanged.listen(
@@ -44,6 +53,12 @@ class _FindMyMapWidgetState extends State<FindMyMapWidget> {
       // Throws on Linux without NetworkManager; tiles then retry on resume only.
       onError: (Object e) => Logger.warn("Connectivity updates unavailable", error: e, tag: 'FindMyMap'),
     );
+  }
+
+  @override
+  void didUpdateWidget(FindMyMapWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    controller.cameraPadding = widget.cameraPadding;
   }
 
   @override
@@ -79,10 +94,7 @@ class _FindMyMapWidgetState extends State<FindMyMapWidget> {
         forceOnlySinglePinchGesture: bugDetected,
       ),
       onMapReady: () {
-        if (!controller.completer.isCompleted) {
-          controller.completer.complete();
-        }
-        controller.fitCameraToTab();
+        if (!controller.completer.isCompleted) controller.completer.complete();
       },
     );
   }

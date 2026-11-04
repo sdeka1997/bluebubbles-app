@@ -48,10 +48,7 @@ class FindMyDeviceListTile extends StatelessWidget {
           ? controller.distanceLabelTo(LatLng(item.location!.latitude!, item.location!.longitude!))
           : null;
 
-      Future<void> select() async {
-        await controller.completer.future;
-        await controller.selectMarker(markerKey, markerPoint!);
-      }
+      Future<void> select() => controller.selectMarker(markerKey, markerPoint!);
 
       void showRawData() => showDialog(
         context: context,

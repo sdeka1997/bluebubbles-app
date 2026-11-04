@@ -73,10 +73,7 @@ class FindMyFriendListTile extends StatelessWidget {
         ],
       );
 
-      Future<void> select() async {
-        await controller.completer.future;
-        await controller.selectMarker(markerKey, markerPoint!);
-      }
+      Future<void> select() => controller.selectMarker(markerKey, markerPoint!);
 
       void showRawData() => showDialog(
         context: context,

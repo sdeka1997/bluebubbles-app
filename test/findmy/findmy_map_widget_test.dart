@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_panel.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_tiles.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_map_widget.dart';
 import 'package:connectivity_plus_platform_interface/connectivity_plus_platform_interface.dart';
@@ -159,6 +160,7 @@ void main() {
 
     geolocator.fix.complete(position(32.78, -96.80));
     await tester.pump();
+    await tester.pump(findMyCameraSettle);
     expect(controller.mapController.camera.center.latitude, closeTo(32.78, 0.01));
     expect(controller.mapController.camera.center.longitude, closeTo(-96.80, 0.01));
 
@@ -166,10 +168,80 @@ void main() {
     controller.mapController.move(elsewhere, 10);
     geolocator.stream.add(position(32.79, -96.81));
     await tester.pump();
+    await tester.pump(findMyCameraSettle);
     expect(controller.mapController.camera.center, elsewhere, reason: 'a later fix must not reframe the map');
 
     await tester.pumpWidget(const SizedBox());
     Get.delete<FindMyController>();
     await tester.pump(const Duration(minutes: 2));
   });
+
+  testWidgets('friends, devices and the first fix arriving together frame the map once', (tester) async {
+    final geolocator = GrantedGeolocator();
+    GeolocatorPlatform.instance = geolocator;
+    final controller = openController()..tabIndex.value = 1;
+    await tester.pumpWidget(page(controller));
+    await tester.pump();
+    final moves = <MapEvent>[];
+    final sub = controller.mapController.mapEventStream
+        .where((event) => event is MapEventMove && event.source == MapEventSource.mapController)
+        .listen(moves.add);
+
+    icloud.answer('getFriends', data: [unnamedFriendJson(33.02, -96.70)]);
+    icloud.answer('getDevices', data: [phoneJson]);
+    await tester.pump();
+    icloud.answer('refreshFriends');
+    await tester.pump();
+    geolocator.fix.complete(position(32.78, -96.80));
+    await tester.pump();
+    await tester.pump(findMyCameraSettle);
+
+    expect(moves, hasLength(1));
+    unawaited(sub.cancel());
+    await tester.pumpWidget(const SizedBox());
+    Get.delete<FindMyController>();
+    await tester.pump(const Duration(minutes: 2));
+  });
+
+  testWidgets('new data never moves a map the user has moved', (tester) async {
+    final controller = openController();
+    await tester.pumpWidget(page(controller));
+    await answerOpening(tester);
+    controller.tabIndex.value = 1;
+    await tester.pump(findMyCameraSettle);
+
+    const elsewhere = LatLng(47.61, -122.33);
+    controller.noteCameraGesture();
+    controller.mapController.move(elsewhere, 10);
+    controller.refreshLocations(refreshDevices: true);
+    await tester.pump();
+    icloud.answer('refreshFriends');
+    icloud.answer('refreshDevices', data: [phoneJson]);
+    await tester.pump();
+    await tester.pump(findMyCameraSettle);
+
+    expect(controller.mapController.camera.center, elsewhere);
+    await tester.pumpWidget(const SizedBox());
+    Get.delete<FindMyController>();
+    await tester.pump(const Duration(minutes: 2));
+  });
+
+  test('frames the map below the buttons and above the halfway drawer', () {
+    final padding = findMyCameraPadding(topInset: 24, hiddenBelowPanel: 80, maxPanelHeight: 600);
+    expect(padding.top, 24 + findMyMapButtonInset + findMyMapButtonSize + findMyCameraMargin);
+    expect(
+      padding.bottom,
+      80 + findMyPanelMinHeight + findMyPanelSnapPoint * (600 - findMyPanelMinHeight) + findMyCameraMargin,
+    );
+    expect(padding.left, findMyCameraMargin);
+    expect(padding.right, findMyCameraMargin);
+  });
 }
+
+/// A friend with no handle or name, which the tests can parse without a
+/// handle database. Its address spares the platform geocoder.
+Map<String, dynamic> unnamedFriendJson(double latitude, double longitude) => {
+  'coordinates': [latitude, longitude],
+  'short_address': 'Plano, TX',
+  'last_updated': DateTime(2026).millisecondsSinceEpoch,
+};
