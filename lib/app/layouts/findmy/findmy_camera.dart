@@ -105,12 +105,19 @@ class FindMyGroupSummary<T> {
 FindMyGroupSummary<T> summarizeFindMyGroup<T>(List<T> members) =>
     FindMyGroupSummary(visible: members.take(2).toList(), remaining: (members.length - 2).clamp(0, members.length));
 
-/// Chooses the first usable map center without waiting for an in-flight GPS request.
-/// A later GPS fix may reframe the map through the controller.
-LatLng? selectFindMyInitialCenter({required LatLng? currentLocation, required LatLng? markerCenter}) =>
-    currentLocation ?? markerCenter;
+/// Where the map opens with no saved locations and no location fix yet.
+const LatLng findMyWorldCenter = LatLng(20, 0);
 
+/// Shows every inhabited continent on a phone-sized map.
+const double findMyWorldZoom = 1;
+
+/// Street level: close enough to tell neighbouring houses apart, and the cap
+/// on every framing so a single location never zooms in further.
 const double findMyDetailZoom = 16;
+
+/// The closest zoom the map allows. OpenStreetMap serves tiles up to 19;
+/// past 18 a single tile covers less than a house and adds nothing.
+const double findMyMaxZoom = 18;
 
 /// Returns the provider's stable identity when present. Records without an
 /// identifier retain a process-local identity for as long as that model object

@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_tiles.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_map_widget.dart';
@@ -8,6 +11,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator_platform_interface/geolocator_platform_interface.dart';
 import 'package:get/get.dart';
 import 'package:http/testing.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'findmy_test_support.dart';
 
@@ -23,6 +28,24 @@ Position position(double latitude, double longitude) => Position(
   speed: 0,
   speedAccuracy: 0,
 );
+
+/// Location permission granted, with one fix that arrives when the test says.
+class GrantedGeolocator extends GeolocatorPlatform with MockPlatformInterfaceMixin {
+  final Completer<Position> fix = Completer();
+  final StreamController<Position> stream = StreamController.broadcast();
+
+  @override
+  Future<LocationPermission> checkPermission() async => LocationPermission.whileInUse;
+
+  @override
+  Future<Position?> getLastKnownPosition({bool forceLocationManager = false}) async => null;
+
+  @override
+  Future<Position> getCurrentPosition({LocationSettings? locationSettings}) => fix.future;
+
+  @override
+  Stream<Position> getPositionStream({LocationSettings? locationSettings}) => stream.stream;
+}
 
 void main() {
   late FakeICloudApi icloud;
@@ -43,7 +66,8 @@ void main() {
     ),
   );
 
-  Widget page(FindMyController controller) => MaterialApp(
+  // Markers read the theme through Get.context, which only GetMaterialApp sets.
+  Widget page(FindMyController controller) => GetMaterialApp(
     home: Center(
       child: SizedBox(width: 300, height: 300, child: FindMyMapWidget(controller: controller)),
     ),
@@ -78,5 +102,75 @@ void main() {
     expect(rebuilt.tileProvider, same(layer.tileProvider));
 
     await settle(tester);
+  });
+
+  testWidgets('the map is on screen from the first frame with no location and no data', (tester) async {
+    final controller = openController();
+    await tester.pumpWidget(page(controller));
+
+    expect(find.byType(FlutterMap), findsOneWidget);
+    expect(controller.mapController.camera.center, findMyWorldCenter);
+    expect(controller.mapController.camera.zoom, findMyWorldZoom);
+
+    await settle(tester);
+  });
+
+  testWidgets('switching to a tab with nothing on it keeps the same map', (tester) async {
+    final controller = openController();
+    controller.location.value = position(32.78, -96.80);
+    await tester.pumpWidget(page(controller));
+    await tester.pump();
+    final map = tester.element(find.byType(FlutterMap));
+
+    controller.tabIndex.value = 2;
+    await tester.pump();
+
+    expect(tester.element(find.byType(FlutterMap)), same(map));
+    expect(find.text('Location unavailable'), findsNothing, reason: 'still loading');
+
+    await settle(tester);
+  });
+
+  testWidgets('says so over the map when a tab has nothing to show', (tester) async {
+    final controller = openController();
+    await tester.pumpWidget(page(controller));
+    icloud.answer('refreshFriends');
+    await tester.pump();
+    icloud.answer('getDevices');
+    await tester.pump();
+
+    expect(find.byType(FlutterMap), findsOneWidget);
+    expect(find.text('Location unavailable'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    Get.delete<FindMyController>();
+    await tester.pump(const Duration(minutes: 2));
+  });
+
+  testWidgets('the first location fix frames the map once', (tester) async {
+    final geolocator = GrantedGeolocator();
+    GeolocatorPlatform.instance = geolocator;
+    final controller = openController();
+    await tester.pumpWidget(page(controller));
+    await tester.pump();
+    icloud.answer('refreshFriends');
+    await tester.pump();
+    icloud.answer('getDevices');
+    await tester.pump();
+
+    geolocator.fix.complete(position(32.78, -96.80));
+    await tester.pump();
+    expect(controller.mapController.camera.center.latitude, closeTo(32.78, 0.01));
+    expect(controller.mapController.camera.center.longitude, closeTo(-96.80, 0.01));
+
+    const elsewhere = LatLng(47.61, -122.33);
+    controller.mapController.move(elsewhere, 10);
+    geolocator.stream.add(position(32.79, -96.81));
+    await tester.pump();
+    expect(controller.mapController.camera.center, elsewhere, reason: 'a later fix must not reframe the map');
+
+    await tester.pumpWidget(const SizedBox());
+    Get.delete<FindMyController>();
+    await tester.pump(const Duration(minutes: 2));
   });
 }

@@ -208,20 +208,18 @@ void main() {
     });
   });
 
-  test("a refresh that throws before reaching the server still clears the manual refresh", () {
+  test("a location permission check that throws does not hold up Find My data", () {
     fakeAsync((async) {
-      final controller = openIdlePage(async);
       GeolocatorPlatform.instance = ThrowingGeolocator();
-
-      controller.refreshing.value = true;
-      controller.refreshing2.value = true;
-      Object? error;
-      controller.getLocations(refreshDevices: true).catchError((e) => error = e);
+      Get.put(FindMyController());
       async.flushMicrotasks();
 
-      expect(error, isA<PlatformException>());
-      expect(controller.refreshing.value, isFalse);
-      expect(controller.refreshing2.value, isFalse);
+      expect(icloud.requests["refreshFriends"], hasLength(1));
+      icloud.answer("refreshFriends");
+      async.flushMicrotasks();
+      expect(icloud.requests["getDevices"], hasLength(1));
+      icloud.answer("getDevices");
+      async.elapse(const Duration(seconds: 31));
     });
   });
 }

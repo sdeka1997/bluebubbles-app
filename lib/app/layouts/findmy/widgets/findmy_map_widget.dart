@@ -3,10 +3,8 @@ import 'dart:async';
 import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_device_glyph.dart';
-import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_items_tab_view.dart';
 import 'package:bluebubbles/app/wrappers/trackpad_bug_wrapper.dart';
-import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
@@ -55,107 +53,120 @@ class _FindMyMapWidgetState extends State<FindMyMapWidget> {
     super.dispose();
   }
 
+  /// Where the map opens: around whatever is already known for the current
+  /// tab, otherwise on the whole world. Locations that arrive later reframe
+  /// it through the controller, so the map never waits on one to appear.
+  MapOptions _options(bool bugDetected) {
+    final focus = controller.cameraFocusForTab();
+    return MapOptions(
+      initialCenter: findMyWorldCenter,
+      initialZoom: findMyWorldZoom,
+      initialCameraFit: focus.isEmpty
+          ? null
+          : CameraFit.coordinates(coordinates: focus, padding: controller.cameraPadding, maxZoom: findMyDetailZoom),
+      minZoom: findMyWorldZoom,
+      maxZoom: findMyMaxZoom,
+      onTap: (_, _) {
+        controller.popupController.hideAllPopups();
+        controller.clearSelection();
+      },
+      onPositionChanged: (_, hasGesture) {
+        if (hasGesture) controller.noteCameraGesture();
+      },
+      keepAlive: true,
+      interactionOptions: InteractionOptions(
+        flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+        forceOnlySinglePinchGesture: bugDetected,
+      ),
+      onMapReady: () {
+        if (!controller.completer.isCompleted) {
+          controller.completer.complete();
+        }
+        controller.fitCameraToTab();
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return TrackpadBugWrapper(
       builder: (context, bugDetected) {
-        return Obx(() {
-          final tab = controller.tabIndex.value;
-          final products = switch (tab) {
-            1 => findMyDeviceProducts(controller.devices),
-            2 => findMyItemProducts(controller.devices),
-            _ => const <FindMyDevice>[],
-          };
-          final productIds = products.map(controller.markerIdentityForDevice).toSet();
-          final visibleMarkers = tab == 0
-              ? controller.visibleMarkers
-              : controller.visibleMarkers.where((marker) {
-                  final key = _markerKey(marker);
-                  return key.startsWith('device-') && productIds.contains(key.substring('device-'.length));
-                }).toList();
-          final currentLocation = controller.location.value;
-          final currentCenter =
-              tab == 0 && isUsableFindMyCoordinate(currentLocation?.latitude, currentLocation?.longitude)
-              ? LatLng(currentLocation!.latitude, currentLocation.longitude)
-              : null;
-          LatLng? markerCenter;
-          for (final marker in visibleMarkers) {
-            if (isUsableFindMyCoordinate(marker.point.latitude, marker.point.longitude)) {
-              markerCenter = marker.point;
-              break;
-            }
-          }
-          final initialCenter = selectFindMyInitialCenter(currentLocation: currentCenter, markerCenter: markerCenter);
-
-          if (initialCenter == null) {
-            final isLoading =
-                controller.resolvingCurrentLocation.value ||
-                controller.fetching.value == true ||
-                controller.fetching2.value == true;
-            return Center(child: isLoading ? const CircularProgressIndicator() : const Text("Location unavailable"));
-          }
-
-          return FlutterMap(
-            mapController: controller.mapController,
-            options: MapOptions(
-              initialZoom: currentCenter != null ? 10.0 : 5.0,
-              minZoom: 1.0,
-              maxZoom: 18.0,
-              initialCenter: initialCenter,
-              onTap: (_, _) {
-                controller.popupController.hideAllPopups();
-                controller.clearSelection();
-              },
-              onPositionChanged: (_, hasGesture) {
-                if (hasGesture) controller.noteCameraGesture();
-              },
-              keepAlive: true,
-              interactionOptions: InteractionOptions(
-                flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-                forceOnlySinglePinchGesture: bugDetected,
-              ),
-              onMapReady: () {
-                if (!controller.completer.isCompleted) {
-                  controller.completer.complete();
-                }
-                controller.fitCameraToTab();
-              },
-            ),
-            children: [
-              // The same widget every build, so marker and GPS updates never rebuild it.
-              controller.tiles.layer,
-              Builder(
-                builder: (context) {
-                  final markerGroups = tab == 0
-                      ? visibleMarkers.map((marker) => [marker]).toList()
-                      : groupFindMyMarkersForZoom(visibleMarkers, MapCamera.of(context));
-                  final renderedMarkers = markerGroups
-                      .map((group) => group.length == 1 ? group.single : _buildGroupMarker(context, group))
-                      .toList();
-                  return PopupMarkerLayer(
-                    options: PopupMarkerLayerOptions(
-                      popupController: controller.popupController,
-                      markers: renderedMarkers,
-                      markerTapBehavior: MarkerTapBehavior.custom((popupSpec, _, _) {
-                        _handleMarkerTap(popupSpec.marker);
-                      }),
-                    ),
+        // The map stays mounted for the life of the page, whatever is or is
+        // not known yet; only the markers and the empty-state note change.
+        return Stack(
+          children: [
+            FlutterMap(
+              mapController: controller.mapController,
+              options: _options(bugDetected),
+              children: [
+                // The same widget every build, so marker and GPS updates never rebuild it.
+                controller.tiles.layer,
+                Obx(() {
+                  final visibleMarkers = _visibleMarkers();
+                  final tab = controller.tabIndex.value;
+                  return Builder(
+                    builder: (context) {
+                      final markerGroups = tab == 0
+                          ? visibleMarkers.map((marker) => [marker]).toList()
+                          : groupFindMyMarkersForZoom(visibleMarkers, MapCamera.of(context));
+                      final renderedMarkers = markerGroups
+                          .map((group) => group.length == 1 ? group.single : _buildGroupMarker(context, group))
+                          .toList();
+                      return PopupMarkerLayer(
+                        options: PopupMarkerLayerOptions(
+                          popupController: controller.popupController,
+                          markers: renderedMarkers,
+                          markerTapBehavior: MarkerTapBehavior.custom((popupSpec, _, _) {
+                            _handleMarkerTap(popupSpec.marker);
+                          }),
+                        ),
+                      );
+                    },
                   );
-                },
-              ),
-              RichAttributionWidget(
-                attributions: [
-                  TextSourceAttribution(
-                    'OpenStreetMap contributors',
-                    onTap: () => launchUrl(Uri.parse('https://openstreetmap.org/copyright')),
+                }),
+                RichAttributionWidget(
+                  attributions: [
+                    TextSourceAttribution(
+                      'OpenStreetMap contributors',
+                      onTap: () => launchUrl(Uri.parse('https://openstreetmap.org/copyright')),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            Obx(() {
+              final isLoading = controller.fetching.value == true || controller.fetching2.value == true;
+              if (isLoading || controller.cameraFocusForTab().isNotEmpty) return const SizedBox.shrink();
+              return IgnorePointer(
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: context.theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Text("Location unavailable"),
                   ),
-                ],
-              ),
-            ],
-          );
-        });
+                ),
+              );
+            }),
+          ],
+        );
       },
     );
+  }
+
+  /// The markers of the current tab; Devices and Items show only their own
+  /// logical products.
+  List<Marker> _visibleMarkers() {
+    final tab = controller.tabIndex.value;
+    if (tab == 0) return controller.visibleMarkers;
+    final products = tab == 1 ? findMyDeviceProducts(controller.devices) : findMyItemProducts(controller.devices);
+    final productIds = products.map(controller.markerIdentityForDevice).toSet();
+    return controller.visibleMarkers.where((marker) {
+      final key = _markerKey(marker);
+      return key.startsWith('device-') && productIds.contains(key.substring('device-'.length));
+    }).toList();
   }
 
   void _handleMarkerTap(Marker marker) {

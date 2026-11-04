@@ -68,8 +68,6 @@ class FindMyController extends GetxController {
   final Rxn<bool> fetching2 = Rxn<bool>(true);
   final RxBool refreshing2 = false.obs;
   final RxBool canRefresh = false.obs;
-  final RxBool hasMovedToCurrentLocation = false.obs;
-  final RxBool resolvingCurrentLocation = true.obs;
   final Rx<FindMyRefreshProgress> friendRefreshProgress = FindMyRefreshProgress.idle().obs;
 
   /// Insets of the map area the opening camera frames. On phones this is the
@@ -98,6 +96,7 @@ class FindMyController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    unawaited(_startLocationUpdates());
     getLocations();
 
     // Listen via the event dispatcher rather than the socket itself — the socket is
@@ -231,21 +230,28 @@ class FindMyController extends GetxController {
     }
   }
 
-  /// Frames the current tab's locations, unless the user has since moved the
-  /// map themselves. Only the People tab is framed around the user's own
-  /// location; Devices and Items are framed around the things themselves.
-  void fitCameraToTab() {
-    if (!_isAlive || !completer.isCompleted || _cameraMovedByUser) return;
+  /// What the current tab's opening camera frames. Only the People tab is
+  /// framed around the user's own location; Devices and Items are framed
+  /// around the things themselves. Empty when nothing is known yet.
+  List<LatLng> cameraFocusForTab() {
     final current = location.value;
     final anchor =
         tabIndex.value == 0 && current != null && isUsableFindMyCoordinate(current.latitude, current.longitude)
         ? LatLng(current.latitude, current.longitude)
         : null;
-    final focus = selectFindMyCameraFocus(_cameraPointsForTab(), anchor: anchor);
+    return selectFindMyCameraFocus(_cameraPointsForTab(), anchor: anchor);
+  }
+
+  /// Frames the current tab's locations, unless the user has since moved the
+  /// map themselves.
+  void fitCameraToTab() {
+    if (!_isAlive || !completer.isCompleted || _cameraMovedByUser) return;
+    final focus = cameraFocusForTab();
     if (focus.isEmpty) return;
     try {
-      // The zoom cap keeps a single location at neighbourhood scale.
-      mapController.fitCamera(CameraFit.coordinates(coordinates: focus, padding: cameraPadding, maxZoom: 16));
+      mapController.fitCamera(
+        CameraFit.coordinates(coordinates: focus, padding: cameraPadding, maxZoom: findMyDetailZoom),
+      );
     } catch (e, s) {
       Logger.warn("Failed to frame the Find My map", error: e, trace: s, tag: 'FindMyController');
     }
@@ -470,53 +476,6 @@ class FindMyController extends GetxController {
     canRefresh.value = false;
     _scheduleRefreshGate();
 
-    if (!(Platform.isLinux && !kIsWeb)) {
-      LocationPermission granted = await Geolocator.checkPermission();
-      if (!_isAlive) return;
-      if (granted == LocationPermission.denied) {
-        granted = await Geolocator.requestPermission();
-        if (!_isAlive) return;
-      }
-
-      if (granted == LocationPermission.whileInUse || granted == LocationPermission.always) {
-        Geolocator.getCurrentPosition(locationSettings: const LocationSettings(timeLimit: Duration(seconds: 10)))
-            .then((loc) {
-              if (!_isAlive) return;
-              location.value = loc;
-              _updateFriendLists();
-              buildLocationMarker(location.value!);
-              fitCameraToTab();
-              if (!kIsDesktop && locationSub == null) {
-                locationSub = Geolocator.getPositionStream().listen((event) async {
-                  if (!_isAlive) return;
-                  location.value = event;
-                  // The list is sorted by distance from here, so every fix
-                  // would reorder rows under the user's finger. Re-sort only
-                  // when the device has moved far enough to change anything
-                  // visible; refreshes re-sort unconditionally.
-                  if (_shouldResortForMove(event)) _updateFriendLists();
-                  buildLocationMarker(event);
-
-                  if (!hasMovedToCurrentLocation.value) {
-                    if (!completer.isCompleted) await completer.future;
-                    if (!_isAlive) return;
-                    fitCameraToTab();
-                    hasMovedToCurrentLocation.value = true;
-                  }
-                });
-              }
-            })
-            .catchError((e) {
-              Logger.warn("Failed to get current location", error: e, tag: 'FindMyController');
-            })
-            .whenComplete(() => resolvingCurrentLocation.value = false);
-      } else {
-        resolvingCurrentLocation.value = false;
-      }
-    } else {
-      resolvingCurrentLocation.value = false;
-    }
-
     // Fetch friends data
     final response2 = refreshFriends
         ? await HttpSvc.icloud.refreshFriends().catchError((_) async {
@@ -622,6 +581,67 @@ class FindMyController extends GetxController {
       friendRefreshProgress.value = friendRefreshProgress.value.withRoster(friends.map(findMyFriendRefreshIdFor));
       HttpSvc.icloud.refreshFriends();
     }
+  }
+
+  /// How long the first location fix may take before the page stops waiting
+  /// on it; the position stream still delivers one when it comes.
+  static const Duration _firstFixTimeLimit = Duration(seconds: 10);
+
+  /// Follows the user's own location, started once per page and independent
+  /// of the network, so a slow permission prompt or GPS fix never holds up
+  /// Find My data and a refresh never asks for a fix again.
+  Future<void> _startLocationUpdates() async {
+    if (Platform.isLinux && !kIsWeb) return;
+    try {
+      var granted = await Geolocator.checkPermission();
+      if (!_isAlive) return;
+      if (granted == LocationPermission.denied) {
+        granted = await Geolocator.requestPermission();
+        if (!_isAlive) return;
+      }
+      if (granted != LocationPermission.whileInUse && granted != LocationPermission.always) return;
+    } catch (e, s) {
+      Logger.warn("Failed to check location permission", error: e, trace: s, tag: 'FindMyController');
+      return;
+    }
+
+    // The phone's last known position frames the map at once; the fresh fix replaces it.
+    try {
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (!_isAlive) return;
+      if (lastKnown != null && location.value == null) _onPosition(lastKnown, frame: true);
+    } catch (e) {
+      Logger.debug("No last known location", error: e, tag: 'FindMyController');
+    }
+
+    try {
+      final current = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(timeLimit: _firstFixTimeLimit),
+      );
+      if (!_isAlive) return;
+      _onPosition(current, frame: true);
+    } catch (e) {
+      Logger.warn("Failed to get current location", error: e, tag: 'FindMyController');
+      if (!_isAlive) return;
+    }
+
+    if (!kIsDesktop) {
+      locationSub = Geolocator.getPositionStream().listen((event) {
+        if (_isAlive) _onPosition(event);
+      });
+    }
+  }
+
+  /// Records a new position of the user. Only the first fix (and a last known
+  /// one before it) [frame]s the map; later ones just move the dot.
+  void _onPosition(Position position, {bool frame = false}) {
+    location.value = position;
+    // The list is sorted by distance from here, so every fix would reorder
+    // rows under the user's finger. Re-sort only when the device has moved
+    // far enough to change anything visible; refreshes re-sort unconditionally.
+    if (_shouldResortForMove(position)) _updateFriendLists();
+    buildLocationMarker(position);
+    if (frame) fitCameraToTab();
   }
 
   Position? _lastSortedPosition;
