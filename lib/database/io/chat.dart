@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:bluebubbles/helpers/types/helpers/rcs_business_chat.dart';
+
 import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
@@ -356,10 +358,16 @@ class Chat {
     }
   }
 
+  /// An RCS business chat, which stays on the iPhone.
+  bool get isRcsBusiness => isRcsBusinessChat(chatIdentifier: chatIdentifier, guid: guid);
+
   /// Return whether or not the notification should be muted
   bool shouldMuteNotification(Message? message) {
     /// Messages filed this chat under Spam, which never notifies on the iPhone
     if (isFilteredAsSpam == true) return true;
+
+    /// RCS business chats stay on the iPhone
+    if (isRcsBusiness) return true;
 
     /// Filter unknown senders & sender doesn't have a contact, then don't notify
     if (SettingsSvc.settings.filterUnknownSenders.value && handles.length == 1 && handles.first.contactsV2.isEmpty) {

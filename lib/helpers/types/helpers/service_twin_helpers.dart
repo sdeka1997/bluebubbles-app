@@ -245,7 +245,9 @@ List<String> threadDiagnostics(Iterable<Chat> chats, {required Set<String> liste
     final live = copies.where((c) => c.dateDeleted == null).toList();
     if (live.isEmpty) continue;
     final shown = live.where((c) => c.id != null).sortedBy<num>((c) => c.id!).firstOrNull ?? live.first;
-    if (listed.contains(shown.guid) || shown.isFilteredAsSpam == true && copies.every((c) => c.isFilteredAsSpam == true)) {
+    if (listed.contains(shown.guid) ||
+        shown.isFilteredAsSpam == true && copies.every((c) => c.isFilteredAsSpam == true) ||
+        shown.isRcsBusiness) {
       continue;
     }
     final parts = [for (final c in copies) '${c.guid} #${c.id} [${flags(c)}] latest ${c.dbOnlyLatestMessageDate?.toIso8601String()}'];

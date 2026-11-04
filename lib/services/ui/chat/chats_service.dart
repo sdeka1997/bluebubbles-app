@@ -159,9 +159,9 @@ class ChatsService {
     bool? excludePinned,
     ChatListFilters? filters,
   }) {
-    // Chats Messages filed under Spam are reviewed on the iPhone; Android
-    // leaves them out of every list.
-    var chats = allChats.where((e) => e.isFilteredAsSpam != true).toList();
+    // Chats Messages filed under Spam are reviewed on the iPhone, and RCS
+    // business chats stay there; Android leaves both out of every list.
+    var chats = allChats.where((e) => e.isFilteredAsSpam != true && !e.isRcsBusiness).toList();
 
     // Apply archived filter
     if (showArchived != null) {
@@ -628,7 +628,7 @@ class ChatsService {
   void _recalculateUnreadCount() {
     // Spam chats are hidden and never notify, so they must not raise the badge.
     final count = chatStates.values
-        .where((state) => state.hasUnreadMessage.value && state.chat.isFilteredAsSpam != true)
+        .where((state) => state.hasUnreadMessage.value && state.chat.isFilteredAsSpam != true && !state.chat.isRcsBusiness)
         .length;
     if (unreadCount.value != count) {
       unreadCount.value = count;

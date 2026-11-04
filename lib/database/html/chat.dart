@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:bluebubbles/helpers/types/helpers/rcs_business_chat.dart';
+
 import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
@@ -541,6 +543,9 @@ class Chat {
       ChatServiceType.current(service, latestMessageService: latestMessage?.service ?? latestMessage?.getHandle()?.service).composerLabel;
 
   bool get isGroup => participants.length > 1 || style == 43;
+
+  /// An RCS business chat, which stays on the iPhone.
+  bool get isRcsBusiness => isRcsBusinessChat(chatIdentifier: chatIdentifier, guid: guid);
 
   Chat merge(Chat other) {
     id ??= other.id;
