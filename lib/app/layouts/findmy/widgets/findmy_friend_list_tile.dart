@@ -27,11 +27,7 @@ class FindMyFriendListTile extends StatelessWidget {
       final live = item.status == LocationStatus.live;
       final age = live ? 'Now' : (item.lastUpdated == null ? null : formatFindMyAge(item.lastUpdated!));
       final refreshProgress = controller.friendRefreshProgress.value;
-      final spinning = findMyFriendRowSpinning(
-        refreshProgress,
-        stableId: findMyFriendRefreshIdFor(item),
-        locatingInProgress: item.locatingInProgress,
-      );
+      final spinning = findMyFriendRowSpinning(refreshProgress, item);
       final address = controller.addressForFriend(item, preferLong: !withLocation);
       final displayLocation = hideContactInfo
           ? "Location"

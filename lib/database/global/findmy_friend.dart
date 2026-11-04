@@ -35,9 +35,17 @@ class FindMyFriend {
   final bool locatingInProgress;
   final int? favoriteOrder;
 
-  /// Stable identifier for matching and map marker keys.
-  /// Prefers the hydrated handle key; falls back to the raw server address.
-  String? get stableId => handle?.uniqueAddressAndService ?? handleAddress ?? title;
+  /// The address Apple identifies this friend by, for matching and keys.
+  /// Roster entries and socket events may or may not hydrate a local [Handle],
+  /// so this reads the provider address both forms share rather than the
+  /// service-qualified handle key. Null when there is none: the display name
+  /// is not an identity, since two friends can share one.
+  String? get stableId => _usable(handleAddress) ?? _usable(handle?.address);
+
+  static String? _usable(String? value) {
+    final trimmed = value?.trim();
+    return trimmed == null || trimmed.isEmpty ? null : trimmed;
+  }
 
   factory FindMyFriend.fromJson(Map<String, dynamic> json) => FindMyFriend(
         latitude: json["coordinates"]?[0].toDouble(),

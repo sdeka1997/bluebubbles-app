@@ -64,7 +64,6 @@ class FindMyController extends GetxController {
   final Set<String> _deviceMarkerKeys = <String>{};
   final Set<String> _itemMarkerKeys = <String>{};
   final Rxn<Position> location = Rxn<Position>();
-  final RxBool canRefresh = false.obs;
   final Rx<FindMyRefreshProgress> friendRefreshProgress = FindMyRefreshProgress.idle().obs;
 
   /// Insets of the map area the opening camera frames. On phones this is the
@@ -85,7 +84,7 @@ class FindMyController extends GetxController {
   final Set<String> _geocodeAttempts = {};
 
   StreamSubscription? locationSub;
-  Timer? _refreshTimer;
+  Timer? _refreshWindow;
   StreamSubscription? _redactedModeListener;
   StreamSubscription? _hideContactInfoListener;
   StreamSubscription? _findMyLocationListener;
@@ -115,13 +114,17 @@ class FindMyController extends GetxController {
 
   bool get _isAlive => !isClosed;
 
-  void _scheduleRefreshGate() {
-    _refreshTimer?.cancel();
-    _refreshTimer = Timer(const Duration(seconds: 30), () {
-      if (!_isAlive) return;
-      canRefresh.value = true;
-      friendRefreshProgress.value = friendRefreshProgress.value.finish();
-    });
+  /// Ends the refresh window once the session's requests have settled and
+  /// every friend it waits on has reported.
+  void _finishRefreshWhenDone() {
+    final progress = friendRefreshProgress.value;
+    if (!progress.active || _pendingRequests.value > 0 || !progress.allReported) return;
+    _finishRefresh();
+  }
+
+  void _finishRefresh() {
+    _refreshWindow?.cancel();
+    friendRefreshProgress.value = friendRefreshProgress.value.finish();
   }
 
   void _setupRedactionListeners() {
@@ -142,8 +145,7 @@ class FindMyController extends GetxController {
     markers.refresh();
   }
 
-  String markerIdentityForFriend(FindMyFriend friend) =>
-      findMyMarkerIdentity(stableId: friend.stableId, fallbackObject: friend);
+  String markerIdentityForFriend(FindMyFriend friend) => findMyFriendIdentity(friend);
 
   String markerIdentityForDevice(FindMyDevice device) =>
       findMyMarkerIdentity(stableId: device.id, fallbackObject: device);
@@ -154,16 +156,13 @@ class FindMyController extends GetxController {
     longitude: friend.longitude!,
   );
 
-  String _addressKeyForFriend(FindMyFriend friend) =>
-      friend.stableId ?? friend.title ?? '${friend.latitude},${friend.longitude}';
-
   /// The friend's display address: the payload's own address when present, otherwise
   /// a reverse-geocoded one once [resolveFriendAddress] has populated it.
   String? addressForFriend(FindMyFriend friend, {bool preferLong = false}) {
     final own = preferLong
         ? friend.longAddress ?? friend.shortAddress
         : friend.shortAddress ?? friend.longAddress;
-    return own ?? friendAddresses[_addressKeyForFriend(friend)];
+    return own ?? friendAddresses[findMyFriendIdentity(friend)];
   }
 
   /// Reverse-geocodes a friend's coordinates when the server sent no address.
@@ -177,7 +176,7 @@ class FindMyController extends GetxController {
     // The geocoding plugin implements Android/iOS/macOS only.
     if (kIsWeb || !(Platform.isAndroid || Platform.isIOS || Platform.isMacOS)) return;
 
-    final key = _addressKeyForFriend(friend);
+    final key = findMyFriendIdentity(friend);
     if (friendAddresses.containsKey(key)) return;
     if (!_geocodeAttempts.add('${lat.toStringAsFixed(3)},${lng.toStringAsFixed(3)}')) return;
 
@@ -391,7 +390,8 @@ class FindMyController extends GetxController {
       Logger.info("Received new location for ${friend.handle?.address}");
       // Keep the last known good location when Apple pushes a no-fix or malformed update.
       if (!hasUsableFindMyLocation(friend)) return;
-      friendRefreshProgress.value = friendRefreshProgress.value.withUsableEvent(findMyFriendRefreshIdFor(friend));
+      friendRefreshProgress.value = friendRefreshProgress.value.withUsableEvent(friend.stableId);
+      _finishRefreshWhenDone();
       _withCachedFriendLocations([friend]);
       _locationCache.save();
 
@@ -448,8 +448,9 @@ class FindMyController extends GetxController {
   final List<CancelToken> _sessionTokens = [];
   final RxInt _pendingRequests = 0.obs;
 
-  /// Whether the refresh button shows as busy.
-  bool get isRefreshing => !canRefresh.value || _pendingRequests.value > 0;
+  /// Whether the refresh button shows as busy: until the session's requests
+  /// have settled and its refresh window has closed.
+  bool get isRefreshing => _pendingRequests.value > 0 || friendRefreshProgress.value.active;
 
   /// Asks the server to locate friends, and devices too when [refreshDevices]
   /// (the slow one, so only on request). Ignored while a manual refresh is
@@ -475,9 +476,11 @@ class FindMyController extends GetxController {
     _pendingRequests.value = 0;
     // Open the refresh window before awaiting anything, so progress shows for
     // the whole session. Only events from this session can count.
-    friendRefreshProgress.value = FindMyRefreshProgress.start();
-    canRefresh.value = false;
-    _scheduleRefreshGate();
+    friendRefreshProgress.value = FindMyRefreshProgress.start(DateTime.now());
+    _refreshWindow?.cancel();
+    _refreshWindow = Timer(findMyRefreshWindow, () {
+      if (_isAlive) _finishRefresh();
+    });
 
     friendsState.value = friendsState.value.loading();
     devicesState.value = devicesState.value.loading();
@@ -541,12 +544,14 @@ class FindMyController extends GetxController {
             if (!current()) return;
             _pendingRequests.value--;
             onResponse(response);
+            _finishRefreshWhenDone();
           },
           onError: (Object e, StackTrace s) {
             if (!current()) return;
             _pendingRequests.value--;
             Logger.warn("Find My ${state == friendsState ? 'friends' : 'devices'} request failed", error: e, tag: 'FindMyController');
             state.value = state.value.failed(describeFindMyError(e));
+            _finishRefreshWhenDone();
           },
         );
   }
@@ -562,7 +567,7 @@ class FindMyController extends GetxController {
         final roster = data.map((e) => FindMyFriend.fromJson(e)).toList();
         _locationCache.rememberFriends(data.cast<Map<String, dynamic>>());
         if (refreshed) {
-          friendRefreshProgress.value = friendRefreshProgress.value.withRoster(roster.map(findMyFriendRefreshIdFor));
+          friendRefreshProgress.value = friendRefreshProgress.value.withRoster(roster);
         }
         _showFriends(roster);
         _locationCache.save();
@@ -887,7 +892,7 @@ class FindMyController extends GetxController {
   void onClose() {
     _tabWorker?.dispose();
     _cancelSession();
-    _refreshTimer?.cancel();
+    _refreshWindow?.cancel();
     _redactedModeListener?.cancel();
     _hideContactInfoListener?.cancel();
     _findMyLocationListener?.cancel();

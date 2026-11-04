@@ -1,110 +1,111 @@
+import "package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart";
 import "package:bluebubbles/app/layouts/findmy/findmy_refresh_progress.dart";
 import "package:bluebubbles/database/models.dart";
 import "package:flutter_test/flutter_test.dart";
 
-FindMyFriend friend({String? rawAddress, String? hydratedAddress}) => FindMyFriend(
+final startedAt = DateTime(2026, 11, 4, 12);
+final before = startedAt.subtract(const Duration(minutes: 5));
+final after = startedAt.add(const Duration(seconds: 3));
+
+FindMyFriend friend({
+  String? rawAddress,
+  String? hydratedAddress,
+  String? title,
+  DateTime? lastUpdated,
+  bool locating = false,
+}) => FindMyFriend(
   latitude: null,
   longitude: null,
   longAddress: null,
   shortAddress: null,
-  title: null,
+  title: title,
   subtitle: null,
   handle: hydratedAddress == null ? null : Handle(address: hydratedAddress),
   handleAddress: rawAddress,
-  lastUpdated: null,
+  lastUpdated: lastUpdated,
   status: null,
-  locatingInProgress: false,
+  locatingInProgress: locating,
   favoriteOrder: null,
 );
 
 void main() {
-  test("counts only expected friends updated after the session begins", () {
-    final progress = FindMyRefreshProgress.start().withRoster(["alice", "bob"]).withUsableEvent("alice");
+  group("findMyFriendIdentity", () {
+    test("is the provider address, raw or hydrated", () {
+      expect(findMyFriendIdentity(friend(rawAddress: "alice", hydratedAddress: "alice")), "alice");
+      expect(findMyFriendIdentity(friend(hydratedAddress: "alice")), "alice");
+      expect(findMyFriendIdentity(friend(rawAddress: " alice ")), "alice");
+      expect(findMyFriendIdentity(friend(rawAddress: " ", hydratedAddress: "alice")), "alice");
+    });
 
-    expect(progress.updated, 1);
-    expect(progress.total, 2);
-    expect(progress.pending, 1);
+    test("never uses the display name, so two unnamed-address friends stay apart", () {
+      final first = friend(title: "Alex");
+      final second = friend(title: "Alex");
+      expect(findMyFriendIdentity(first), isNot("Alex"));
+      expect(findMyFriendIdentity(first), findMyFriendIdentity(first));
+      expect(findMyFriendIdentity(first), isNot(findMyFriendIdentity(second)));
+      expect(first.stableId, isNull);
+    });
   });
 
-  test("ignores duplicate, unknown, blank, and missing identifiers", () {
-    final progress = FindMyRefreshProgress.start()
-        .withRoster(["alice", "bob", "", null])
-        .withUsableEvent("alice")
-        .withUsableEvent("alice")
-        .withUsableEvent("unknown")
+  test("waits only on friends whose fix predates the refresh", () {
+    final progress = FindMyRefreshProgress.start(startedAt).withRoster([
+      friend(rawAddress: "stale", lastUpdated: before),
+      friend(rawAddress: "fresh", lastUpdated: after),
+      friend(rawAddress: "unknown"),
+    ]);
+
+    expect(progress.allReported, isFalse);
+    expect(progress.withUsableEvent("stale").allReported, isFalse);
+    expect(progress.withUsableEvent("stale").withUsableEvent("unknown").allReported, isTrue);
+  });
+
+  test("a friend Apple is still locating is waited on even with a fresh fix", () {
+    final progress = FindMyRefreshProgress.start(startedAt).withRoster([
+      friend(rawAddress: "locating", lastUpdated: after, locating: true),
+    ]);
+    expect(progress.allReported, isFalse);
+    expect(progress.withUsableEvent("locating").allReported, isTrue);
+  });
+
+  test("counts an event that arrives before the roster", () {
+    final progress = FindMyRefreshProgress.start(
+      startedAt,
+    ).withUsableEvent("alice").withRoster([friend(rawAddress: "alice", lastUpdated: before)]);
+    expect(progress.allReported, isTrue);
+  });
+
+  test("ignores blank identifiers and friends without an address", () {
+    final progress = FindMyRefreshProgress.start(startedAt)
+        .withRoster([friend(title: "No address", lastUpdated: before)])
         .withUsableEvent("")
         .withUsableEvent(null);
-
-    expect(progress.updated, 1);
-    expect(progress.total, 2);
-    expect(progress.pending, 1);
-    expect(progress.wasUpdated("alice"), isTrue);
-    expect(progress.wasUpdated("unknown"), isFalse);
+    expect(progress.allReported, isTrue);
   });
 
-  test("retains a usable event that arrives before the roster response", () {
-    final progress = FindMyRefreshProgress.start().withUsableEvent("alice").withRoster(["alice", "bob"]);
+  test("a row spins only while its friend's fix predates the refresh", () {
+    final stale = friend(rawAddress: "stale", lastUpdated: before);
+    final fresh = friend(rawAddress: "fresh", lastUpdated: after);
+    final never = friend(rawAddress: "never");
+    final progress = FindMyRefreshProgress.start(startedAt).withRoster([stale, fresh, never]);
 
-    expect(progress.updated, 1);
-    expect(progress.pending, 1);
+    expect(findMyFriendRowSpinning(progress, stale), isTrue);
+    expect(findMyFriendRowSpinning(progress, never), isTrue);
+    expect(findMyFriendRowSpinning(progress, fresh), isFalse);
+    // A stale fix that has reported in this refresh shows its distance.
+    expect(findMyFriendRowSpinning(progress.withUsableEvent("stale"), stale), isFalse);
   });
 
-  test("spins each row until its own location arrives in this refresh", () {
-    final progress = FindMyRefreshProgress.start()
-        .withRoster(["updated", "locating", "cached"])
-        .withUsableEvent("updated");
-
-    // A stale fix that already arrived this refresh shows its distance, not a spinner.
-    expect(findMyFriendRowSpinning(progress, stableId: "updated", locatingInProgress: false), isFalse);
-    expect(findMyFriendRowSpinning(progress, stableId: "locating", locatingInProgress: true), isTrue);
-    // A saved location from before this refresh still spins until a fresh answer.
-    expect(findMyFriendRowSpinning(progress, stableId: "cached", locatingInProgress: false), isTrue);
-    expect(findMyFriendRowSpinning(progress, stableId: null, locatingInProgress: false), isTrue);
-  });
-
-  test("stops spinning when the refresh window ends unless Apple is still locating", () {
-    final finished = FindMyRefreshProgress.start().withRoster(["alice", "bob"]).withUsableEvent("alice").finish();
-
-    expect(findMyFriendRowSpinning(finished, stableId: "bob", locatingInProgress: false), isFalse);
-    expect(findMyFriendRowSpinning(finished, stableId: "bob", locatingInProgress: true), isTrue);
-    expect(findMyFriendRowSpinning(FindMyRefreshProgress.idle(), stableId: "alice", locatingInProgress: false), isFalse);
-  });
-
-  test("keeps partial progress until the refresh window finishes", () {
-    final active = FindMyRefreshProgress.start().withRoster(["alice", "bob"]).withUsableEvent("alice");
-    expect(active.active, isTrue);
-    expect(active.updated, 1);
-    expect(active.pending, 1);
-
-    final finished = active.finish();
-    expect(finished.active, isFalse);
-    expect(finished.updated, 1);
-    expect(finished.pending, 1);
-  });
-
-  test("identifies a hydrated friend by its provider address", () {
-    expect(findMyFriendRefreshIdFor(friend(rawAddress: "alice", hydratedAddress: "alice")), "alice");
-    expect(findMyFriendRefreshIdFor(friend(hydratedAddress: "alice")), "alice");
-    expect(findMyFriendRefreshIdFor(friend(rawAddress: "alice")), "alice");
-    expect(findMyFriendRefreshIdFor(friend()), isNull);
-    expect(findMyFriendRefreshId(rawHandleAddress: " ", hydratedHandleAddress: "alice"), "alice");
+  test("outside a refresh, a row spins only while Apple is still locating", () {
+    final finished = FindMyRefreshProgress.start(startedAt).finish();
+    expect(findMyFriendRowSpinning(finished, friend(rawAddress: "bob", lastUpdated: before)), isFalse);
+    expect(findMyFriendRowSpinning(finished, friend(rawAddress: "bob", locating: true)), isTrue);
+    expect(findMyFriendRowSpinning(FindMyRefreshProgress.idle(), friend(rawAddress: "alice")), isFalse);
   });
 
   test("matches a hydrated-only roster entry with a raw-only event", () {
-    final progress = FindMyRefreshProgress.start()
-        .withRoster([findMyFriendRefreshIdFor(friend(hydratedAddress: "alice"))])
-        .withUsableEvent(findMyFriendRefreshIdFor(friend(rawAddress: "alice")));
-
-    expect(progress.updated, 1);
-    expect(progress.pending, 0);
-  });
-
-  test("matches a raw-only roster entry with a hydrated-only event", () {
-    final progress = FindMyRefreshProgress.start()
-        .withRoster([findMyFriendRefreshIdFor(friend(rawAddress: "alice"))])
-        .withUsableEvent(findMyFriendRefreshIdFor(friend(hydratedAddress: "alice")));
-
-    expect(progress.updated, 1);
-    expect(progress.pending, 0);
+    final progress = FindMyRefreshProgress.start(startedAt)
+        .withRoster([friend(hydratedAddress: "alice", lastUpdated: before)])
+        .withUsableEvent(friend(rawAddress: "alice").stableId);
+    expect(progress.allReported, isTrue);
   });
 }

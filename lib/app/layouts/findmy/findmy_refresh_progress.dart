@@ -1,76 +1,78 @@
 import 'package:bluebubbles/database/models.dart';
 
-/// Identifies a friend within a refresh session. Roster entries and socket
-/// events may or may not hydrate a local [Handle], so this keys on the provider
-/// address both forms share rather than the service-qualified handle key.
-String? findMyFriendRefreshId({required String? rawHandleAddress, required String? hydratedHandleAddress}) {
-  String? usable(String? value) {
-    final trimmed = value?.trim();
-    return trimmed == null || trimmed.isEmpty ? null : trimmed;
-  }
+/// How long a refresh waits on friends to report fresh locations before it
+/// stops showing progress. The server's friend refresh answers in 0.85-5 s and
+/// Apple pushes each fix over the socket shortly after; a friend still silent
+/// after this is not going to report in this refresh.
+const Duration findMyRefreshWindow = Duration(seconds: 30);
 
-  return usable(rawHandleAddress) ?? usable(hydratedHandleAddress);
+String? _usable(String? value) {
+  final trimmed = value?.trim();
+  return trimmed == null || trimmed.isEmpty ? null : trimmed;
 }
 
-String? findMyFriendRefreshIdFor(FindMyFriend friend) =>
-    findMyFriendRefreshId(rawHandleAddress: friend.handleAddress, hydratedHandleAddress: friend.handle?.address);
-
+/// One refresh of friends' locations: which friends it is waiting on and
+/// which have reported since it started.
 class FindMyRefreshProgress {
-  const FindMyRefreshProgress._({required this.active, required this.expectedIds, required this.observedIds});
+  const FindMyRefreshProgress._({
+    required this.active,
+    required this.startedAt,
+    required this.awaitedIds,
+    required this.reportedIds,
+  });
 
   factory FindMyRefreshProgress.idle() =>
-      const FindMyRefreshProgress._(active: false, expectedIds: {}, observedIds: {});
+      const FindMyRefreshProgress._(active: false, startedAt: null, awaitedIds: {}, reportedIds: {});
 
-  factory FindMyRefreshProgress.start() =>
-      const FindMyRefreshProgress._(active: true, expectedIds: {}, observedIds: {});
+  factory FindMyRefreshProgress.start(DateTime startedAt) =>
+      FindMyRefreshProgress._(active: true, startedAt: startedAt, awaitedIds: const {}, reportedIds: const {});
 
   final bool active;
-  final Set<String> expectedIds;
-  final Set<String> observedIds;
+  final DateTime? startedAt;
 
-  int get updated => expectedIds.intersection(observedIds).length;
-  int get total => expectedIds.length;
-  int get pending => total - updated;
+  /// Friends whose location predated this refresh, or whom Apple was still
+  /// locating, when the roster arrived.
+  final Set<String> awaitedIds;
+  final Set<String> reportedIds;
 
-  FindMyRefreshProgress withRoster(Iterable<String?> ids) => FindMyRefreshProgress._(
+  /// Whether every friend this refresh waits on has reported.
+  bool get allReported => awaitedIds.every(reportedIds.contains);
+
+  /// Whether this refresh would wait on [friend] were it in the roster.
+  bool _awaits(FindMyFriend friend) {
+    if (friend.locatingInProgress) return true;
+    final updated = friend.lastUpdated;
+    return updated == null || startedAt == null || updated.isBefore(startedAt!);
+  }
+
+  FindMyRefreshProgress withRoster(Iterable<FindMyFriend> roster) => FindMyRefreshProgress._(
     active: active,
-    expectedIds: Set.unmodifiable(ids.map(_usableId).whereType<String>()),
-    observedIds: observedIds,
+    startedAt: startedAt,
+    awaitedIds: Set.unmodifiable(roster.where(_awaits).map((friend) => friend.stableId).whereType<String>()),
+    reportedIds: reportedIds,
   );
 
   FindMyRefreshProgress withUsableEvent(String? id) {
-    if (!active) return this;
-    final usableId = _usableId(id);
-    if (usableId == null) return this;
+    final usableId = _usable(id);
+    if (!active || usableId == null) return this;
     return FindMyRefreshProgress._(
       active: active,
-      expectedIds: expectedIds,
-      observedIds: Set.unmodifiable({...observedIds, usableId}),
+      startedAt: startedAt,
+      awaitedIds: awaitedIds,
+      reportedIds: Set.unmodifiable({...reportedIds, usableId}),
     );
   }
 
   FindMyRefreshProgress finish() =>
-      FindMyRefreshProgress._(active: false, expectedIds: expectedIds, observedIds: observedIds);
-
-  bool wasUpdated(String? id) {
-    final usableId = _usableId(id);
-    return usableId != null && expectedIds.contains(usableId) && observedIds.contains(usableId);
-  }
-
-  static String? _usableId(String? id) {
-    final trimmed = id?.trim();
-    return trimmed == null || trimmed.isEmpty ? null : trimmed;
-  }
+      FindMyRefreshProgress._(active: false, startedAt: startedAt, awaitedIds: awaitedIds, reportedIds: reportedIds);
 }
 
 /// Whether a friend's row shows a spinner where its distance goes. During a
-/// refresh that lasts until this friend's location arrives; outside one, only
-/// while Apple is still locating them.
-bool findMyFriendRowSpinning(
-  FindMyRefreshProgress progress, {
-  required String? stableId,
-  required bool locatingInProgress,
-}) {
-  if (progress.active) return !progress.wasUpdated(stableId);
-  return locatingInProgress;
+/// refresh that lasts until a friend whose fix predates the refresh reports;
+/// outside one, only while Apple is still locating them.
+bool findMyFriendRowSpinning(FindMyRefreshProgress progress, FindMyFriend friend) {
+  if (!progress.active) return friend.locatingInProgress;
+  final id = friend.stableId;
+  if (id != null && progress.reportedIds.contains(id)) return false;
+  return progress._awaits(friend);
 }

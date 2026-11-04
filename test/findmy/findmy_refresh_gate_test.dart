@@ -3,6 +3,7 @@ import "dart:convert";
 
 import "package:bluebubbles/app/layouts/findmy/findmy_controller.dart";
 import "package:bluebubbles/app/layouts/findmy/findmy_load_state.dart";
+import "package:bluebubbles/app/layouts/findmy/findmy_refresh_progress.dart";
 import "package:bluebubbles/services/services.dart";
 import "package:fake_async/fake_async.dart";
 import "package:flutter/services.dart" show PlatformException;
@@ -200,9 +201,46 @@ void main() {
       expect(controller.isRefreshing, isFalse);
     });
   });
+
+  test("friend rows stop spinning when the refresh window elapses, while the button waits on devices", () {
+    fakeAsync((async) {
+      final controller = openIdlePage(async);
+
+      controller.refreshLocations(refreshDevices: true);
+      async.flushMicrotasks();
+      icloud.answer("refreshFriends");
+      async.flushMicrotasks();
+      expect(controller.friendRefreshProgress.value.active, isTrue, reason: "devices are still being located");
+
+      async.elapse(findMyRefreshWindow);
+      expect(controller.friendRefreshProgress.value.active, isFalse);
+      expect(controller.isRefreshing, isTrue, reason: "the device refresh is still out");
+
+      icloud.answer("refreshDevices");
+      async.flushMicrotasks();
+      expect(controller.isRefreshing, isFalse);
+    });
+  });
+
+  test("the refresh window closes as soon as the server has answered and nobody is left to report", () {
+    fakeAsync((async) {
+      final controller = Get.put(FindMyController());
+      async.flushMicrotasks();
+      icloud.answer("getFriends");
+      icloud.answer("getDevices");
+      async.flushMicrotasks();
+      expect(controller.isRefreshing, isTrue, reason: "the friends refresh is still out");
+
+      icloud.answer("refreshFriends");
+      async.flushMicrotasks();
+      expect(controller.isRefreshing, isFalse);
+      expect(controller.friendRefreshProgress.value.active, isFalse);
+    });
+  });
 }
 
 /// Puts [json] where the location cache reads it from.
 void registerSavedCache(Map<String, dynamic> json) {
   (PrefsSvc.findMy as FakeFindMyPrefs).saved = jsonEncode(json);
 }
+
