@@ -343,8 +343,8 @@ class FindMyController extends GetxController {
     );
   }
 
-  /// Records friends' current locations and fills in a missing one from the
-  /// last known location.
+  /// Records friends' current locations and shows each friend at the newest
+  /// location known for them, which may be a saved one.
   List<FindMyFriend> _withCachedFriendLocations(List<FindMyFriend> source) {
     return source.map((friend) {
       final key = friend.stableId;
@@ -360,10 +360,8 @@ class FindMyController extends GetxController {
             fullAddress: friend.longAddress,
           ),
         );
-        return friend;
       }
-      final cached = _locationCache['friend:$key'];
-      return cached == null ? friend : friendWithCachedLocation(friend, cached);
+      return newestFriendLocation(friend, _locationCache['friend:$key']);
     }).toList();
   }
 

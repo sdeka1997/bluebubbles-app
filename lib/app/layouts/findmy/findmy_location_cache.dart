@@ -65,6 +65,18 @@ FindMyFriend friendWithCachedLocation(FindMyFriend friend, FindMyCachedLocation 
   favoriteOrder: friend.favoriteOrder,
 );
 
+/// The newest location known for [friend]: its own fix, or [cached] when that
+/// was found later or the friend has none. A roster saved in one answer can
+/// be older than fixes that arrived one by one afterwards, so its own fix only
+/// wins when it is at least as recent. A fix with no time is kept as sent.
+FindMyFriend newestFriendLocation(FindMyFriend friend, FindMyCachedLocation? cached) {
+  if (cached == null) return friend;
+  if (!hasUsableFindMyLocation(friend)) return friendWithCachedLocation(friend, cached);
+  final own = friend.lastUpdated;
+  if (own == null || !cached.updatedAt.isAfter(own)) return friend;
+  return friendWithCachedLocation(friend, cached);
+}
+
 /// Points [device] at [cached] in place of its missing location.
 void applyCachedDeviceLocation(FindMyDevice device, FindMyCachedLocation cached) {
   device.location = Location(
