@@ -134,10 +134,6 @@ class FindMyDevice {
     return name;
   }
 
-  /// True when this entry is a component of another accessory rather than a
-  /// standalone item the user owns.
-  bool get isGroupedComponent => (groupIdentifier?.isNotEmpty ?? false) && (groupName?.isNotEmpty ?? false);
-
   factory FindMyDevice.fromJson(Map<String, dynamic> json) => FindMyDevice(
         deviceModel: json["deviceModel"],
         lowPowerMode: json["lowPowerMode"],

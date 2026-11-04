@@ -1,4 +1,4 @@
-import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_items_tab_view.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_products.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -150,5 +150,44 @@ void main() {
 
     expect(findMyDeviceProducts([airPods]), [airPods]);
     expect(findMyItemProducts([airPods]), isEmpty);
+  });
+
+  test('an item its owner named after AirPods stays an item', () {
+    final tag = device({
+      'id': 'tag',
+      'name': 'AirPods finder',
+      'deviceModel': 'b389',
+      'deviceClass': 'b389',
+      'modelDisplayName': 'AirTag',
+      'isConsideredAccessory': true,
+    });
+
+    expect(findMyItemProducts([tag]), [tag]);
+    expect(findMyDeviceProducts([tag]), isEmpty);
+  });
+
+  test('AirPods listed under Devices by model alone are audio products', () {
+    final pods = device({
+      'id': 'pods',
+      'name': 'Studio',
+      'deviceModel': 'AirPods_8206',
+      'deviceClass': 'Accessory',
+      'isConsideredAccessory': true,
+    });
+
+    expect(findMyDeviceProducts([pods]), [pods]);
+    expect(findMyItemProducts([pods]), isEmpty);
+  });
+
+  test('one pass sorts a device list into devices and items', () {
+    final phone = device({'id': 'phone', 'name': 'Phone', 'deviceClass': 'iPhone'});
+    final tag = device({'id': 'tag', 'name': 'Keys', 'deviceClass': 'b389', 'isConsideredAccessory': true});
+
+    final products = FindMyProducts.of([phone, tag]);
+
+    expect(products.devices, [phone]);
+    expect(products.items, [tag]);
+    expect(products.of(1), [phone]);
+    expect(products.of(2), [tag]);
   });
 }

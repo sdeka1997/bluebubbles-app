@@ -1,3 +1,4 @@
+import 'package:bluebubbles/app/layouts/findmy/findmy_products.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:flutter/material.dart';
 
@@ -14,9 +15,8 @@ class FindMyGlyph {
 
 /// Shared by the map pins and the Devices/Items rows so both agree.
 FindMyGlyph findMyGlyph(FindMyDevice device) {
-  final model = '${device.deviceModel ?? ''} ${device.modelDisplayName ?? ''}'.toLowerCase();
   // AirPods report a placeholder emoji (😀), so they keep the headphones icon.
-  if (device.isAppleAudioAccessory || model.contains('airpods')) return const FindMyGlyph.icon(Icons.headphones);
+  if (isFindMyAudioProduct(device)) return const FindMyGlyph.icon(Icons.headphones);
 
   final emoji = device.role?['emoji'] as String?;
   if (emoji != null && emoji.isNotEmpty) return FindMyGlyph.emoji(emoji);

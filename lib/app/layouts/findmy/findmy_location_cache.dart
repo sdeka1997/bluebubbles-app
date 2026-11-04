@@ -98,6 +98,11 @@ void applyCachedDeviceLocation(FindMyDevice device, FindMyCachedLocation cached)
   device.lastKnownLocationAt = cached.updatedAt;
 }
 
+/// How long the cache waits for more changes before writing. An opening load
+/// and the friend refresh after it land within a second or two of each other,
+/// and socket updates for several friends arrive in bursts.
+const Duration findMyLocationCacheSaveDelay = Duration(seconds: 2);
+
 /// Last known location per friend and per logical device or item.
 ///
 /// Holds one account at a time: the cache is tied to the server and iCloud

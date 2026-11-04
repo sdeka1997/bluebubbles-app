@@ -26,7 +26,7 @@ import 'package:bluebubbles/app/layouts/findmy/findmy_panel.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_refresh_progress.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_scroll.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_tiles.dart';
-import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_items_tab_view.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_products.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_clipper.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_pin_clipper.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
@@ -54,6 +54,9 @@ class FindMyController extends GetxController {
   // Observable state variables
   final RxInt tabIndex = 0.obs;
   final RxList<FindMyDevice> devices = <FindMyDevice>[].obs;
+
+  /// [devices] sorted into the Devices and Items tabs, once per device list.
+  final Rx<FindMyProducts> products = FindMyProducts.empty.obs;
   final RxList<FindMyFriend> friends = <FindMyFriend>[].obs;
   final RxList<FindMyFriend> friendsWithLocation = <FindMyFriend>[].obs;
   final RxList<FindMyFriend> friendsWithoutLocation = <FindMyFriend>[].obs;
@@ -63,7 +66,6 @@ class FindMyController extends GetxController {
   final Map<String, Future<ContactV2?>> _contactLookups = <String, Future<ContactV2?>>{};
   final Set<String> _friendMarkerKeys = <String>{};
   final Set<String> _deviceMarkerKeys = <String>{};
-  final Set<String> _itemMarkerKeys = <String>{};
   final Rxn<Position> location = Rxn<Position>();
   final Rx<FindMyRefreshProgress> friendRefreshProgress = FindMyRefreshProgress.idle().obs;
 
@@ -90,6 +92,7 @@ class FindMyController extends GetxController {
 
   StreamSubscription? locationSub;
   Timer? _refreshWindow;
+  Timer? _cacheSave;
   StreamSubscription? _redactedModeListener;
   StreamSubscription? _hideContactInfoListener;
   StreamSubscription? _findMyLocationListener;
@@ -211,13 +214,9 @@ class FindMyController extends GetxController {
     switch (tabIndex.value) {
       case 0:
         return friendsWithLocation.map(markerPointForFriend).toList();
-      case 1:
-        return findMyDeviceProducts(devices)
-            .where((e) => isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))
-            .map(markerPointForDevice)
-            .toList();
       default:
-        return findMyItemProducts(devices)
+        return products.value
+            .of(tabIndex.value)
             .where((e) => isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))
             .map(markerPointForDevice)
             .toList();
@@ -403,7 +402,7 @@ class FindMyController extends GetxController {
       friendRefreshProgress.value = friendRefreshProgress.value.withUsableEvent(friend.stableId);
       _finishRefreshWhenDone();
       _withCachedFriendLocations([friend]);
-      _locationCache.save();
+      _saveCacheSoon();
 
       final existingFriendIndex = friends.indexWhere((e) => e.stableId != null && e.stableId == friend.stableId);
       final existingFriend = existingFriendIndex == -1 ? null : friends[existingFriendIndex];
@@ -580,7 +579,7 @@ class FindMyController extends GetxController {
           friendRefreshProgress.value = friendRefreshProgress.value.withRoster(roster);
         }
         _showFriends(roster);
-        _locationCache.save();
+        _saveCacheSoon();
       }
       friendsState.value = friendsState.value.loaded(DateTime.now());
     } catch (e, s) {
@@ -596,7 +595,7 @@ class FindMyController extends GetxController {
         final parsed = data.map((e) => FindMyDevice.fromJson(e)).toList();
         _locationCache.rememberDevices(data.cast<Map<String, dynamic>>());
         _showDevices(parsed);
-        _locationCache.save();
+        _saveCacheSoon();
       }
       devicesState.value = devicesState.value.loaded(DateTime.now());
     } catch (e, s) {
@@ -604,6 +603,15 @@ class FindMyController extends GetxController {
       devicesState.value = devicesState.value.failed(describeFindMyError(e));
     }
   }
+
+  /// Writes the location cache once a burst of answers and socket updates
+  /// has settled, rather than re-encoding all of it for each one.
+  void _saveCacheSoon() {
+    _cacheSave?.cancel();
+    _cacheSave = Timer(findMyLocationCacheSaveDelay, _saveCache);
+  }
+
+  void _saveCache() => unawaited(_locationCache.save());
 
   /// Puts the friends and devices saved last time on the map, before any
   /// network answer.
@@ -638,6 +646,7 @@ class FindMyController extends GetxController {
     }
     _applyCachedDeviceLocations(source);
     devices.value = source;
+    products.value = FindMyProducts.of(source);
     _clearDeviceMarkers();
     for (final device in source.where((e) => isUsableFindMyCoordinate(e.location?.latitude, e.location?.longitude))) {
       buildDeviceMarker(device);
@@ -708,8 +717,13 @@ class FindMyController extends GetxController {
 
   Position? _lastSortedPosition;
 
-  /// True when [next] is at least 100 m from the position the list was last
-  /// sorted against (or there is none yet). Records [next] when it returns true.
+  /// How far the user must move before the friend list re-sorts by distance:
+  /// about a city block, under which no friend's distance label changes much.
+  static const double _resortDistanceMeters = 100;
+
+  /// True when [next] is at least [_resortDistanceMeters] from the position the
+  /// list was last sorted against (or there is none yet). Records [next] when it
+  /// returns true.
   bool _shouldResortForMove(Position next) {
     final last = _lastSortedPosition;
     if (last == null) {
@@ -717,7 +731,7 @@ class FindMyController extends GetxController {
       return true;
     }
     final moved = Geolocator.distanceBetween(last.latitude, last.longitude, next.latitude, next.longitude);
-    if (moved < 100) return false;
+    if (moved < _resortDistanceMeters) return false;
     _lastSortedPosition = next;
     return true;
   }
@@ -749,11 +763,7 @@ class FindMyController extends GetxController {
   }
 
   List<Marker> get visibleMarkers {
-    final visibleKeys = switch (tabIndex.value) {
-      0 => _friendMarkerKeys,
-      1 => _deviceMarkerKeys,
-      _ => _itemMarkerKeys,
-    };
+    final visibleKeys = tabIndex.value == 0 ? _friendMarkerKeys : _deviceMarkerKeys;
     final visible = markers.entries
         .where((entry) => (tabIndex.value == 0 && entry.key == 'current') || visibleKeys.contains(entry.key))
         .map((entry) => entry.value)
@@ -772,9 +782,7 @@ class FindMyController extends GetxController {
   void buildDeviceMarker(FindMyDevice e) {
     final markerKey = markerIdentityForDevice(e);
     final selected = isSelected('device-$markerKey');
-    _deviceMarkerKeys.remove(markerKey);
-    _itemMarkerKeys.remove(markerKey);
-    (e.isConsideredAccessory && !isFindMyAudioProduct(e) ? _itemMarkerKeys : _deviceMarkerKeys).add(markerKey);
+    _deviceMarkerKeys.add(markerKey);
     markers[markerKey] = Marker(
       key: ValueKey('device-$markerKey'),
       point: markerPointForDevice(e),
@@ -843,11 +851,10 @@ class FindMyController extends GetxController {
   }
 
   void _clearDeviceMarkers() {
-    for (final markerKey in {..._deviceMarkerKeys, ..._itemMarkerKeys}) {
+    for (final markerKey in _deviceMarkerKeys) {
       markers.remove(markerKey);
     }
     _deviceMarkerKeys.clear();
-    _itemMarkerKeys.clear();
   }
 
   void buildLocationMarker(Position pos) {
@@ -904,6 +911,8 @@ class FindMyController extends GetxController {
     _framingWorker?.dispose();
     _cancelSession();
     _refreshWindow?.cancel();
+    _cacheSave?.cancel();
+    _saveCache();
     _redactedModeListener?.cancel();
     _hideContactInfoListener?.cancel();
     _findMyLocationListener?.cancel();

@@ -57,4 +57,16 @@ void main() {
         findMyGlyph(device({'deviceClass': 'b389', 'modelDisplayName': 'AirTag', 'isConsideredAccessory': true})).icon,
         Icons.sell);
   });
+
+  test('an item named after AirPods keeps its own glyph', () {
+    expect(
+        findMyGlyph(device({
+          'deviceClass': 'b389',
+          'deviceModel': 'b389',
+          'modelDisplayName': 'AirTag',
+          'isConsideredAccessory': true,
+          'role': {'emoji': '🎧', 'name': 'AirPods finder'},
+        })).emoji,
+        '🎧');
+  });
 }

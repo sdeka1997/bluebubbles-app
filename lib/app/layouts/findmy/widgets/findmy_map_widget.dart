@@ -4,7 +4,6 @@ import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_device_glyph.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_panel.dart';
-import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_items_tab_view.dart';
 import 'package:bluebubbles/app/wrappers/trackpad_bug_wrapper.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -173,8 +172,7 @@ class _FindMyMapWidgetState extends State<FindMyMapWidget> {
   List<Marker> _visibleMarkers() {
     final tab = controller.tabIndex.value;
     if (tab == 0) return controller.visibleMarkers;
-    final products = tab == 1 ? findMyDeviceProducts(controller.devices) : findMyItemProducts(controller.devices);
-    final productIds = products.map(controller.markerIdentityForDevice).toSet();
+    final productIds = controller.products.value.of(tab).map(controller.markerIdentityForDevice).toSet();
     return controller.visibleMarkers.where((marker) {
       final key = _markerKey(marker);
       return key.startsWith('device-') && productIds.contains(key.substring('device-'.length));

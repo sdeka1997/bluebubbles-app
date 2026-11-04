@@ -36,12 +36,16 @@ class FakeFindMyPrefs extends SharedPreferencesFindMyActions {
   FakeFindMyPrefs(super.service);
 
   String? saved;
+  int writes = 0;
 
   @override
   String? getLocationCache() => saved;
 
   @override
-  Future<void> setLocationCache(String json) async => saved = json;
+  Future<void> setLocationCache(String json) async {
+    writes++;
+    saved = json;
+  }
 
   @override
   Future<void> removeLocationCache() async => saved = null;
