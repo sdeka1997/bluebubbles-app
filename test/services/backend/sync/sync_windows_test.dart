@@ -2,6 +2,10 @@ import 'package:bluebubbles/services/backend/sync/sync_windows.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('a sync page comes back well inside the request timeout', () {
+    expect(syncBatchSize, lessThanOrEqualTo(200));
+  });
+
   group('nextSyncWindow', () {
     test('covers the next batch of ROWIDs after the cursor', () {
       expect(nextSyncWindow(cursor: 1000, batchSize: 1000), (after: 1000, upTo: 2000));

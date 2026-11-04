@@ -6,6 +6,11 @@
 // request, and once synced every row up to `upTo` is in: that is a safe
 // bookmark.
 
+/// Messages fetched per request. The server takes about 25 s to return 1,000
+/// messages with their chats and attachments, close to the app's 30 s request
+/// timeout; 200 come back in a few seconds.
+const int syncBatchSize = 200;
+
 /// Consecutive empty windows (a large ROWID gap) before handing the rest of the
 /// sync to plain offset paging, which is correct but not resumable.
 const int maxEmptySyncWindows = 50;

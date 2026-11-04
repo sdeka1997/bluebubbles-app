@@ -46,6 +46,20 @@ void main() {
       );
     });
 
+    test('a timed-out request the API layer turned into a response is transient', () {
+      // ApiInterceptor resolves a receive timeout into a 500 envelope of type
+      // "timeout", which then arrives as the error itself.
+      final timedOut = Response(
+        requestOptions: RequestOptions(path: '/message/query'),
+        statusCode: 500,
+        data: {
+          'status': 500,
+          'error': {'type': 'timeout', 'message': 'Failed to receive response from server.'}
+        },
+      );
+      expect(isTransientSyncError(timedOut), isTrue);
+    });
+
     test('a server or parsing error is not transient', () {
       expect(isTransientSyncError(Exception('Unexpected null value')), isFalse);
       expect(isTransientSyncError(const FormatException('bad json')), isFalse);

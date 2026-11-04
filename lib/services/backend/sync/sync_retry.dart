@@ -28,12 +28,19 @@ bool isTransientSyncError(Object error) {
         (error.error != null && isTransientSyncError(error.error!));
   }
   if (error is SocketException || error is TimeoutException) return true;
+  // ApiInterceptor turns a request timeout into a 500 response of type "timeout".
+  if (error is Response) {
+    final body = error.data;
+    final detail = body is Map ? body['error'] : null;
+    return detail is Map && detail['type'] == 'timeout';
+  }
   final text = error.toString();
   return text.contains('SocketException') ||
       text.contains('Failed host lookup') ||
       text.contains('Connection closed') ||
       text.contains('Connection reset') ||
       text.contains('TimeoutException') ||
+      text.contains('Failed to receive response from server') ||
       text.contains('DioExceptionType.connectionError') ||
       text.contains('DioExceptionType.connectionTimeout') ||
       text.contains('DioExceptionType.receiveTimeout') ||

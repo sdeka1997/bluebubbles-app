@@ -7,6 +7,7 @@ import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/backend/sync/sync_manager_impl.dart';
+import 'package:bluebubbles/services/backend/sync/sync_retry.dart';
 import 'package:bluebubbles/services/backend/sync/sync_windows.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/services/backend/interfaces/sync_interface.dart';
@@ -92,7 +93,7 @@ class IncrementalSyncManager extends SyncManager {
       this.endRowId,
       this.startTimestamp,
       this.endTimestamp,
-      this.batchSize = 1000,
+      this.batchSize = syncBatchSize,
       this.saveMarker = false,
       this.onComplete,
       bool saveLogs = false})
@@ -219,11 +220,16 @@ class IncrementalSyncManager extends SyncManager {
     while (!syncWindowsDone(
         seen: seen, total: total, cursor: cursor, emptyRun: emptyRun, endRowId: endRowId, paused: syncPausedForBackground)) {
       final window = nextSyncWindow(cursor: cursor, batchSize: batchSize, endRowId: endRowId);
-      final res = await HttpSvc.message.query(
-        where: buildRowIdWhereArgs(window.after, window.upTo),
-        limit: batchSize,
-        offset: 0,
-        withQuery: defaultWithQuery,
+      final res = await retryTransientSync(
+        () => HttpSvc.message.query(
+          where: buildRowIdWhereArgs(window.after, window.upTo),
+          limit: batchSize,
+          offset: 0,
+          withQuery: defaultWithQuery,
+        ),
+        onRetry: (error, delay) => addToOutput(
+            'Messages after ROWID ${window.after} failed, retrying in ${delay.inSeconds}s...',
+            level: LogLevel.WARN),
       );
       final List<dynamic> messages = res.data['data'];
       if (messages.isEmpty) {
@@ -329,20 +335,31 @@ class IncrementalSyncManager extends SyncManager {
       addToOutput('Fetching page ${i + 1} of $pages...');
       dio.Response<dynamic> messagesResponse;
 
-      // Fetch the pages differently depending on the parameters.
-      if (useRowId) {
-        messagesResponse = await HttpSvc.message.query(
-            where: buildRowIdWhereArgs(startRowId!, endRowId),
-            offset: i * batchSize,
-            limit: batchSize,
-            withQuery: defaultWithQuery);
-      } else {
-        messagesResponse = await HttpSvc.message.query(
-            after: startTimestamp,
-            before: endTimestamp,
-            offset: i * batchSize,
-            limit: batchSize,
-            withQuery: defaultWithQuery);
+      // Fetch the pages differently depending on the parameters. A page that
+      // times out is retried; one that still fails ends the sync as failed,
+      // since skipping it would lose its messages without a trace.
+      try {
+        messagesResponse = await retryTransientSync(
+          () => useRowId
+              ? HttpSvc.message.query(
+                  where: buildRowIdWhereArgs(startRowId!, endRowId),
+                  offset: i * batchSize,
+                  limit: batchSize,
+                  withQuery: defaultWithQuery)
+              : HttpSvc.message.query(
+                  after: startTimestamp,
+                  before: endTimestamp,
+                  offset: i * batchSize,
+                  limit: batchSize,
+                  withQuery: defaultWithQuery),
+          onRetry: (error, delay) => addToOutput(
+              'Page ${i + 1} of $pages failed, retrying in ${delay.inSeconds}s...',
+              level: LogLevel.WARN),
+        );
+      } catch (_) {
+        addToOutput('Page ${i + 1} of $pages failed; messages ${i * batchSize + 1}-${(i + 1) * batchSize} '
+            'of $total were not synced', level: LogLevel.ERROR);
+        rethrow;
       }
 
       int messageCount = messagesResponse.data['data'].length;
