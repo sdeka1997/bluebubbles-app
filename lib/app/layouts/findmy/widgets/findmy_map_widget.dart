@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_device_glyph.dart';
@@ -5,6 +7,8 @@ import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_items_tab_view.dart';
 import 'package:bluebubbles/app/wrappers/trackpad_bug_wrapper.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/utils/logger/logger.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_marker_popup/flutter_map_marker_popup.dart';
@@ -12,13 +16,44 @@ import 'package:get/get.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-class FindMyMapWidget extends StatelessWidget {
+class FindMyMapWidget extends StatefulWidget {
   final FindMyController controller;
 
   const FindMyMapWidget({super.key, required this.controller});
 
+  @override
+  State<FindMyMapWidget> createState() => _FindMyMapWidgetState();
+}
+
+class _FindMyMapWidgetState extends State<FindMyMapWidget> {
+  FindMyController get controller => widget.controller;
+
   /// Member marker keys of each group marker currently on the map.
-  static final Map<String, List<String>> _groupMembers = {};
+  final Map<String, List<String>> _groupMembers = {};
+
+  late final AppLifecycleListener _lifecycle;
+  StreamSubscription<List<ConnectivityResult>>? _connectivity;
+
+  @override
+  void initState() {
+    super.initState();
+    // Tiles that failed while the app was away or offline get another try.
+    _lifecycle = AppLifecycleListener(onResume: () => controller.tiles.reload());
+    _connectivity = Connectivity().onConnectivityChanged.listen(
+      (results) {
+        if (results.any((result) => result != ConnectivityResult.none)) controller.tiles.reload();
+      },
+      // Throws on Linux without NetworkManager; tiles then retry on resume only.
+      onError: (Object e) => Logger.warn("Connectivity updates unavailable", error: e, tag: 'FindMyMap'),
+    );
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    _connectivity?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -87,10 +122,8 @@ class FindMyMapWidget extends StatelessWidget {
               },
             ),
             children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.bluebubbles.app',
-              ),
+              // The same widget every build, so marker and GPS updates never rebuild it.
+              controller.tiles.layer,
               Builder(
                 builder: (context) {
                   final markerGroups = tab == 0

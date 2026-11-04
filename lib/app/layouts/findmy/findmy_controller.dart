@@ -23,12 +23,18 @@ import 'package:bluebubbles/app/layouts/findmy/findmy_format.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_cache.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_refresh_progress.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_scroll.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_tiles.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_items_tab_view.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_clipper.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_pin_clipper.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 
 class FindMyController extends GetxController {
+  FindMyController({FindMyTileLoader? tiles}) : tiles = tiles ?? FindMyTileLoader();
+
+  /// The map's one tile layer and HTTP client, for the life of the page.
+  final FindMyTileLoader tiles;
+
   // Scroll Controllers
   final ScrollController devicesController = ScrollController();
   final ScrollController itemsController = ScrollController();
@@ -820,6 +826,7 @@ class FindMyController extends GetxController {
     locationSub?.cancel();
     if (!completer.isCompleted) completer.complete();
     mapController.dispose();
+    tiles.dispose();
     popupController.dispose();
     tabController?.dispose();
     itemsController.dispose();
