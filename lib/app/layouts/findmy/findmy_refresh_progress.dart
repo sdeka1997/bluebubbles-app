@@ -74,3 +74,22 @@ bool findMyFriendRowSpinning(FindMyRefreshProgress progress, FindMyFriend friend
   if (id != null && progress.reportedIds.contains(id)) return false;
   return progress._awaits(friend);
 }
+
+/// One round of locating on the server: whether new locations are on their
+/// way, and since when. A location newer than [startedAt] is from the round.
+class FindMyRound {
+  const FindMyRound({required this.collecting, required this.startedAt});
+
+  final bool collecting;
+  final DateTime? startedAt;
+
+  /// Null unless [data] says whether the round is collecting.
+  static FindMyRound? tryParse(dynamic data) {
+    if (data is! Map || data['collecting'] is! bool) return null;
+    final startedAt = data['startedAt'];
+    return FindMyRound(
+      collecting: data['collecting'] as bool,
+      startedAt: startedAt is num ? DateTime.fromMillisecondsSinceEpoch(startedAt.toInt()) : null,
+    );
+  }
+}

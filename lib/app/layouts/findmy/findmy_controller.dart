@@ -116,6 +116,7 @@ class FindMyController extends GetxController {
     _findMyLocationListener = EventDispatcherSvc.stream.listen((event) {
       if (event.type == 'new-findmy-location') _handleNewFindMyLocation(event.data);
       if (event.type == 'findmy-devices-updated') _handleDevicesUpdated(event.data);
+      if (event.type == 'findmy-round') _handleRound(event.data);
     });
 
     if (GetIt.I.isRegistered<SocketService>()) {
@@ -619,11 +620,21 @@ class FindMyController extends GetxController {
   /// device refresh endpoint of some server versions answers without data).
   List? _dataOf(Response response) => response.data is Map ? response.data['data'] as List? : null;
 
-  /// Whether the server says new locations follow over the socket; null from
-  /// servers that do not say.
-  bool? _isCollecting(Response response) {
-    final metadata = response.data is Map ? response.data['metadata'] : null;
-    return metadata is Map ? metadata['collecting'] as bool? : null;
+  /// The server's round from a refresh answer; null from servers that do
+  /// not say.
+  FindMyRound? _roundOf(Response response) =>
+      FindMyRound.tryParse(response.data is Map ? response.data['metadata'] : null);
+
+  /// The server says a round started or ended. The end of the round this page
+  /// is waiting on stops the rows still spinning: nothing more is coming.
+  void _handleRound(dynamic data) {
+    final round = FindMyRound.tryParse(data);
+    final progress = friendRefreshProgress.value;
+    if (!_isAlive || round == null || round.collecting || !progress.active) return;
+    if (round.startedAt != null && progress.startedAt != null && round.startedAt!.isBefore(progress.startedAt!)) {
+      return;
+    }
+    _finishRefresh();
   }
 
   void Function(Response) _applyFriends({required bool refreshed}) => (response) {
@@ -633,10 +644,15 @@ class FindMyController extends GetxController {
         final roster = data.map((e) => FindMyFriend.fromJson(e)).toList();
         _locationCache.rememberFriends(data.cast<Map<String, dynamic>>());
         if (refreshed) {
+          final round = _roundOf(response);
+          // A round rejoined part-way is measured from its own start, so
+          // friends who already reported in it do not spin again
+          if (round?.startedAt != null) {
+            friendRefreshProgress.value = FindMyRefreshProgress.start(round!.startedAt!);
+          }
           friendRefreshProgress.value = friendRefreshProgress.value.withRoster(roster);
-          // Within the server's cooldown Find My stays closed, so nobody's
-          // location is on its way and no row should spin
-          if (_isCollecting(response) == false) _finishRefresh();
+          // A round that has ended sends nothing more, so no row should spin
+          if (round?.collecting == false) _finishRefresh();
         }
         _showFriends(roster);
         _saveCacheSoon();

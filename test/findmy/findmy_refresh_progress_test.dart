@@ -135,4 +135,24 @@ void main() {
     expect(progress.allReported, isTrue);
     expect(findMyFriendRowSpinning(progress, stale), isFalse);
   });
+
+  group("a round rejoined part-way", () {
+    // The server's round began at [startedAt]; the page reopened 40 s later
+    final dad = friend(rawAddress: "dad", lastUpdated: startedAt.add(const Duration(seconds: 10)));
+    final mom = friend(rawAddress: "mom", lastUpdated: before);
+    FindMyRefreshProgress rejoined() => FindMyRefreshProgress.start(startedAt).withRoster([dad, mom]);
+
+    test("only friends with no location from the round spin", () {
+      final progress = rejoined();
+      expect(findMyFriendRowSpinning(progress, dad), isFalse);
+      expect(findMyFriendRowSpinning(progress, mom), isTrue);
+      expect(progress.awaitedIds, {"mom"});
+    });
+
+    test("a location from the round ends the wait of a friend still spinning", () {
+      final progress = rejoined().withEvent(push("mom", at: startedAt.add(const Duration(seconds: 50))));
+      expect(findMyFriendRowSpinning(progress, mom), isFalse);
+      expect(progress.allReported, isTrue);
+    });
+  });
 }

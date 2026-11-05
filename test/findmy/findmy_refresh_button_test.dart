@@ -32,7 +32,7 @@ void main() {
   bool spinning(FindMyController controller) =>
       findMyFriendRowSpinning(controller.friendRefreshProgress.value, controller.friends.single);
 
-  test("opening the page leaves the cooldown to the server", () {
+  test("opening the page joins any round the server has on", () {
     fakeAsync((async) {
       open(async);
 
@@ -41,7 +41,7 @@ void main() {
     });
   });
 
-  test("coming back to the app leaves the cooldown to the server", () {
+  test("coming back to the app joins any round the server has on", () {
     fakeAsync((async) {
       final controller = open(async);
       icloud.answer("refreshFriends");
@@ -55,7 +55,7 @@ void main() {
     });
   });
 
-  test("the refresh button forces a relaunch for friends and devices", () {
+  test("the refresh button forces a new round for friends and devices", () {
     fakeAsync((async) {
       final controller = open(async);
       icloud.answer("refreshFriends");
@@ -100,7 +100,7 @@ void main() {
     });
   });
 
-  test("tapping refresh after a cooldown answer has rows spin again", () {
+  test("tapping refresh after a round has ended has rows spin again", () {
     fakeAsync((async) {
       final controller = open(async);
       icloud.answer("refreshFriends", data: [staleFriendJson()], metadata: {"collecting": false});
