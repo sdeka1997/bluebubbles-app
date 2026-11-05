@@ -7,6 +7,8 @@
 - `findmy_location_cache.dart` — last known locations and the last friend/device lists, scoped to server + iCloud account, skipped in redacted mode; writes debounced
 - `findmy_products.dart` — sorts devices into the Devices and Items tabs once per device list (AirPods part collapsing, audio products)
 - `findmy_refresh_progress.dart` — refresh window: which friends are still being located, and when the refresh ends
+- `findmy_round_follower.dart` — follows the server's locating rounds from socket events and refresh answers; owns the refresh progress
+- `findmy_selection.dart` — the one selected friend or device, its marker key, and the Apple handle live tracking names
 - `findmy_tiles.dart` — the one tile provider: retrying HTTP client and bounded reload of failed tiles
 - `findmy_camera.dart` — camera framing, marker clustering, zoom constants and marker identity
 - `findmy_panel.dart` — drawer and floating-button geometry, and the camera padding derived from it

@@ -26,6 +26,7 @@ import 'package:bluebubbles/app/layouts/findmy/findmy_load_state.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_cache.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_panel.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_refresh_progress.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_round_follower.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_scroll.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_selection.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_tiles.dart';
@@ -76,7 +77,9 @@ class FindMyController extends GetxController {
   final Set<String> _friendMarkerKeys = <String>{};
   final Set<String> _deviceMarkerKeys = <String>{};
   final Rxn<Position> location = Rxn<Position>();
-  final Rx<FindMyRefreshProgress> friendRefreshProgress = FindMyRefreshProgress.idle().obs;
+  /// The server's locating rounds, and which friends' rows still spin.
+  late final FindMyRoundFollower rounds = FindMyRoundFollower(pendingRequests: () => _pendingRequests.value);
+  Rx<FindMyRefreshProgress> get friendRefreshProgress => rounds.progress;
 
   /// Insets of the map area the opening camera frames; see [findMyCameraPadding].
   EdgeInsets cameraPadding = const EdgeInsets.all(findMyCameraMargin);
@@ -119,7 +122,7 @@ class FindMyController extends GetxController {
     _findMyLocationListener = EventDispatcherSvc.stream.listen((event) {
       if (event.type == 'new-findmy-location') _handleNewFindMyLocation(event.data);
       if (event.type == 'findmy-devices-updated') _handleDevicesUpdated(event.data);
-      if (event.type == 'findmy-round') _handleRound(event.data);
+      if (event.type == 'findmy-round' && _isAlive) rounds.socketRound(event.data, friends);
     });
 
     if (GetIt.I.isRegistered<SocketService>()) {
@@ -142,18 +145,6 @@ class FindMyController extends GetxController {
   }
 
   bool get _isAlive => !isClosed;
-
-  /// Returns to ordinary idle state once this app session has settled. This is
-  /// not evidence that Apple's server round ended, so raw locating state stays.
-  void _finishRefreshWhenDone() {
-    final progress = friendRefreshProgress.value;
-    if (!progress.active || _pendingRequests.value > 0 || !progress.allReported) return;
-    friendRefreshProgress.value = FindMyRefreshProgress.idle();
-  }
-
-  void _finishServerRound() {
-    friendRefreshProgress.value = friendRefreshProgress.value.finishRound();
-  }
 
   /// While this screen is open, the server keeps publishing locations as Find
   /// My writes them; once it closes, the server finishes its refresh and quits
@@ -453,8 +444,7 @@ class FindMyController extends GetxController {
       Logger.info("Received new location for ${friend.handle?.address}");
       // Keep the last known good location when Apple pushes a no-fix or malformed update.
       if (!hasUsableFindMyLocation(friend)) return;
-      friendRefreshProgress.value = friendRefreshProgress.value.withEvent(friend);
-      _finishRefreshWhenDone();
+      rounds.fix(friend);
       _withCachedFriendLocations([friend]);
       _saveCacheSoon();
 
@@ -540,7 +530,7 @@ class FindMyController extends GetxController {
     _pendingRequests.value = 0;
     // Start progress before awaiting anything, so it shows for the whole
     // session. Only events from this session can count.
-    friendRefreshProgress.value = FindMyRefreshProgress.start(DateTime.now());
+    rounds.begin(DateTime.now());
 
     friendsState.value = friendsState.value.loading();
     devicesState.value = devicesState.value.loading();
@@ -609,14 +599,14 @@ class FindMyController extends GetxController {
             if (!current()) return;
             _pendingRequests.value--;
             onResponse(response);
-            _finishRefreshWhenDone();
+            rounds.settleIfDone();
           },
           onError: (Object e, StackTrace s) {
             if (!current()) return;
             _pendingRequests.value--;
             Logger.warn("Find My ${state == friendsState ? 'friends' : 'devices'} request failed", error: e, tag: 'FindMyController');
             state.value = state.value.failed(describeFindMyError(e));
-            _finishRefreshWhenDone();
+            rounds.settleIfDone();
           },
         );
   }
@@ -630,46 +620,13 @@ class FindMyController extends GetxController {
   FindMyRound? _roundOf(Response response) =>
       FindMyRound.tryParse(response.data is Map ? response.data['metadata'] : null);
 
-  /// The server says a round started or ended. The end of the round this page
-  /// is waiting on stops the rows still spinning: nothing more is coming. A
-  /// new round (another client's, or one started after the last ended) waits
-  /// again on everyone whose fix predates it.
-  void _handleRound(dynamic data) {
-    final round = FindMyRound.tryParse(data);
-    if (!_isAlive || round == null) return;
-    final progress = friendRefreshProgress.value;
-    if (round.collecting) {
-      final startedAt = round.startedAt;
-      if (round.id == null || startedAt == null || round.id == progress.roundId) return;
-      friendRefreshProgress.value = FindMyRefreshProgress.start(startedAt, roundId: round.id).withRoster(friends);
-      return;
-    }
-    if (progress.active && progress.isEndedBy(round)) _finishServerRound();
-  }
-
   void Function(Response) _applyFriends({required bool refreshed}) => (response) {
     try {
       final data = _dataOf(response);
       if (data != null) {
         final roster = data.map((e) => FindMyFriend.fromJson(e)).toList();
         _locationCache.rememberFriends(data.cast<Map<String, dynamic>>());
-        if (refreshed) {
-          final round = _roundOf(response);
-          final progress = friendRefreshProgress.value;
-          if (progress.isOlderThanFollowed(round)) {
-            // Built for a round the socket has since replaced: keep following the newer one
-            friendRefreshProgress.value = progress.withRoster(roster);
-          } else {
-            // A round rejoined part-way is measured from its own start, so
-            // friends who already reported in it do not spin again
-            if (round?.startedAt != null) {
-              friendRefreshProgress.value = FindMyRefreshProgress.start(round!.startedAt!, roundId: round.id);
-            }
-            friendRefreshProgress.value = friendRefreshProgress.value.withRoster(roster);
-            // A round that has ended sends nothing more, so no row should spin
-            if (round?.collecting == false) _finishServerRound();
-          }
-        }
+        if (refreshed) rounds.answer(_roundOf(response), roster);
         _showFriends(roster);
         _saveCacheSoon();
       }
