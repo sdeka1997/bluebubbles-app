@@ -18,9 +18,11 @@ Map<String, dynamic> friendJson(DateTime at, {bool locating = false}) => {
   "is_locating_in_progress": locating,
 };
 
-Map<String, dynamic> round({required bool collecting, DateTime? startedAt}) => {
+/// A round as the server announces it; [id] is left out, as servers before round ids send it.
+Map<String, dynamic> round({required bool collecting, DateTime? startedAt, int? id}) => {
   "collecting": collecting,
   "startedAt": (startedAt ?? roundStart).millisecondsSinceEpoch,
+  "id": ?id,
 };
 
 void main() {
@@ -105,6 +107,119 @@ void main() {
       async.flushMicrotasks();
 
       expect(spinning(controller), isFalse);
+    });
+  });
+
+  test("a round's end is matched by its id, not its start time", () {
+    fakeAsync((async) {
+      final friends = [friendJson(roundStart.subtract(const Duration(minutes: 9)))];
+      final controller = open(async, friends);
+      icloud.answer("refreshFriends", data: friends, metadata: round(collecting: true, id: 2));
+      async.flushMicrotasks();
+
+      // Round 1 started at the same moment, as far as clocks can tell; it is still not this round
+      EventDispatcherSvc.emit("findmy-round", round(collecting: false, id: 1));
+      async.flushMicrotasks();
+      expect(spinning(controller), isTrue);
+
+      EventDispatcherSvc.emit("findmy-round", round(collecting: false, id: 2));
+      async.flushMicrotasks();
+      expect(spinning(controller), isFalse);
+    });
+  });
+
+  test("a new round after the last one ended spins the rows it waits on again", () {
+    fakeAsync((async) {
+      final friends = [friendJson(roundStart.subtract(const Duration(minutes: 9)))];
+      final controller = open(async, friends);
+      icloud.answer("refreshFriends", data: friends, metadata: round(collecting: true, id: 1));
+      async.flushMicrotasks();
+      EventDispatcherSvc.emit("findmy-round", round(collecting: false, id: 1));
+      async.flushMicrotasks();
+      expect(spinning(controller), isFalse);
+
+      final next = roundStart.add(const Duration(minutes: 10));
+      EventDispatcherSvc.emit("findmy-round", round(collecting: true, id: 2, startedAt: next));
+      async.flushMicrotasks();
+      expect(controller.friendRefreshProgress.value.startedAt, next);
+      expect(spinning(controller), isTrue);
+    });
+  });
+
+  test("a round announced again does not restart the wait", () {
+    fakeAsync((async) {
+      final friends = [friendJson(roundStart.subtract(const Duration(minutes: 9)))];
+      final controller = open(async, friends);
+      icloud.answer("refreshFriends", data: friends, metadata: round(collecting: true, id: 1));
+      async.flushMicrotasks();
+      final before = controller.friendRefreshProgress.value;
+
+      EventDispatcherSvc.emit("findmy-round", round(collecting: true, id: 1));
+      async.flushMicrotasks();
+      expect(identical(controller.friendRefreshProgress.value, before), isTrue);
+    });
+  });
+
+  test("a refresh answer from an older round cannot pull the page back to it", () {
+    fakeAsync((async) {
+      final friends = [friendJson(roundStart.subtract(const Duration(minutes: 9)))];
+      final controller = open(async, friends);
+      final next = roundStart.add(const Duration(minutes: 10));
+      // Another client forced a new round; its socket event beat this page's own answer
+      EventDispatcherSvc.emit("findmy-round", round(collecting: true, id: 2, startedAt: next));
+      async.flushMicrotasks();
+      icloud.answer("refreshFriends", data: friends, metadata: round(collecting: true, id: 1));
+      async.flushMicrotasks();
+      expect(controller.friendRefreshProgress.value.roundId, 2);
+
+      EventDispatcherSvc.emit("findmy-round", round(collecting: false, id: 2, startedAt: next));
+      async.flushMicrotasks();
+      expect(spinning(controller), isFalse);
+    });
+  });
+
+  test("an older round's end in a late refresh answer does not stop a newer round", () {
+    fakeAsync((async) {
+      final friends = [friendJson(roundStart.subtract(const Duration(minutes: 9)))];
+      final controller = open(async, friends);
+      final next = roundStart.add(const Duration(minutes: 10));
+      EventDispatcherSvc.emit("findmy-round", round(collecting: true, id: 2, startedAt: next));
+      async.flushMicrotasks();
+      icloud.answer("refreshFriends", data: friends, metadata: round(collecting: false, id: 1));
+      async.flushMicrotasks();
+
+      expect(spinning(controller), isTrue);
+    });
+  });
+
+  test("the end of a later round also ends the one this page follows", () {
+    fakeAsync((async) {
+      final friends = [friendJson(roundStart.subtract(const Duration(minutes: 9)))];
+      final controller = open(async, friends);
+      icloud.answer("refreshFriends", data: friends, metadata: round(collecting: true, id: 1));
+      async.flushMicrotasks();
+
+      // Rounds run one after another, so round 2 ending means round 1 is long over
+      EventDispatcherSvc.emit("findmy-round", round(collecting: false, id: 2));
+      async.flushMicrotasks();
+      expect(spinning(controller), isFalse);
+    });
+  });
+
+  test("a round start without an id, from an older server, changes nothing", () {
+    fakeAsync((async) {
+      final friends = [friendJson(roundStart.subtract(const Duration(minutes: 9)))];
+      final controller = open(async, friends);
+      icloud.answer("refreshFriends", data: friends, metadata: round(collecting: true));
+      async.flushMicrotasks();
+      final before = controller.friendRefreshProgress.value;
+
+      EventDispatcherSvc.emit(
+        "findmy-round",
+        round(collecting: true, startedAt: roundStart.add(const Duration(minutes: 10))),
+      );
+      async.flushMicrotasks();
+      expect(identical(controller.friendRefreshProgress.value, before), isTrue);
     });
   });
 }

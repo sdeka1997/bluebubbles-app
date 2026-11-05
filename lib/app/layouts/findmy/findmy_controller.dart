@@ -614,15 +614,20 @@ class FindMyController extends GetxController {
       FindMyRound.tryParse(response.data is Map ? response.data['metadata'] : null);
 
   /// The server says a round started or ended. The end of the round this page
-  /// is waiting on stops the rows still spinning: nothing more is coming.
+  /// is waiting on stops the rows still spinning: nothing more is coming. A
+  /// new round (another client's, or one started after the last ended) waits
+  /// again on everyone whose fix predates it.
   void _handleRound(dynamic data) {
     final round = FindMyRound.tryParse(data);
+    if (!_isAlive || round == null) return;
     final progress = friendRefreshProgress.value;
-    if (!_isAlive || round == null || round.collecting || !progress.active) return;
-    if (round.startedAt != null && progress.startedAt != null && round.startedAt!.isBefore(progress.startedAt!)) {
+    if (round.collecting) {
+      final startedAt = round.startedAt;
+      if (round.id == null || startedAt == null || round.id == progress.roundId) return;
+      friendRefreshProgress.value = FindMyRefreshProgress.start(startedAt, roundId: round.id).withRoster(friends);
       return;
     }
-    _finishServerRound();
+    if (progress.active && progress.isEndedBy(round)) _finishServerRound();
   }
 
   void Function(Response) _applyFriends({required bool refreshed}) => (response) {
@@ -633,14 +638,20 @@ class FindMyController extends GetxController {
         _locationCache.rememberFriends(data.cast<Map<String, dynamic>>());
         if (refreshed) {
           final round = _roundOf(response);
-          // A round rejoined part-way is measured from its own start, so
-          // friends who already reported in it do not spin again
-          if (round?.startedAt != null) {
-            friendRefreshProgress.value = FindMyRefreshProgress.start(round!.startedAt!);
+          final progress = friendRefreshProgress.value;
+          if (progress.isOlderThanFollowed(round)) {
+            // Built for a round the socket has since replaced: keep following the newer one
+            friendRefreshProgress.value = progress.withRoster(roster);
+          } else {
+            // A round rejoined part-way is measured from its own start, so
+            // friends who already reported in it do not spin again
+            if (round?.startedAt != null) {
+              friendRefreshProgress.value = FindMyRefreshProgress.start(round!.startedAt!, roundId: round.id);
+            }
+            friendRefreshProgress.value = friendRefreshProgress.value.withRoster(roster);
+            // A round that has ended sends nothing more, so no row should spin
+            if (round?.collecting == false) _finishServerRound();
           }
-          friendRefreshProgress.value = friendRefreshProgress.value.withRoster(roster);
-          // A round that has ended sends nothing more, so no row should spin
-          if (round?.collecting == false) _finishServerRound();
         }
         _showFriends(roster);
         _saveCacheSoon();

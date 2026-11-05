@@ -156,4 +156,11 @@ void main() {
       expect(progress.allReported, isTrue);
     });
   });
+
+  test("a round from the server carries its id and how it ended", () {
+    final round = FindMyRound.tryParse({"collecting": false, "startedAt": 1000, "id": 7, "endedBy": "quiet"})!;
+    expect(round.id, 7);
+    expect(round.endedBy, "quiet");
+    expect(FindMyRound.tryParse({"collecting": true, "startedAt": 1000})!.id, isNull, reason: "servers before round ids");
+  });
 }
