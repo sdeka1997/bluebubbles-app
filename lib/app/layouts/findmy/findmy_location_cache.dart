@@ -49,6 +49,20 @@ class FindMyCachedLocation {
   };
 }
 
+/// Returns a cache record only when Apple supplied both usable coordinates and
+/// their real fix time. An unknown-age fix must never be promoted to "now".
+FindMyCachedLocation? cachedLocationForFriend(FindMyFriend friend) {
+  final updatedAt = friend.lastUpdated;
+  if (updatedAt == null || !hasUsableFindMyLocation(friend)) return null;
+  return FindMyCachedLocation(
+    latitude: friend.latitude!,
+    longitude: friend.longitude!,
+    timestamp: updatedAt.millisecondsSinceEpoch,
+    label: friend.shortAddress,
+    fullAddress: friend.longAddress,
+  );
+}
+
 /// Returns [friend] showing [cached] in place of its missing location.
 FindMyFriend friendWithCachedLocation(FindMyFriend friend, FindMyCachedLocation cached) => FindMyFriend(
   latitude: cached.latitude,

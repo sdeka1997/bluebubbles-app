@@ -3,6 +3,7 @@ import "dart:convert";
 
 import "package:bluebubbles/app/layouts/findmy/findmy_controller.dart";
 import "package:bluebubbles/app/layouts/findmy/findmy_load_state.dart";
+import "package:bluebubbles/app/layouts/findmy/findmy_refresh_progress.dart";
 import "package:bluebubbles/services/services.dart";
 import "package:fake_async/fake_async.dart";
 import "package:flutter/services.dart" show PlatformException;
@@ -195,6 +196,27 @@ void main() {
 
       expect(controller.friendsState.value.load, FindMyLoad.failed);
       expect(controller.devices.map((d) => d.id), ["phone"]);
+    });
+  });
+
+  test("a failed refresh returns to idle Apple locating state", () {
+    fakeAsync((async) {
+      final locating = <String, dynamic>{
+        "coordinates": [33.0, -96.0],
+        "last_updated": DateTime(2026, 1, 1).millisecondsSinceEpoch,
+        "is_locating_in_progress": true,
+      };
+      final controller = Get.put(FindMyController());
+      async.flushMicrotasks();
+      icloud.answer("getFriends", data: [locating]);
+      icloud.answer("getDevices");
+      async.flushMicrotasks();
+      icloud.fail("refreshFriends");
+      icloud.answer("refreshDevices");
+      async.flushMicrotasks();
+
+      expect(controller.friendRefreshProgress.value.active, isFalse);
+      expect(findMyFriendRowSpinning(controller.friendRefreshProgress.value, controller.friends.single), isTrue);
     });
   });
 

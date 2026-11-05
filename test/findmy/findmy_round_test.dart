@@ -11,10 +11,11 @@ import "findmy_test_support.dart";
 final roundStart = DateTime(2026, 11, 5, 1);
 
 /// A friend whose fix was taken [at]. No address: one would need the handle database.
-Map<String, dynamic> friendJson(DateTime at) => {
+Map<String, dynamic> friendJson(DateTime at, {bool locating = false}) => {
   "coordinates": [33.02, -96.70],
   "short_address": "Plano, TX",
   "last_updated": at.millisecondsSinceEpoch,
+  "is_locating_in_progress": locating,
 };
 
 Map<String, dynamic> round({required bool collecting, DateTime? startedAt}) => {
@@ -67,7 +68,7 @@ void main() {
 
   test("the round ending stops the rows still waiting", () {
     fakeAsync((async) {
-      final friends = [friendJson(roundStart.subtract(const Duration(minutes: 9)))];
+      final friends = [friendJson(roundStart.subtract(const Duration(minutes: 9)), locating: true)];
       final controller = open(async, friends);
       icloud.answer("refreshFriends", data: friends, metadata: round(collecting: true));
       async.flushMicrotasks();

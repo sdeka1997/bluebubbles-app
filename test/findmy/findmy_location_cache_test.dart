@@ -1,5 +1,6 @@
 import "package:bluebubbles/app/layouts/findmy/findmy_controller.dart";
 import "package:bluebubbles/app/layouts/findmy/findmy_location_cache.dart";
+import "package:bluebubbles/database/models.dart";
 import "package:bluebubbles/services/services.dart";
 import "package:fake_async/fake_async.dart";
 import "package:flutter_test/flutter_test.dart" hide EventDispatcher;
@@ -32,6 +33,25 @@ void main() {
       expect(prefs().writes, 1);
       expect(prefs().saved, contains("phone"));
     });
+  });
+
+  test("an undated friend fix is not cacheable", () {
+    final undated = FindMyFriend(
+      latitude: 44,
+      longitude: -77,
+      longAddress: null,
+      shortAddress: null,
+      title: null,
+      subtitle: null,
+      handle: null,
+      handleAddress: "friend@example.com",
+      lastUpdated: null,
+      status: LocationStatus.live,
+      locatingInProgress: false,
+      favoriteOrder: null,
+    );
+
+    expect(cachedLocationForFriend(undated), isNull);
   });
 
   test("leaving the page writes what is still waiting", () {

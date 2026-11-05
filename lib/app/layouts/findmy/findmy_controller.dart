@@ -20,6 +20,7 @@ import 'package:bluebubbles/app/components/avatars/contact_avatar_widget.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_contact.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_friend_sort.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_friend_update.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_format.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_load_state.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_cache.dart';
@@ -140,16 +141,16 @@ class FindMyController extends GetxController {
 
   bool get _isAlive => !isClosed;
 
-  /// Ends the refresh window once the session's requests have settled and
-  /// every friend it waits on has reported.
+  /// Returns to ordinary idle state once this app session has settled. This is
+  /// not evidence that Apple's server round ended, so raw locating state stays.
   void _finishRefreshWhenDone() {
     final progress = friendRefreshProgress.value;
     if (!progress.active || _pendingRequests.value > 0 || !progress.allReported) return;
-    _finishRefresh();
+    friendRefreshProgress.value = FindMyRefreshProgress.idle();
   }
 
-  void _finishRefresh() {
-    friendRefreshProgress.value = friendRefreshProgress.value.finish();
+  void _finishServerRound() {
+    friendRefreshProgress.value = friendRefreshProgress.value.finishRound();
   }
 
   /// While this screen is open, the server keeps publishing locations as Find
@@ -395,17 +396,9 @@ class FindMyController extends GetxController {
     return source.map((friend) {
       final key = friend.stableId;
       if (key == null) return friend;
-      if (hasUsableFindMyLocation(friend)) {
-        _locationCache.remember(
-          'friend:$key',
-          FindMyCachedLocation(
-            latitude: friend.latitude!,
-            longitude: friend.longitude!,
-            timestamp: (friend.lastUpdated ?? DateTime.now()).millisecondsSinceEpoch,
-            label: friend.shortAddress,
-            fullAddress: friend.longAddress,
-          ),
-        );
+      final cacheable = cachedLocationForFriend(friend);
+      if (cacheable != null) {
+        _locationCache.remember('friend:$key', cacheable);
       }
       return newestFriendLocation(friend, _locationCache['friend:$key']);
     }).toList();
@@ -450,13 +443,8 @@ class FindMyController extends GetxController {
 
       final existingFriendIndex = friends.indexWhere((e) => e.stableId != null && e.stableId == friend.stableId);
       final existingFriend = existingFriendIndex == -1 ? null : friends[existingFriendIndex];
-
       final shouldUpdate =
-          existingFriend == null ||
-          existingFriend.status == null ||
-          friend.locatingInProgress ||
-          LocationStatus.values.indexOf(existingFriend.status!) <=
-              LocationStatus.values.indexOf(friend.status ?? LocationStatus.legacy);
+          existingFriend == null || shouldAcceptFindMyFriendUpdate(existingFriend, friend);
 
       if (shouldUpdate) {
         Logger.info("Updating map for ${friend.stableId}");
@@ -634,7 +622,7 @@ class FindMyController extends GetxController {
     if (round.startedAt != null && progress.startedAt != null && round.startedAt!.isBefore(progress.startedAt!)) {
       return;
     }
-    _finishRefresh();
+    _finishServerRound();
   }
 
   void Function(Response) _applyFriends({required bool refreshed}) => (response) {
@@ -652,7 +640,7 @@ class FindMyController extends GetxController {
           }
           friendRefreshProgress.value = friendRefreshProgress.value.withRoster(roster);
           // A round that has ended sends nothing more, so no row should spin
-          if (round?.collecting == false) _finishRefresh();
+          if (round?.collecting == false) _finishServerRound();
         }
         _showFriends(roster);
         _saveCacheSoon();

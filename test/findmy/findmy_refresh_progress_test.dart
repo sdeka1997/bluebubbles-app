@@ -99,11 +99,12 @@ void main() {
     expect(findMyFriendRowSpinning(progress.withEvent(push("stale")), stale), isFalse);
   });
 
-  test("outside a refresh, a row spins only while Apple is still locating", () {
-    final finished = FindMyRefreshProgress.start(startedAt).finish();
+  test("an authoritative round finish clears its row spinners", () {
+    final finished = FindMyRefreshProgress.start(startedAt).finishRound();
     expect(findMyFriendRowSpinning(finished, friend(rawAddress: "bob", lastUpdated: before)), isFalse);
-    expect(findMyFriendRowSpinning(finished, friend(rawAddress: "bob", locating: true)), isTrue);
+    expect(findMyFriendRowSpinning(finished, friend(rawAddress: "bob", locating: true)), isFalse);
     expect(findMyFriendRowSpinning(FindMyRefreshProgress.idle(), friend(rawAddress: "alice")), isFalse);
+    expect(findMyFriendRowSpinning(FindMyRefreshProgress.idle(), friend(rawAddress: "alice", locating: true)), isTrue);
   });
 
   test("matches a hydrated-only roster entry with a raw-only event", () {

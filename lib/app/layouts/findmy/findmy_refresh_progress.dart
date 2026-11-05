@@ -12,18 +12,25 @@ String? _usable(String? value) {
 class FindMyRefreshProgress {
   const FindMyRefreshProgress._({
     required this.active,
+    required this.finished,
     required this.startedAt,
     required this.awaitedIds,
     required this.reportedIds,
   });
 
   factory FindMyRefreshProgress.idle() =>
-      const FindMyRefreshProgress._(active: false, startedAt: null, awaitedIds: {}, reportedIds: {});
+      const FindMyRefreshProgress._(active: false, finished: false, startedAt: null, awaitedIds: {}, reportedIds: {});
 
-  factory FindMyRefreshProgress.start(DateTime startedAt) =>
-      FindMyRefreshProgress._(active: true, startedAt: startedAt, awaitedIds: const {}, reportedIds: const {});
+  factory FindMyRefreshProgress.start(DateTime startedAt) => FindMyRefreshProgress._(
+    active: true,
+    finished: false,
+    startedAt: startedAt,
+    awaitedIds: const {},
+    reportedIds: const {},
+  );
 
   final bool active;
+  final bool finished;
   final DateTime? startedAt;
 
   /// Friends whose location predated this refresh, or whom Apple was still
@@ -43,6 +50,7 @@ class FindMyRefreshProgress {
 
   FindMyRefreshProgress withRoster(Iterable<FindMyFriend> roster) => FindMyRefreshProgress._(
     active: active,
+    finished: finished,
     startedAt: startedAt,
     awaitedIds: Set.unmodifiable(roster.where(_awaits).map((friend) => friend.stableId).whereType<String>()),
     reportedIds: reportedIds,
@@ -55,20 +63,29 @@ class FindMyRefreshProgress {
     if (!active || usableId == null || _awaits(friend)) return this;
     return FindMyRefreshProgress._(
       active: active,
+      finished: finished,
       startedAt: startedAt,
       awaitedIds: awaitedIds,
       reportedIds: Set.unmodifiable({...reportedIds, usableId}),
     );
   }
 
-  FindMyRefreshProgress finish() =>
-      FindMyRefreshProgress._(active: false, startedAt: startedAt, awaitedIds: awaitedIds, reportedIds: reportedIds);
+  /// The server authoritatively ended this round; cached Apple locating flags
+  /// from its final payload must not keep rows spinning.
+  FindMyRefreshProgress finishRound() => FindMyRefreshProgress._(
+    active: false,
+    finished: true,
+    startedAt: startedAt,
+    awaitedIds: awaitedIds,
+    reportedIds: reportedIds,
+  );
 }
 
-/// Whether a friend's row shows a spinner where its distance goes. During a
-/// refresh that lasts until a friend whose fix predates the refresh reports;
-/// outside one, only while Apple is still locating them.
+/// Whether a friend's row shows a spinner where its distance goes. A server
+/// round's finish is authoritative; outside a round, Apple's raw locating flag
+/// is still shown independently.
 bool findMyFriendRowSpinning(FindMyRefreshProgress progress, FindMyFriend friend) {
+  if (progress.finished) return false;
   if (!progress.active) return friend.locatingInProgress;
   final id = friend.stableId;
   if (id != null && progress.reportedIds.contains(id)) return false;
