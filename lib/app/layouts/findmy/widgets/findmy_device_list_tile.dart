@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:maps_launcher/maps_launcher.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_selection.dart';
 
 class FindMyDeviceListTile extends StatelessWidget {
   final FindMyDevice item;
@@ -42,13 +43,14 @@ class FindMyDeviceListTile extends StatelessWidget {
       final hasFullAddress = fullAddress?.isNotEmpty ?? false;
       final markerPoint = hasUsableCoordinates ? controller.markerPointForDevice(item) : null;
       final canOpenMaps = markerPoint != null || hasFullAddress;
-      final markerKey = 'device-${controller.markerIdentityForDevice(item)}';
-      final selected = controller.isSelected(markerKey);
+      final selection = FindMySelection.device(controller.markerIdentityForDevice(item));
+      final markerKey = selection.markerKey;
+      final selected = controller.isSelected(selection);
       final distance = hasUsableCoordinates
           ? controller.distanceLabelTo(LatLng(item.location!.latitude!, item.location!.longitude!))
           : null;
 
-      Future<void> select() => controller.selectMarker(markerKey, markerPoint!);
+      Future<void> select() => controller.select(selection, markerPoint!);
 
       void showRawData() => showDialog(
         context: context,

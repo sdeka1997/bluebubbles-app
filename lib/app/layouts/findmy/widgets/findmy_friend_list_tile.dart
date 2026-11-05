@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:maps_launcher/maps_launcher.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_selection.dart';
 
 class FindMyFriendListTile extends StatelessWidget {
   final FindMyFriend item;
@@ -42,8 +43,9 @@ class FindMyFriendListTile extends StatelessWidget {
 
       final hasLocation = item.latitude != null && item.longitude != null;
       final markerPoint = hasLocation ? controller.markerPointForFriend(item) : null;
-      final markerKey = 'friend-${controller.markerIdentityForFriend(item)}';
-      final selected = controller.isSelected(markerKey);
+      final selection = FindMySelection.ofFriend(item);
+      final markerKey = selection.markerKey;
+      final selected = controller.isSelected(selection);
       final distance = hasLocation && withLocation
           ? controller.distanceLabelTo(LatLng(item.latitude!, item.longitude!))
           : null;
@@ -73,7 +75,7 @@ class FindMyFriendListTile extends StatelessWidget {
         ],
       );
 
-      Future<void> select() => controller.selectMarker(markerKey, markerPoint!);
+      Future<void> select() => controller.select(selection, markerPoint!);
 
       void showRawData() => showDialog(
         context: context,

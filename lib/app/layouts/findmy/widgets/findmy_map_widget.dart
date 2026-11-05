@@ -13,6 +13,7 @@ import 'package:flutter_map_marker_popup/flutter_map_marker_popup.dart';
 import 'package:get/get.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_selection.dart';
 
 class FindMyMapWidget extends StatefulWidget {
   final FindMyController controller;
@@ -190,8 +191,8 @@ class _FindMyMapWidgetState extends State<FindMyMapWidget> {
       if (points.isNotEmpty) controller.focusMarkerGroup(points);
       return;
     }
-    if (key == 'current') return;
-    controller.selectMarker(key, marker.point);
+    final selected = FindMySelection.fromMarkerKey(key);
+    if (selected != null) controller.select(selected, marker.point);
   }
 
   /// One zoom-dependent collision capsule: show up to two member icons,

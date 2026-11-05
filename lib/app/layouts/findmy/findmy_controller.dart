@@ -27,6 +27,7 @@ import 'package:bluebubbles/app/layouts/findmy/findmy_location_cache.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_panel.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_refresh_progress.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_scroll.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_selection.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_tiles.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_products.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_clipper.dart';
@@ -68,7 +69,8 @@ class FindMyController extends GetxController {
   final RxList<FindMyFriend> friendsWithLocation = <FindMyFriend>[].obs;
   final RxList<FindMyFriend> friendsWithoutLocation = <FindMyFriend>[].obs;
   final RxMap<String, Marker> markers = <String, Marker>{}.obs;
-  final RxnString selectedMarkerKey = RxnString();
+  /// The selected person or product; see [FindMySelection].
+  final Rxn<FindMySelection> selection = Rxn<FindMySelection>();
   final Map<String, GlobalKey> _rowKeys = <String, GlobalKey>{};
   final Map<String, Future<ContactV2?>> _contactLookups = <String, Future<ContactV2?>>{};
   final Set<String> _friendMarkerKeys = <String>{};
@@ -323,20 +325,35 @@ class FindMyController extends GetxController {
 
   GlobalKey rowKeyFor(String markerKey) => _rowKeys.putIfAbsent(markerKey, GlobalKey.new);
 
-  bool isSelected(String markerKey) => selectedMarkerKey.value == markerKey;
+  bool isSelected(FindMySelection candidate) => selection.value == candidate;
+
+  /// Apple's address for the selected friend, which a live location request
+  /// names; null when nobody, a device, or a friend without one is selected.
+  /// A selection read back from a map pin carries only the identity, so the
+  /// address comes from the friend shown under it.
+  String? get selectedFriendHandle {
+    final selected = selection.value;
+    if (selected == null || selected.kind != FindMySelectionKind.friend) return null;
+    if (selected.handle != null) return selected.handle;
+    for (final friend in friends) {
+      if (FindMySelection.ofFriend(friend) == selected) return friend.stableId;
+    }
+    return null;
+  }
 
   void clearSelection() {
-    if (selectedMarkerKey.value == null) return;
-    selectedMarkerKey.value = null;
+    if (selection.value == null) return;
+    selection.value = null;
     _rebuildAllMarkers();
   }
 
   /// Selects one logical entity from either its map marker or drawer row.
-  Future<void> selectMarker(String markerKey, LatLng point) async {
+  Future<void> select(FindMySelection selected, LatLng point) async {
     final selectedTab = tabIndex.value;
-    bool selectionIsCurrent() => _isAlive && selectedMarkerKey.value == markerKey && tabIndex.value == selectedTab;
+    final markerKey = selected.markerKey;
+    bool selectionIsCurrent() => _isAlive && selection.value == selected && tabIndex.value == selectedTab;
 
-    selectedMarkerKey.value = markerKey;
+    selection.value = selected;
     _rebuildAllMarkers();
     popupController.hideAllPopups();
     await completer.future;
@@ -850,7 +867,7 @@ class FindMyController extends GetxController {
         .where((entry) => (tabIndex.value == 0 && entry.key == 'current') || visibleKeys.contains(entry.key))
         .map((entry) => entry.value)
         .toList();
-    final selected = selectedMarkerKey.value;
+    final selected = selection.value?.markerKey;
     if (selected != null) {
       visible.sort((a, b) {
         final aSelected = (a.key as ValueKey?)?.value == selected;
@@ -863,7 +880,7 @@ class FindMyController extends GetxController {
 
   void buildDeviceMarker(FindMyDevice e) {
     final markerKey = markerIdentityForDevice(e);
-    final selected = isSelected('device-$markerKey');
+    final selected = isSelected(FindMySelection.device(markerKey));
     _deviceMarkerKeys.add(markerKey);
     markers[markerKey] = Marker(
       key: ValueKey('device-$markerKey'),
@@ -897,7 +914,7 @@ class FindMyController extends GetxController {
 
   void buildFriendMarker(FindMyFriend friend) {
     final markerKey = markerIdentityForFriend(friend);
-    final selected = isSelected('friend-$markerKey');
+    final selected = isSelected(FindMySelection.ofFriend(friend));
     _friendMarkerKeys.add(markerKey);
     markers[markerKey] = Marker(
       key: ValueKey('friend-$markerKey'),
