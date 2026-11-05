@@ -442,7 +442,7 @@ class FindMyController extends GetxController {
       Logger.info("Received new location for ${friend.handle?.address}");
       // Keep the last known good location when Apple pushes a no-fix or malformed update.
       if (!hasUsableFindMyLocation(friend)) return;
-      friendRefreshProgress.value = friendRefreshProgress.value.withUsableEvent(friend.stableId);
+      friendRefreshProgress.value = friendRefreshProgress.value.withEvent(friend);
       _finishRefreshWhenDone();
       _withCachedFriendLocations([friend]);
       _saveCacheSoon();

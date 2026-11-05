@@ -48,9 +48,11 @@ class FindMyRefreshProgress {
     reportedIds: reportedIds,
   );
 
-  FindMyRefreshProgress withUsableEvent(String? id) {
-    final usableId = _usable(id);
-    if (!active || usableId == null) return this;
+  /// Records a pushed location. It ends [friend]'s wait only when its fix was
+  /// taken after this refresh began, the same rule that decides who is waited on.
+  FindMyRefreshProgress withEvent(FindMyFriend friend) {
+    final usableId = _usable(friend.stableId);
+    if (!active || usableId == null || _awaits(friend)) return this;
     return FindMyRefreshProgress._(
       active: active,
       startedAt: startedAt,

@@ -28,6 +28,10 @@ FindMyFriend friend({
   favoriteOrder: null,
 );
 
+/// A pushed location for [address] whose fix was taken at [at] (after the refresh began unless given).
+FindMyFriend push(String? address, {DateTime? at, bool locating = false}) =>
+    friend(rawAddress: address, lastUpdated: at ?? after, locating: locating);
+
 void main() {
   group("findMyFriendIdentity", () {
     test("is the provider address, raw or hydrated", () {
@@ -55,8 +59,8 @@ void main() {
     ]);
 
     expect(progress.allReported, isFalse);
-    expect(progress.withUsableEvent("stale").allReported, isFalse);
-    expect(progress.withUsableEvent("stale").withUsableEvent("unknown").allReported, isTrue);
+    expect(progress.withEvent(push("stale")).allReported, isFalse);
+    expect(progress.withEvent(push("stale")).withEvent(push("unknown")).allReported, isTrue);
   });
 
   test("a friend Apple is still locating is waited on even with a fresh fix", () {
@@ -64,21 +68,21 @@ void main() {
       friend(rawAddress: "locating", lastUpdated: after, locating: true),
     ]);
     expect(progress.allReported, isFalse);
-    expect(progress.withUsableEvent("locating").allReported, isTrue);
+    expect(progress.withEvent(push("locating")).allReported, isTrue);
   });
 
   test("counts an event that arrives before the roster", () {
     final progress = FindMyRefreshProgress.start(
       startedAt,
-    ).withUsableEvent("alice").withRoster([friend(rawAddress: "alice", lastUpdated: before)]);
+    ).withEvent(push("alice")).withRoster([friend(rawAddress: "alice", lastUpdated: before)]);
     expect(progress.allReported, isTrue);
   });
 
   test("ignores blank identifiers and friends without an address", () {
     final progress = FindMyRefreshProgress.start(startedAt)
         .withRoster([friend(title: "No address", lastUpdated: before)])
-        .withUsableEvent("")
-        .withUsableEvent(null);
+        .withEvent(push(""))
+        .withEvent(push(null));
     expect(progress.allReported, isTrue);
   });
 
@@ -92,7 +96,7 @@ void main() {
     expect(findMyFriendRowSpinning(progress, never), isTrue);
     expect(findMyFriendRowSpinning(progress, fresh), isFalse);
     // A stale fix that has reported in this refresh shows its distance.
-    expect(findMyFriendRowSpinning(progress.withUsableEvent("stale"), stale), isFalse);
+    expect(findMyFriendRowSpinning(progress.withEvent(push("stale")), stale), isFalse);
   });
 
   test("outside a refresh, a row spins only while Apple is still locating", () {
@@ -105,7 +109,30 @@ void main() {
   test("matches a hydrated-only roster entry with a raw-only event", () {
     final progress = FindMyRefreshProgress.start(startedAt)
         .withRoster([friend(hydratedAddress: "alice", lastUpdated: before)])
-        .withUsableEvent(friend(rawAddress: "alice").stableId);
+        .withEvent(push("alice"));
     expect(progress.allReported, isTrue);
+  });
+
+  test("a pushed fix older than the refresh does not end that friend's wait", () {
+    final stale = friend(rawAddress: "stale", lastUpdated: before);
+    final progress = FindMyRefreshProgress.start(startedAt).withRoster([stale]).withEvent(push("stale", at: before));
+    expect(progress.allReported, isFalse);
+    expect(findMyFriendRowSpinning(progress, stale), isTrue);
+  });
+
+  test("a pushed fix Apple is still locating does not end that friend's wait", () {
+    final stale = friend(rawAddress: "stale", lastUpdated: before);
+    final progress = FindMyRefreshProgress.start(
+      startedAt,
+    ).withRoster([stale]).withEvent(push("stale", locating: true));
+    expect(progress.allReported, isFalse);
+    expect(findMyFriendRowSpinning(progress, stale), isTrue);
+  });
+
+  test("a pushed fix newer than the refresh ends that friend's wait", () {
+    final stale = friend(rawAddress: "stale", lastUpdated: before);
+    final progress = FindMyRefreshProgress.start(startedAt).withRoster([stale]).withEvent(push("stale"));
+    expect(progress.allReported, isTrue);
+    expect(findMyFriendRowSpinning(progress, stale), isFalse);
   });
 }
