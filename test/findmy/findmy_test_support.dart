@@ -60,6 +60,9 @@ class FakeICloudApi extends iCloudApi {
   final Map<String, List<Completer<Response>>> requests = {};
   final Map<String, List<CancelToken?>> tokens = {};
 
+  /// Whether each refresh asked the server to skip its cooldown, in order.
+  final Map<String, List<bool>> forced = {};
+
   /// Off models a transport that never noticed the cancel, so a request can
   /// still answer after the page gave up on it.
   bool honourCancel = true;
@@ -79,13 +82,13 @@ class FakeICloudApi extends iCloudApi {
 
   int pending(String name) => requests[name]?.where((c) => !c.isCompleted).length ?? 0;
 
-  void answer(String name, {Object data = const []}) => requests[name]!
+  void answer(String name, {Object data = const [], Map<String, dynamic>? metadata}) => requests[name]!
       .firstWhere((c) => !c.isCompleted)
       .complete(
         Response(
           requestOptions: RequestOptions(path: ""),
           statusCode: 200,
-          data: {"data": data},
+          data: {"data": data, "metadata": ?metadata},
         ),
       );
 
@@ -94,13 +97,19 @@ class FakeICloudApi extends iCloudApi {
       .completeError(DioException.connectionError(requestOptions: RequestOptions(path: name), reason: 'offline'));
 
   @override
-  Future<Response> refreshFriends({CancelToken? cancelToken}) => _request("refreshFriends", cancelToken);
+  Future<Response> refreshFriends({CancelToken? cancelToken, bool force = false}) {
+    forced.putIfAbsent("refreshFriends", () => []).add(force);
+    return _request("refreshFriends", cancelToken);
+  }
 
   @override
   Future<Response> getFriends({CancelToken? cancelToken}) => _request("getFriends", cancelToken);
 
   @override
-  Future<Response> refreshDevices({CancelToken? cancelToken}) => _request("refreshDevices", cancelToken);
+  Future<Response> refreshDevices({CancelToken? cancelToken, bool force = false}) {
+    forced.putIfAbsent("refreshDevices", () => []).add(force);
+    return _request("refreshDevices", cancelToken);
+  }
 
   @override
   Future<Response> getDevices({CancelToken? cancelToken}) => _request("getDevices", cancelToken);

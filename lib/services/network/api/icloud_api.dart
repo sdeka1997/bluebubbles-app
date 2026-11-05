@@ -19,12 +19,13 @@ class iCloudApi {
     });
   }
 
-  /// Refresh FindMy devices on server
-  Future<Response> refreshDevices({CancelToken? cancelToken}) async {
+  /// Refresh FindMy devices on server; [force] relaunches Find My even within
+  /// the server's cooldown
+  Future<Response> refreshDevices({CancelToken? cancelToken, bool force = false}) async {
     return _svc.runApiGuarded(() async {
       final response = await _svc.dio.post(
         "${_svc.apiRoot}/icloud/findmy/devices/refresh",
-        queryParameters: _svc.buildQueryParams(),
+        queryParameters: _svc.buildQueryParams({if (force) "force": "true"}),
         cancelToken: cancelToken,
         options: Options(
           receiveTimeout: _svc.dio.options.receiveTimeout! * 12,
@@ -47,12 +48,13 @@ class iCloudApi {
     });
   }
 
-  /// Refresh FindMy friends on server
-  Future<Response> refreshFriends({CancelToken? cancelToken}) async {
+  /// Refresh FindMy friends on server; [force] relaunches Find My even within
+  /// the server's cooldown
+  Future<Response> refreshFriends({CancelToken? cancelToken, bool force = false}) async {
     return _svc.runApiGuarded(() async {
       final response = await _svc.dio.post(
         "${_svc.apiRoot}/icloud/findmy/friends/refresh",
-        queryParameters: _svc.buildQueryParams(),
+        queryParameters: _svc.buildQueryParams({if (force) "force": "true"}),
         cancelToken: cancelToken,
       );
       return _svc.returnSuccessOrError(response);

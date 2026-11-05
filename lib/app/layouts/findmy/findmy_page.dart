@@ -94,6 +94,7 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
                   child: Stack(
                     children: [
                       FindMyMapWidget(controller: controller),
+                      if (!context.samsung) _buildRefreshButton(context),
                       if (kIsDesktop) _buildDesktopTitleBar(context),
                     ],
                   ),
@@ -360,6 +361,7 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
                   child: buildBackButton(context, padding: const EdgeInsets.only(right: 2)),
                 ),
               ),
+            if (!context.samsung) _buildRefreshButton(context),
             if (kIsDesktop) _buildDesktopTitleBar(context),
           ],
         ),
@@ -420,6 +422,39 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
       ),
     );
   }
+
+  /// The round refresh button relaunches Find My on the server even within its
+  /// cooldown; it spins until the server has answered.
+  Widget _buildRefreshButton(BuildContext context) {
+    return Positioned(
+      top: findMyMapButtonInset + (kIsDesktop ? appWindow.titleBarHeight : MediaQuery.of(context).padding.top),
+      right: 20,
+      child: Obx(
+        () => Container(
+          width: findMyMapButtonSize,
+          height: findMyMapButtonSize,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.9),
+          ),
+          child: SizedBox(width: 48, child: _refreshIcon(context)),
+        ),
+      ),
+    );
+  }
+
+  Widget _refreshIcon(BuildContext context) => controller.isRefreshing
+      ? Semantics(liveRegion: true, label: "Updating locations", child: buildProgressIndicator(context))
+      : IconButton(
+          iconSize: 22,
+          tooltip: "Refresh locations",
+          icon: Icon(
+            context.iOS ? CupertinoIcons.arrow_counterclockwise : Icons.refresh,
+            color: context.theme.colorScheme.onSurface,
+            size: 22,
+          ),
+          onPressed: controller.refreshLocations,
+        );
 
   Widget _buildDesktopTitleBar(BuildContext context) {
     return SizedBox(
@@ -505,6 +540,25 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
                     child: SizedBox(
                       height: 50,
                       child: Align(alignment: Alignment.centerLeft, child: buildBackButton(context)),
+                    ),
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.bottomRight,
+                  child: SizedBox(
+                    height: 50,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      // The header is built inside a LayoutBuilder, outside the page's
+                      // Obx, so the button tracks the refresh state itself.
+                      child: Obx(
+                        () => Container(
+                          width: 48,
+                          height: 48,
+                          margin: const EdgeInsets.only(right: 8),
+                          child: _refreshIcon(context),
+                        ),
+                      ),
                     ),
                   ),
                 ),

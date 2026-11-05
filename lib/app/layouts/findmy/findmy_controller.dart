@@ -166,7 +166,7 @@ class FindMyController extends GetxController {
   void onAppResumed() {
     if (!_isAlive) return;
     _reportScreen(true);
-    refreshLocations();
+    _refresh(force: false);
   }
 
   /// Leaving the app counts as closing the screen.
@@ -500,12 +500,19 @@ class FindMyController extends GetxController {
   final List<CancelToken> _sessionTokens = [];
   final RxInt _pendingRequests = 0.obs;
 
-  /// Asks the server to locate friends and devices. Ignored while one such
-  /// request is still waiting on the server; otherwise replaces whatever load
-  /// is running.
-  void refreshLocations() {
+  /// Whether the refresh button shows as busy: until the server has answered.
+  /// Rows show who is still coming after that.
+  bool get isRefreshing => _pendingRequests.value > 0;
+
+  /// The refresh button: asks the server to locate friends and devices,
+  /// relaunching Find My even within the server's cooldown.
+  void refreshLocations() => _refresh(force: true);
+
+  /// Ignored while a refresh is still waiting on the server; otherwise
+  /// replaces whatever load is running.
+  void _refresh({required bool force}) {
     if (_manualSession && _pendingRequests.value > 0) return;
-    _startSession(manual: true);
+    _startSession(manual: true, force: force);
   }
 
   /// The opening load: shows what was saved last time at once, reads the
@@ -519,7 +526,7 @@ class FindMyController extends GetxController {
   /// One load of friends and devices. A refresh has no time limit: each
   /// friend's row spins until their new location arrives over the socket, or
   /// until the screen closes, since Apple reports people over minutes.
-  void _startSession({required bool manual}) {
+  void _startSession({required bool manual, bool force = false}) {
     if (!_isAlive) return;
     _cancelSession();
     final generation = ++_generation;
@@ -534,12 +541,17 @@ class FindMyController extends GetxController {
     void locateFriends() => _request(
       generation,
       friendsState,
-      HttpSvc.icloud.refreshFriends,
+      ({cancelToken}) => HttpSvc.icloud.refreshFriends(cancelToken: cancelToken, force: force),
       friendRefreshDeadline,
       _applyFriends(refreshed: true),
     );
-    void locateDevices() =>
-        _request(generation, devicesState, HttpSvc.icloud.refreshDevices, deviceRefreshDeadline, _applyDevices);
+    void locateDevices() => _request(
+      generation,
+      devicesState,
+      ({cancelToken}) => HttpSvc.icloud.refreshDevices(cancelToken: cancelToken, force: force),
+      deviceRefreshDeadline,
+      _applyDevices,
+    );
     if (manual) {
       locateFriends();
       locateDevices();
@@ -607,6 +619,13 @@ class FindMyController extends GetxController {
   /// device refresh endpoint of some server versions answers without data).
   List? _dataOf(Response response) => response.data is Map ? response.data['data'] as List? : null;
 
+  /// Whether the server says new locations follow over the socket; null from
+  /// servers that do not say.
+  bool? _isCollecting(Response response) {
+    final metadata = response.data is Map ? response.data['metadata'] : null;
+    return metadata is Map ? metadata['collecting'] as bool? : null;
+  }
+
   void Function(Response) _applyFriends({required bool refreshed}) => (response) {
     try {
       final data = _dataOf(response);
@@ -615,6 +634,9 @@ class FindMyController extends GetxController {
         _locationCache.rememberFriends(data.cast<Map<String, dynamic>>());
         if (refreshed) {
           friendRefreshProgress.value = friendRefreshProgress.value.withRoster(roster);
+          // Within the server's cooldown Find My stays closed, so nobody's
+          // location is on its way and no row should spin
+          if (_isCollecting(response) == false) _finishRefresh();
         }
         _showFriends(roster);
         _saveCacheSoon();
