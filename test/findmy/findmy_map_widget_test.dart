@@ -79,6 +79,7 @@ void main() {
     icloud.answer('getDevices');
     await tester.pump();
     icloud.answer('refreshFriends');
+    icloud.answer('refreshDevices');
     await tester.pump();
   }
 
@@ -191,6 +192,7 @@ void main() {
     icloud.answer('getDevices', data: [phoneJson]);
     await tester.pump();
     icloud.answer('refreshFriends');
+    icloud.answer('refreshDevices', data: [phoneJson]);
     await tester.pump();
     geolocator.fix.complete(position(32.78, -96.80));
     await tester.pump();
@@ -213,7 +215,7 @@ void main() {
     const elsewhere = LatLng(47.61, -122.33);
     controller.noteCameraGesture();
     controller.mapController.move(elsewhere, 10);
-    controller.refreshLocations(refreshDevices: true);
+    controller.refreshLocations();
     await tester.pump();
     icloud.answer('refreshFriends');
     icloud.answer('refreshDevices', data: [phoneJson]);

@@ -28,6 +28,7 @@ class FindMyPage extends StatefulWidget {
 
 class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateMixin {
   late final FindMyController controller;
+  late final AppLifecycleListener _lifecycle;
   final ValueNotifier<double> _panelPosition = ValueNotifier<double>(0);
   final FindMyPanelScrollController _panelScrollController = FindMyPanelScrollController();
 
@@ -35,6 +36,7 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
   void initState() {
     super.initState();
     controller = Get.put(FindMyController());
+    _lifecycle = AppLifecycleListener(onResume: controller.onAppResumed, onPause: controller.onAppPaused);
     controller.tabController = TabController(vsync: this, length: 3)
       ..addListener(() {
         final index = controller.tabController!.index;
@@ -49,6 +51,7 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
 
   @override
   void dispose() {
+    _lifecycle.dispose();
     _panelPosition.dispose();
     _panelScrollController.dispose();
     // The controller owns tabController and disposes it in onClose, which
@@ -91,7 +94,6 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
                   child: Stack(
                     children: [
                       FindMyMapWidget(controller: controller),
-                      if (!context.samsung) _buildRefreshButton(context, isTablet: true),
                       if (kIsDesktop) _buildDesktopTitleBar(context),
                     ],
                   ),
@@ -358,7 +360,6 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
                   child: buildBackButton(context, padding: const EdgeInsets.only(right: 2)),
                 ),
               ),
-            if (!context.samsung) _buildRefreshButton(context, isTablet: false),
             if (kIsDesktop) _buildDesktopTitleBar(context),
           ],
         ),
@@ -416,43 +417,6 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
           controller.panelController.animatePanelToSnapPoint();
           controller.resetMapToTab();
         },
-      ),
-    );
-  }
-
-  /// The round refresh button doubles as the refresh indicator: it spins for
-  /// the whole refresh window, including the automatic one on open.
-  bool get _isRefreshing => controller.isRefreshing;
-
-  void _startRefresh({required bool refreshDevices}) => controller.refreshLocations(refreshDevices: refreshDevices);
-
-  Widget _buildRefreshButton(BuildContext context, {required bool isTablet}) {
-    return Positioned(
-      top: findMyMapButtonInset + (kIsDesktop ? appWindow.titleBarHeight : MediaQuery.of(context).padding.top),
-      right: 20,
-      child: Obx(
-        () => Container(
-          width: findMyMapButtonSize,
-          height: findMyMapButtonSize,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.9),
-          ),
-          child: SizedBox(
-            width: 48,
-            child: _isRefreshing
-                ? Semantics(liveRegion: true, label: "Updating locations", child: buildProgressIndicator(context))
-                : IconButton(
-                    iconSize: 22,
-                    icon: Icon(
-                      context.iOS ? CupertinoIcons.arrow_counterclockwise : Icons.refresh,
-                      color: context.theme.colorScheme.onSurface,
-                      size: 22,
-                    ),
-                    onPressed: () => _startRefresh(refreshDevices: !isTablet),
-                  ),
-          ),
-        ),
       ),
     );
   }
@@ -541,47 +505,6 @@ class _FindMyPageState extends State<FindMyPage> with SingleTickerProviderStateM
                     child: SizedBox(
                       height: 50,
                       child: Align(alignment: Alignment.centerLeft, child: buildBackButton(context)),
-                    ),
-                  ),
-                ),
-                Align(
-                  alignment: Alignment.bottomRight,
-                  child: SizedBox(
-                    height: 50,
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // The header is built inside a LayoutBuilder, outside the page's
-                          // Obx, so the button tracks the refresh state itself.
-                          Obx(
-                            () => SizedBox(
-                              width: 48,
-                              height: 48,
-                              child: Container(
-                                width: 48,
-                                margin: const EdgeInsets.only(right: 8),
-                                child: _isRefreshing
-                                    ? Semantics(
-                                        liveRegion: true,
-                                        label: "Updating locations",
-                                        child: buildProgressIndicator(context),
-                                      )
-                                    : IconButton(
-                                        iconSize: 22,
-                                        icon: Icon(
-                                          context.iOS ? CupertinoIcons.arrow_counterclockwise : Icons.refresh,
-                                          color: context.theme.colorScheme.onSurface,
-                                          size: 22,
-                                        ),
-                                        onPressed: () => _startRefresh(refreshDevices: true),
-                                      ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
                   ),
                 ),

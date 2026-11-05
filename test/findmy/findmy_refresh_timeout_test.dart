@@ -35,7 +35,7 @@ void main() {
     });
   });
 
-  test("a device refresh that never answers releases the refresh button", () {
+  test("a device refresh that never answers fails at its deadline and is cancelled", () {
     fakeAsync((async) {
       final controller = Get.put(FindMyController());
       async.flushMicrotasks();
@@ -43,16 +43,9 @@ void main() {
       icloud.answer("getDevices");
       async.flushMicrotasks();
       icloud.answer("refreshFriends");
-      async.elapse(const Duration(minutes: 1));
-      expect(controller.isRefreshing, isFalse);
-
-      controller.refreshLocations(refreshDevices: true);
-      async.flushMicrotasks();
-      icloud.answer("refreshFriends");
       async.elapse(FindMyController.deviceRefreshDeadline);
 
       expect(controller.devicesState.value.load, FindMyLoad.failed);
-      expect(controller.isRefreshing, isFalse, reason: "the user must be able to try again");
       expect(icloud.tokens["refreshDevices"]!.single!.isCancelled, isTrue);
     });
   });
@@ -73,13 +66,13 @@ void main() {
     });
   });
 
-  test("a manual refresh cancels the opening load and ignores its late answers", () {
+  test("a refresh cancels the opening load and ignores its late answers", () {
     fakeAsync((async) {
       icloud.honourCancel = false;
       final controller = Get.put(FindMyController());
       async.flushMicrotasks();
 
-      controller.refreshLocations(refreshDevices: true);
+      controller.refreshLocations();
       async.flushMicrotasks();
       expect(icloud.tokens["getDevices"]!.single!.isCancelled, isTrue);
       expect(icloud.tokens["getFriends"]!.single!.isCancelled, isTrue);

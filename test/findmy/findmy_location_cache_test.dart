@@ -24,6 +24,7 @@ void main() {
       icloud.answer("getFriends");
       async.flushMicrotasks();
       icloud.answer("refreshFriends");
+      icloud.answer("refreshDevices", data: [phoneJson]);
       async.flushMicrotasks();
       expect(prefs().writes, 0, reason: "writes wait for the burst to settle");
 

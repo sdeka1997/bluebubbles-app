@@ -376,6 +376,7 @@ class SocketService {
       // replaced on every restart, so a listener attached directly to it silently
       // stops firing the first time the connection is cycled.
       s.on("new-findmy-location", (data) => EventDispatcherSvc.emit('new-findmy-location', data)),
+      s.on("findmy-devices-updated", (data) => EventDispatcherSvc.emit('findmy-devices-updated', data)),
     ]);
 
     // Report the attempt before making it. closeSocket() leaves the state at

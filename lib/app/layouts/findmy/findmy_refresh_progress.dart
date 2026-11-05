@@ -1,18 +1,14 @@
 import 'package:bluebubbles/database/models.dart';
 
-/// How long a refresh waits on friends to report fresh locations before it
-/// stops showing progress. The server's friend refresh answers in 0.85-5 s and
-/// Apple pushes each fix over the socket shortly after; a friend still silent
-/// after this is not going to report in this refresh.
-const Duration findMyRefreshWindow = Duration(seconds: 30);
-
 String? _usable(String? value) {
   final trimmed = value?.trim();
   return trimmed == null || trimmed.isEmpty ? null : trimmed;
 }
 
 /// One refresh of friends' locations: which friends it is waiting on and
-/// which have reported since it started.
+/// which have reported since it started. It has no time limit: Apple reports
+/// people over minutes, so a row spins until its friend reports or the screen
+/// closes.
 class FindMyRefreshProgress {
   const FindMyRefreshProgress._({
     required this.active,

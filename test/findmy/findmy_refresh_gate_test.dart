@@ -3,7 +3,6 @@ import "dart:convert";
 
 import "package:bluebubbles/app/layouts/findmy/findmy_controller.dart";
 import "package:bluebubbles/app/layouts/findmy/findmy_load_state.dart";
-import "package:bluebubbles/app/layouts/findmy/findmy_refresh_progress.dart";
 import "package:bluebubbles/services/services.dart";
 import "package:fake_async/fake_async.dart";
 import "package:flutter/services.dart" show PlatformException;
@@ -31,7 +30,7 @@ void main() {
   setUp(() => icloud = registerFindMyServices());
   tearDown(resetFindMyServices);
 
-  /// Opens the page and lets its opening load and refresh window run out.
+  /// Opens the page and answers its opening load and refresh.
   FindMyController openIdlePage(FakeAsync async) {
     final controller = Get.put(FindMyController());
     async.flushMicrotasks();
@@ -39,12 +38,13 @@ void main() {
     icloud.answer("getDevices");
     async.flushMicrotasks();
     icloud.answer("refreshFriends");
-    async.elapse(const Duration(seconds: 31));
-    expect(controller.isRefreshing, isFalse);
+    icloud.answer("refreshDevices");
+    async.flushMicrotasks();
+    expect(controller.friendRefreshProgress.value.active, isFalse);
     return controller;
   }
 
-  test("opening reads friends and devices at once, then refreshes friends in the background", () {
+  test("opening reads friends and devices at once, then refreshes both in the background", () {
     fakeAsync((async) {
       final controller = Get.put(FindMyController());
       async.flushMicrotasks();
@@ -57,14 +57,13 @@ void main() {
       icloud.answer("getDevices", data: [phoneJson]);
       async.flushMicrotasks();
       expect(controller.devices.map((d) => d.id), ["phone"], reason: "each source renders as it arrives");
-      expect(controller.devicesState.value.load, FindMyLoad.loaded);
       expect(controller.friendsState.value.load, FindMyLoad.loading);
+      expect(icloud.pending("refreshDevices"), 1);
 
       icloud.answer("getFriends");
       async.flushMicrotasks();
       expect(controller.friendsState.value.load, FindMyLoad.loaded);
       expect(icloud.pending("refreshFriends"), 1);
-      expect(icloud.requests["refreshDevices"], isNull, reason: "devices refresh only on a manual refresh");
     });
   });
 
@@ -148,13 +147,12 @@ void main() {
     });
   });
 
-  test("manual refresh asks the server to refresh friends and devices together", () {
+  test("a refresh asks the server to refresh friends and devices together", () {
     fakeAsync((async) {
       final controller = openIdlePage(async);
 
-      controller.refreshLocations(refreshDevices: true);
+      controller.refreshLocations();
       async.flushMicrotasks();
-      expect(controller.isRefreshing, isTrue);
       expect(icloud.pending("refreshFriends"), 1);
       expect(icloud.pending("refreshDevices"), 1);
       expect(controller.friendsState.value.load, FindMyLoad.loading);
@@ -162,8 +160,7 @@ void main() {
 
       icloud.answer("refreshFriends");
       icloud.answer("refreshDevices");
-      async.elapse(const Duration(seconds: 31));
-      expect(controller.isRefreshing, isFalse);
+      async.flushMicrotasks();
       expect(controller.friendsState.value.load, FindMyLoad.loaded);
       expect(controller.devicesState.value.load, FindMyLoad.loaded);
     });
@@ -173,67 +170,47 @@ void main() {
     fakeAsync((async) {
       final controller = openIdlePage(async);
 
-      controller.refreshLocations(refreshDevices: true);
+      controller.refreshLocations();
       async.flushMicrotasks();
-      controller.refreshLocations(refreshDevices: true);
+      controller.refreshLocations();
       async.flushMicrotasks();
 
-      expect(icloud.requests["refreshDevices"], hasLength(1));
-      expect(icloud.tokens["refreshDevices"]!.single!.isCancelled, isFalse);
+      expect(icloud.requests["refreshDevices"], hasLength(2), reason: "one from opening, one from the refresh");
+      expect(icloud.tokens["refreshDevices"]!.last!.isCancelled, isFalse);
       icloud.answer("refreshFriends");
       icloud.answer("refreshDevices");
-      async.elapse(const Duration(seconds: 31));
+      async.flushMicrotasks();
     });
   });
 
-  test("a friends response that fails to parse still loads devices and releases the button", () {
+  test("a friends response that fails to parse still loads devices", () {
     fakeAsync((async) {
       final controller = openIdlePage(async);
 
-      controller.refreshLocations(refreshDevices: true);
+      controller.refreshLocations();
       async.flushMicrotasks();
       icloud.answer("refreshFriends", data: "not a list");
       icloud.answer("refreshDevices", data: [phoneJson]);
-      async.elapse(const Duration(seconds: 31));
+      async.flushMicrotasks();
 
       expect(controller.friendsState.value.load, FindMyLoad.failed);
       expect(controller.devices.map((d) => d.id), ["phone"]);
-      expect(controller.isRefreshing, isFalse);
     });
   });
 
-  test("friend rows stop spinning when the refresh window elapses, while the button waits on devices", () {
-    fakeAsync((async) {
-      final controller = openIdlePage(async);
-
-      controller.refreshLocations(refreshDevices: true);
-      async.flushMicrotasks();
-      icloud.answer("refreshFriends");
-      async.flushMicrotasks();
-      expect(controller.friendRefreshProgress.value.active, isTrue, reason: "devices are still being located");
-
-      async.elapse(findMyRefreshWindow);
-      expect(controller.friendRefreshProgress.value.active, isFalse);
-      expect(controller.isRefreshing, isTrue, reason: "the device refresh is still out");
-
-      icloud.answer("refreshDevices");
-      async.flushMicrotasks();
-      expect(controller.isRefreshing, isFalse);
-    });
-  });
-
-  test("the refresh window closes as soon as the server has answered and nobody is left to report", () {
+  test("a refresh ends as soon as the server has answered and nobody is left to report", () {
     fakeAsync((async) {
       final controller = Get.put(FindMyController());
       async.flushMicrotasks();
       icloud.answer("getFriends");
       icloud.answer("getDevices");
       async.flushMicrotasks();
-      expect(controller.isRefreshing, isTrue, reason: "the friends refresh is still out");
-
       icloud.answer("refreshFriends");
       async.flushMicrotasks();
-      expect(controller.isRefreshing, isFalse);
+      expect(controller.friendRefreshProgress.value.active, isTrue, reason: "the device refresh is still out");
+
+      icloud.answer("refreshDevices");
+      async.flushMicrotasks();
       expect(controller.friendRefreshProgress.value.active, isFalse);
     });
   });

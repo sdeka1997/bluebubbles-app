@@ -11,6 +11,7 @@ import 'package:flutter_map_marker_popup/flutter_map_marker_popup.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart' hide Response;
+import 'package:get_it/get_it.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:sliding_up_panel2/sliding_up_panel2.dart';
 import 'package:universal_io/io.dart';
@@ -32,7 +33,12 @@ import 'package:bluebubbles/app/layouts/findmy/findmy_pin_clipper.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 
 class FindMyController extends GetxController {
-  FindMyController({FindMyTileLoader? tiles}) : tiles = tiles ?? FindMyTileLoader();
+  FindMyController({FindMyTileLoader? tiles, void Function(bool open)? reportScreen})
+      : tiles = tiles ?? FindMyTileLoader(),
+        _reportScreen = reportScreen ?? _reportScreenToServer;
+
+  /// Tells the server whether this screen is open; see [_reportScreenToServer].
+  final void Function(bool open) _reportScreen;
 
   /// The map's one tile layer and HTTP client, for the life of the page.
   final FindMyTileLoader tiles;
@@ -91,8 +97,8 @@ class FindMyController extends GetxController {
   final Set<String> _geocodeAttempts = {};
 
   StreamSubscription? locationSub;
-  Timer? _refreshWindow;
   Timer? _cacheSave;
+  Worker? _socketWorker;
   StreamSubscription? _redactedModeListener;
   StreamSubscription? _hideContactInfoListener;
   StreamSubscription? _findMyLocationListener;
@@ -101,6 +107,7 @@ class FindMyController extends GetxController {
   void onInit() {
     super.onInit();
     unawaited(_startLocationUpdates());
+    _reportScreen(true);
     _open();
 
     // Listen via the event dispatcher rather than the socket itself — the socket is
@@ -108,7 +115,14 @@ class FindMyController extends GetxController {
     // and a listener bound to the old instance would just stop receiving updates.
     _findMyLocationListener = EventDispatcherSvc.stream.listen((event) {
       if (event.type == 'new-findmy-location') _handleNewFindMyLocation(event.data);
+      if (event.type == 'findmy-devices-updated') _handleDevicesUpdated(event.data);
     });
+
+    if (GetIt.I.isRegistered<SocketService>()) {
+      _socketWorker = ever(SocketSvc.state, (SocketState state) {
+        if (state == SocketState.connected) onConnectionRestored();
+      });
+    }
 
     _setupRedactionListeners();
 
@@ -134,8 +148,39 @@ class FindMyController extends GetxController {
   }
 
   void _finishRefresh() {
-    _refreshWindow?.cancel();
     friendRefreshProgress.value = friendRefreshProgress.value.finish();
+  }
+
+  /// While this screen is open, the server keeps publishing locations as Find
+  /// My writes them; once it closes, the server finishes its refresh and quits
+  /// Find My. Servers without this event ignore it.
+  static void _reportScreenToServer(bool open) {
+    if (!GetIt.I.isRegistered<SocketService>()) return;
+    SocketSvc.sendMessage('findmy-screen', {'open': open}).then(
+      (_) {},
+      onError: (Object e) => Logger.info("Find My screen state not delivered: $e"),
+    );
+  }
+
+  /// Coming back to the app counts as opening the screen again.
+  void onAppResumed() {
+    if (!_isAlive) return;
+    _reportScreen(true);
+    refreshLocations();
+  }
+
+  /// Leaving the app counts as closing the screen.
+  void onAppPaused() {
+    if (_isAlive) _reportScreen(false);
+  }
+
+  /// The server knows each connection separately, so a new one is told the
+  /// screen is open; a load that failed while offline is tried again.
+  void onConnectionRestored() {
+    if (!_isAlive) return;
+    _reportScreen(true);
+    final failed = friendsState.value.load == FindMyLoad.failed || devicesState.value.load == FindMyLoad.failed;
+    if (failed) _startSession(manual: false);
   }
 
   void _setupRedactionListeners() {
@@ -455,39 +500,34 @@ class FindMyController extends GetxController {
   final List<CancelToken> _sessionTokens = [];
   final RxInt _pendingRequests = 0.obs;
 
-  /// Whether the refresh button shows as busy: until the session's requests
-  /// have settled and its refresh window has closed.
-  bool get isRefreshing => _pendingRequests.value > 0 || friendRefreshProgress.value.active;
-
-  /// Asks the server to locate friends, and devices too when [refreshDevices]
-  /// (the slow one, so only on request). Ignored while a manual refresh is
-  /// still waiting on the server; otherwise replaces whatever load is running.
-  void refreshLocations({bool refreshDevices = true}) {
+  /// Asks the server to locate friends and devices. Ignored while one such
+  /// request is still waiting on the server; otherwise replaces whatever load
+  /// is running.
+  void refreshLocations() {
     if (_manualSession && _pendingRequests.value > 0) return;
-    _startSession(manual: true, refreshDevices: refreshDevices);
+    _startSession(manual: true);
   }
 
   /// The opening load: shows what was saved last time at once, reads the
   /// server's stored friends and devices side by side, rendering each as it
-  /// arrives, then asks the server to locate friends in the background.
+  /// arrives, then asks the server to locate both in the background.
   void _open() {
     _showSaved();
-    _startSession(manual: false, refreshDevices: false);
+    _startSession(manual: false);
   }
 
-  void _startSession({required bool manual, required bool refreshDevices}) {
+  /// One load of friends and devices. A refresh has no time limit: each
+  /// friend's row spins until their new location arrives over the socket, or
+  /// until the screen closes, since Apple reports people over minutes.
+  void _startSession({required bool manual}) {
     if (!_isAlive) return;
     _cancelSession();
     final generation = ++_generation;
     _manualSession = manual;
     _pendingRequests.value = 0;
-    // Open the refresh window before awaiting anything, so progress shows for
-    // the whole session. Only events from this session can count.
+    // Start progress before awaiting anything, so it shows for the whole
+    // session. Only events from this session can count.
     friendRefreshProgress.value = FindMyRefreshProgress.start(DateTime.now());
-    _refreshWindow?.cancel();
-    _refreshWindow = Timer(findMyRefreshWindow, () {
-      if (_isAlive) _finishRefresh();
-    });
 
     friendsState.value = friendsState.value.loading();
     devicesState.value = devicesState.value.loading();
@@ -498,22 +538,22 @@ class FindMyController extends GetxController {
       friendRefreshDeadline,
       _applyFriends(refreshed: true),
     );
+    void locateDevices() =>
+        _request(generation, devicesState, HttpSvc.icloud.refreshDevices, deviceRefreshDeadline, _applyDevices);
     if (manual) {
       locateFriends();
-    } else {
-      _request(generation, friendsState, HttpSvc.icloud.getFriends, readDeadline, (response) {
-        _applyFriends(refreshed: false)(response);
-        // Fresh fixes also arrive one by one over the socket while this runs.
-        if (friendsState.value.load == FindMyLoad.loaded) locateFriends();
-      });
+      locateDevices();
+      return;
     }
-    _request(
-      generation,
-      devicesState,
-      refreshDevices ? HttpSvc.icloud.refreshDevices : HttpSvc.icloud.getDevices,
-      refreshDevices ? deviceRefreshDeadline : readDeadline,
-      _applyDevices,
-    );
+    _request(generation, friendsState, HttpSvc.icloud.getFriends, readDeadline, (response) {
+      _applyFriends(refreshed: false)(response);
+      // Fresh fixes also arrive one by one over the socket while this runs.
+      if (friendsState.value.load == FindMyLoad.loaded) locateFriends();
+    });
+    _request(generation, devicesState, HttpSvc.icloud.getDevices, readDeadline, (response) {
+      _applyDevices(response);
+      if (devicesState.value.load == FindMyLoad.loaded) locateDevices();
+    });
   }
 
   void _cancelSession() {
@@ -586,9 +626,16 @@ class FindMyController extends GetxController {
     }
   };
 
-  void _applyDevices(Response response) {
+  void _applyDevices(Response response) => _applyDeviceList(() => _dataOf(response));
+
+  /// Devices the server pushed because Find My wrote newer ones.
+  void _handleDevicesUpdated(dynamic data) {
+    if (_isAlive && data is List) _applyDeviceList(() => data);
+  }
+
+  void _applyDeviceList(List? Function() read) {
     try {
-      final data = _dataOf(response);
+      final data = read();
       if (data != null) {
         final parsed = data.map((e) => FindMyDevice.fromJson(e)).toList();
         _locationCache.rememberDevices(data.cast<Map<String, dynamic>>());
@@ -905,10 +952,11 @@ class FindMyController extends GetxController {
 
   @override
   void onClose() {
+    _reportScreen(false);
     _tabWorker?.dispose();
     _framingWorker?.dispose();
+    _socketWorker?.dispose();
     _cancelSession();
-    _refreshWindow?.cancel();
     _cacheSave?.cancel();
     _saveCache();
     _redactedModeListener?.cancel();
