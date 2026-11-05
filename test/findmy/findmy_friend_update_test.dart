@@ -61,6 +61,27 @@ void main() {
     expect(shouldAcceptFindMyFriendUpdate(existing, incoming), isFalse);
   });
 
+  test('the same fix resent with Apple no longer locating replaces the locating copy', () {
+    final timestamp = DateTime(2026, 1, 1);
+    final locating = FindMyFriend(
+      latitude: 34,
+      longitude: -96,
+      longAddress: null,
+      shortAddress: null,
+      title: 'Friend',
+      subtitle: null,
+      handle: null,
+      handleAddress: 'friend@example.com',
+      lastUpdated: timestamp,
+      status: LocationStatus.live,
+      locatingInProgress: true,
+      favoriteOrder: null,
+    );
+    final settled = friend(updated: timestamp, status: LocationStatus.live, latitude: 34);
+
+    expect(shouldAcceptFindMyFriendUpdate(locating, settled), isTrue);
+  });
+
   test('a fix without a timestamp cannot replace a dated fix', () {
     final dated = friend(
       updated: DateTime(2026, 1, 1),

@@ -7,6 +7,10 @@ FindMyFriend newestFindMyFriend(FindMyFriend existing, FindMyFriend incoming) {
   final incomingAt = incoming.lastUpdated;
   if (incomingAt == null) return existing;
   if (existingAt == null || incomingAt.isAfter(existingAt)) return incoming;
+  // The same fix resent once Apple stops locating settles the row's spinner.
+  if (incomingAt.isAtSameMomentAs(existingAt) && existing.locatingInProgress && !incoming.locatingInProgress) {
+    return incoming;
+  }
   return existing;
 }
 
