@@ -6,12 +6,13 @@ FindMyFriend friend({
   required DateTime? updated,
   required LocationStatus status,
   required double latitude,
+  String? shortAddress,
 }) =>
     FindMyFriend(
       latitude: latitude,
       longitude: -96,
       longAddress: null,
-      shortAddress: null,
+      shortAddress: shortAddress,
       title: 'Friend',
       subtitle: null,
       handle: null,
@@ -102,5 +103,21 @@ void main() {
     final incoming = friend(updated: null, status: LocationStatus.live, latitude: 35);
 
     expect(shouldAcceptFindMyFriendUpdate(existing, incoming), isFalse);
+  });
+
+  test('the address that follows a location replaces its coordinates', () {
+    final at = DateTime(2026, 11, 6, 15);
+    final coordinates = friend(updated: at, status: LocationStatus.shallow, latitude: 33, shortAddress: '33.0000, -96.0000');
+    final named = friend(updated: at, status: LocationStatus.shallow, latitude: 33, shortAddress: 'Plano, TX');
+
+    expect(newestFindMyFriend(coordinates, named), same(named));
+  });
+
+  test('a resend of the same location and address changes nothing', () {
+    final at = DateTime(2026, 11, 6, 15);
+    final first = friend(updated: at, status: LocationStatus.shallow, latitude: 33, shortAddress: 'Plano, TX');
+    final again = friend(updated: at, status: LocationStatus.shallow, latitude: 33, shortAddress: 'Plano, TX');
+
+    expect(newestFindMyFriend(first, again), same(first));
   });
 }

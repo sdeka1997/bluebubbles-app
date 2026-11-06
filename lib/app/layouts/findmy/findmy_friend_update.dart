@@ -7,9 +7,11 @@ FindMyFriend newestFindMyFriend(FindMyFriend existing, FindMyFriend incoming) {
   final incomingAt = incoming.lastUpdated;
   if (incomingAt == null) return existing;
   if (existingAt == null || incomingAt.isAfter(existingAt)) return incoming;
-  // The same fix resent once Apple stops locating settles the row's spinner.
-  if (incomingAt.isAtSameMomentAs(existingAt) && existing.locatingInProgress && !incoming.locatingInProgress) {
-    return incoming;
+  if (incomingAt.isAtSameMomentAs(existingAt)) {
+    // The same fix resent once Apple stops locating settles the row's spinner.
+    if (existing.locatingInProgress && !incoming.locatingInProgress) return incoming;
+    // The server sends a fix at once and its address as a second update with the same time.
+    if (incoming.shortAddress != existing.shortAddress || incoming.longAddress != existing.longAddress) return incoming;
   }
   return existing;
 }
