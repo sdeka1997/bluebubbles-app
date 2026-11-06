@@ -78,6 +78,31 @@ String? listingProblem(Chat chat, Message? newest) {
   return null;
 }
 
+/// Whether [chat] may be listed in the wrong place, so its messages must be
+/// read to tell. A thread listed by its own ordinary, undeleted message at
+/// that message's date is right unless [hasNewer] finds a later one, which
+/// is a single indexed lookup instead of reading the whole thread.
+bool mayBeMislisted(Chat chat, bool Function(int chatId, DateTime after) hasNewer) {
+  final latest = chat.dbLatestMessage.target;
+  final date = chat.dbOnlyLatestMessageDate;
+  if (latest == null || date == null || latest.dateCreated != date) return true;
+  if (!listsThread(latest) || latest.dateDeleted != null) return true;
+  return hasNewer(chat.id!, date);
+}
+
+/// Whether the local chat [chatId] holds a message, deleted ones excluded,
+/// that [listsThread] and is newer than [after].
+bool hasMessageNewerThan(int chatId, DateTime after) {
+  final condition = Message_.dateDeleted.isNull()
+      .and(Message_.dateCreated.greaterThan(after.millisecondsSinceEpoch))
+      .and(listsThreadCondition);
+  final query = (Database.messages.query(condition)..link(Message_.chat, Chat_.id.equals(chatId))).build();
+  query.limit = 1;
+  final found = query.findIds().isNotEmpty;
+  query.close();
+  return found;
+}
+
 /// Points every chat whose place in the list disagrees with the messages this
 /// phone holds back at its newest message, logging why. Returns the chats
 /// that changed; the caller refreshes the list.
@@ -85,6 +110,7 @@ List<Chat> repairListing(Iterable<Chat> chats, void Function(String) log) {
   final changed = <Chat>[];
   for (final chat in chats) {
     if (chat.id == null || chat.dateDeleted != null) continue;
+    if (!mayBeMislisted(chat, hasMessageNewerThan)) continue;
     final newest = newestMessageIn(chat.id!);
     final problem = listingProblem(chat, newest);
     if (problem == null) continue;

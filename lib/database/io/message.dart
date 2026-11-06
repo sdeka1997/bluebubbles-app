@@ -59,6 +59,10 @@ class Message {
   String? groupTitle;
   int? groupActionType;
   String? balloonBundleId;
+
+  /// The message this reaction or reply belongs to. Indexed: every chat page looks up its
+  /// messages' reactions by it, which otherwise reads every message on the phone.
+  @Index(type: IndexType.hash)
   String? associatedMessageGuid;
   int? associatedMessagePart;
   String? associatedMessageType;

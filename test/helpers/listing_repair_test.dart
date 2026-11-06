@@ -6,7 +6,7 @@ Message msg(String guid, DateTime date, {int itemType = 0}) =>
     Message(guid: guid, dateCreated: date, itemType: itemType);
 
 Chat stored(Message? latest, {DateTime? date}) {
-  final chat = Chat(id: 7, guid: 'iMessage;-;+15550000001');
+  final chat = Chat(id: 7, guid: 'iMessage;-;+155****0001');
   chat.dbLatestMessage.target = latest;
   chat.dbOnlyLatestMessageDate = date ?? latest?.dateCreated;
   return chat;
@@ -34,5 +34,36 @@ void main() {
 
   test('a thread with no messages on this phone is fine', () {
     expect(listingProblem(stored(null), null), isNull);
+  });
+
+  group('only a thread that may be listed wrongly gets its messages read', () {
+    bool never(int _, DateTime _) => fail('should not need to look for newer messages');
+
+    test('a thread listed by its newest message, with nothing newer, is skipped', () {
+      var asked = 0;
+      expect(mayBeMislisted(stored(newest), (_, _) { asked++; return false; }), isFalse);
+      expect(asked, 1);
+    });
+
+    test('a thread with a newer message is checked', () {
+      expect(mayBeMislisted(stored(older), (_, _) => true), isTrue);
+    });
+
+    test('a thread with no stored date is checked', () {
+      expect(mayBeMislisted(stored(null), never), isTrue);
+    });
+
+    test('a stored date that disagrees with its own message is checked', () {
+      expect(mayBeMislisted(stored(newest, date: DateTime(1970)), never), isTrue);
+    });
+
+    test('a thread listed by a status item is checked', () {
+      expect(mayBeMislisted(stored(msg('rename', DateTime(2026), itemType: 2)), never), isTrue);
+    });
+
+    test('a thread listed by a deleted message is checked', () {
+      final deleted = msg('deleted', DateTime(2026))..dateDeleted = DateTime(2026, 2);
+      expect(mayBeMislisted(stored(deleted), never), isTrue);
+    });
   });
 }
