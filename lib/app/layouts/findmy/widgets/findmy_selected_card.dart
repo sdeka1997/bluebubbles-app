@@ -1,3 +1,4 @@
+import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -10,6 +11,9 @@ class FindMySelectedCard extends StatelessWidget {
   final String? street;
   final String? status;
   final bool live;
+
+  /// Spins beside the status while the tapped person is being located.
+  final bool locating;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onDirections;
@@ -23,6 +27,7 @@ class FindMySelectedCard extends StatelessWidget {
     this.street,
     this.status,
     this.live = false,
+    this.locating = false,
     this.onTap,
     this.onLongPress,
     this.onDirections,
@@ -63,8 +68,17 @@ class FindMySelectedCard extends StatelessWidget {
                       if (distance != null)
                         Text(distance!, style: textTheme.bodyMedium!.copyWith(fontWeight: FontWeight.w600)),
                       if (street != null) Text(street!, style: secondary),
-                      if (status != null)
-                        Text(status!, style: live ? secondary.copyWith(color: Colors.green.shade600) : secondary),
+                      if (status != null || locating)
+                        Row(
+                          children: [
+                            if (status != null)
+                              Text(status!, style: live ? secondary.copyWith(color: Colors.green.shade600) : secondary),
+                            if (locating) ...[
+                              if (status != null) const SizedBox(width: 8),
+                              Semantics(label: 'Locating', child: buildProgressIndicator(context, size: 14)),
+                            ],
+                          ],
+                        ),
                       if (onDirections != null || onContact != null) ...[
                         const SizedBox(height: 12),
                         Row(

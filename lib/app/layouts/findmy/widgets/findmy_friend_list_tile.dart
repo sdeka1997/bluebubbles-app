@@ -98,6 +98,7 @@ class FindMyFriendListTile extends StatelessWidget {
                         : (address ?? 'No location found'),
                     status: live ? 'Live' : age,
                     live: live,
+                    locating: spinning,
                     onTap: markerPoint == null ? null : select,
                     onLongPress: hideContactInfo ? null : showRawData,
                     onDirections: withLocation && markerPoint != null

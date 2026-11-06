@@ -1,3 +1,4 @@
+import 'package:bluebubbles/services/backend/settings/actions/shared_preferences_theme_actions.dart';
 import 'dart:async';
 
 import 'package:bluebubbles/database/models.dart';
@@ -32,6 +33,17 @@ class FakeConnectivity extends ConnectivityPlatform with MockPlatformInterfaceMi
 }
 
 /// Starts with no saved locations and drops whatever is saved.
+/// No theme chosen, so spinners take the plain colours.
+class FakeThemePrefs extends SharedPreferencesThemeActions {
+  FakeThemePrefs(super.service);
+
+  @override
+  String? getSelectedLightTheme() => null;
+
+  @override
+  String? getSelectedDarkTheme() => null;
+}
+
 class FakeFindMyPrefs extends SharedPreferencesFindMyActions {
   FakeFindMyPrefs(super.service);
 
@@ -109,6 +121,7 @@ FakeICloudApi registerFindMyServices({FakeFindMyPrefs Function(SharedPreferences
   final settings = SettingsService()..settings = Settings();
   final sharedPrefs = SharedPreferencesService();
   sharedPrefs.findMy = (prefs ?? FakeFindMyPrefs.new)(sharedPrefs);
+  sharedPrefs.theme = FakeThemePrefs(sharedPrefs);
   final http = HttpService();
   final icloud = FakeICloudApi(http);
   http.icloud = icloud;
@@ -117,7 +130,8 @@ FakeICloudApi registerFindMyServices({FakeFindMyPrefs Function(SharedPreferences
     ..registerSingleton<SettingsService>(settings)
     ..registerSingleton<SharedPreferencesService>(sharedPrefs)
     ..registerSingleton<EventDispatcher>(EventDispatcher())
-    ..registerSingleton<HttpService>(http);
+    ..registerSingleton<HttpService>(http)
+    ..registerSingleton<ThemesService>(ThemesService());
   return icloud;
 }
 

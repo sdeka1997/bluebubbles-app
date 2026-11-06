@@ -95,6 +95,10 @@ class FindMyController extends GetxController {
   EdgeInsets cameraPadding = const EdgeInsets.all(findMyCameraMargin);
   bool _cameraMovedByUser = false;
 
+  /// Whether the map keeps the selected person in view as they move: true
+  /// once they are selected, until the user moves the map or deselects.
+  bool _followSelected = false;
+
   /// Bumped by everything that can change the opening framing: the tab, a new
   /// friend or device list, the first location fix and the map becoming
   /// ready. The camera frames once they settle.
@@ -372,6 +376,7 @@ class FindMyController extends GetxController {
   void clearSelection() {
     if (selection.value == null) return;
     selection.value = null;
+    _followSelected = false;
     _reportSelection();
     _rebuildAllMarkers();
   }
@@ -411,6 +416,7 @@ class FindMyController extends GetxController {
     if (panelController.isAttached) await panelController.animatePanelToSnapPoint();
     if (!selectionIsCurrent()) return;
     focusMap(point);
+    _followSelected = selected.kind == FindMySelectionKind.friend;
     final rowKey = _rowKeys[markerKey];
     if (rowKey != null) {
       unawaited(ensureFindMyRowVisibleAfterExpansion(rowKey, isCurrent: selectionIsCurrent));
@@ -428,6 +434,7 @@ class FindMyController extends GetxController {
 
   void noteCameraGesture() {
     _cameraMovedByUser = true;
+    _followSelected = false;
     popupController.hideAllPopups();
   }
 
@@ -535,6 +542,9 @@ class FindMyController extends GetxController {
 
         buildFriendMarker(friend);
         unawaited(resolveFriendAddress(friend));
+        if (_followSelected && completer.isCompleted && selection.value == FindMySelection.ofFriend(friend)) {
+          focusMap(markerPointForFriend(friend));
+        }
       }
     } catch (e, s) {
       Logger.warn("Failed to fetch FindMy locations", error: e, trace: s, tag: 'FindMyController');
