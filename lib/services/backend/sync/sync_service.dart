@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:bluebubbles/utils/memory_trace.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
@@ -169,6 +170,7 @@ class SyncService {
 
     _lastIncrementalSyncTimestamp = now;
     isIncrementalSyncing.value = true;
+    MemTrace.mark('sync started');
     _backgroundedDuringSync = false;
     incrementalSyncSeen.value = 0;
     incrementalSyncTotal.value = 0;
@@ -341,6 +343,7 @@ class SyncService {
     incrementalSyncSeen.value = 0;
     incrementalSyncTotal.value = 0;
     isIncrementalSyncing.value = false;
+    MemTrace.mark('sync finished');
   }
 
   Future<bool> performContactSyncToHandles() async {
