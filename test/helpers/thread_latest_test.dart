@@ -93,4 +93,51 @@ void main() {
       expect(thread.dbOnlyLatestMessageDate, isNull);
     });
   });
+
+  group('keeping the newest from what changed', () {
+    test('messages moved in that are newer become the preview', () {
+      final thread = threadShowing(older);
+      expect(keepNewestOf(thread, [reply]), isTrue);
+      expect(thread.dbLatestMessage.target?.guid, 'reply');
+      expect(thread.dbOnlyLatestMessageDate, reply.dateCreated);
+    });
+
+    test('messages moved in that are older leave the preview alone', () {
+      final thread = threadShowing(reply);
+      expect(keepNewestOf(thread, [older]), isFalse);
+      expect(thread.dbLatestMessage.target?.guid, 'reply');
+    });
+
+    test('a status item moved in never becomes the preview', () {
+      final thread = threadShowing(older);
+      final later = msg('renamed later', DateTime(2026, 11, 3, 15), itemType: 2, groupTitle: 'x');
+      expect(keepNewestOf(thread, [later]), isFalse);
+      expect(thread.dbLatestMessage.target?.guid, 'older');
+    });
+
+    test('a deleted message moved in never becomes the preview', () {
+      final thread = threadShowing(older);
+      final gone = msg('gone', DateTime(2026, 11, 3, 15), deleted: DateTime(2026, 11, 3, 16));
+      expect(keepNewestOf(thread, [gone]), isFalse);
+      expect(thread.dbLatestMessage.target?.guid, 'older');
+    });
+
+    test('a thread listed by a status item takes an ordinary message even if older', () {
+      final thread = threadShowing(rename);
+      expect(keepNewestOf(thread, [older]), isTrue);
+      expect(thread.dbLatestMessage.target?.guid, 'older');
+    });
+
+    test('a thread with no preview takes the newest ordinary message', () {
+      final thread = Chat(id: 1, guid: 'SMS;+;chat1');
+      expect(keepNewestOf(thread, [older, reply, rename]), isTrue);
+      expect(thread.dbLatestMessage.target?.guid, 'reply');
+    });
+
+    test('nothing moved in changes nothing', () {
+      final thread = threadShowing(older);
+      expect(keepNewestOf(thread, []), isFalse);
+      expect(thread.dbLatestMessage.target?.guid, 'older');
+    });
+  });
 }

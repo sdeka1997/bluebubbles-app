@@ -5,6 +5,7 @@ import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
+import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 
 /// The `uniqueAddressAndService` of the sender a server message payload names,
@@ -119,7 +120,7 @@ class SyncActions {
       _syncAttachmentsInTx(messagesData, messagesByGuid, attachmentBox, messageBox);
 
       // Step 4 – Update each chat's latestMessage
-      final updatedChatIds = _updateLatestMessages(chatsMap, chatBox);
+      final updatedChatIds = _updateLatestMessages(chatsMap, savedMessages, chatBox);
 
       return {
         'messageIds': savedMessages.map((m) => m.id!).toList(),
@@ -415,28 +416,21 @@ class SyncActions {
     }
   }
 
-  /// Query the DB for each chat's true latest message and persist it.
-  /// Returns the IDs of updated chats.
+  /// Points each chat at the newest of the messages just saved to it, when that
+  /// is newer than what it is listed by. Only the saved batch is read, not the
+  /// chat's history. Returns the IDs of updated chats.
   static List<int> _updateLatestMessages(
     Map<String, Chat> chatsMap,
+    List<Message> savedMessages,
     Box<Chat> chatBox,
   ) {
     final chatsToUpdate = <Chat>[];
+    final savedByChat = savedMessages.groupListsBy((m) => m.chat.targetId);
 
-    for (final chat in chatsMap.values) {
+    for (final chat in {for (final c in chatsMap.values) c.id: c}.values) {
       if (chat.id == null) continue;
-      final q = (Database.messages.query(Message_.dateDeleted.isNull().and(listsThreadCondition))
-            ..link(Message_.chat, Chat_.id.equals(chat.id!))
-            ..order(Message_.dateCreated, flags: Order.descending))
-          .build();
-      q.limit = 1;
-      final latest = q.findFirst();
-      q.close();
-
-      if (latest != null) {
-        chat.setLatestMessage(latest);
-        chatsToUpdate.add(chat);
-      }
+      final saved = savedByChat[chat.id] ?? const <Message>[];
+      if (keepNewestOf(chat, saved)) chatsToUpdate.add(chat);
     }
 
     if (chatsToUpdate.isNotEmpty) {

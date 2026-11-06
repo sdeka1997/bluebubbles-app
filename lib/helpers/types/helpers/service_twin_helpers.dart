@@ -186,9 +186,7 @@ Map<String, Chat> foldServiceTwins(Iterable<Chat> chats) {
       m.chat.target = canonical;
     }
     Database.messages.putMany(messages);
-  }
-  for (final thread in threads.values) {
-    if (refreshThreadLatestFromDb(thread)) Database.chats.put(thread);
+    if (keepNewestOf(canonical, messages)) Database.chats.put(canonical);
   }
   return folded;
 }

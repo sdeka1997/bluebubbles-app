@@ -44,6 +44,27 @@ bool refreshThreadLatest(Chat thread, Iterable<Message> messages) {
   return true;
 }
 
+/// Points [thread] at the newest of [added] when it is newer than what
+/// [thread] is listed by, or when [thread] is listed by nothing or by a status
+/// item. Uses only [added], so the thread's other messages are never read: the
+/// stored preview is kept up to date as messages arrive. Returns whether
+/// [thread] changed; the caller saves it.
+bool keepNewestOf(Chat thread, Iterable<Message> added) {
+  final newest = added
+      .where((m) => m.dateDeleted == null && m.dateCreated != null && listsThread(m))
+      .sortedBy<num>((m) => m.dateCreated!.millisecondsSinceEpoch)
+      .lastOrNull;
+  if (newest == null) return false;
+  final current = thread.dbLatestMessage.target;
+  final listedAt = thread.dbOnlyLatestMessageDate;
+  final currentCounts = current != null && listsThread(current) && current.dateDeleted == null && listedAt != null;
+  if (currentCounts && !newest.dateCreated!.isAfter(listedAt)) return false;
+  if (current?.guid == newest.guid && listedAt == newest.dateCreated) return false;
+  thread.dbLatestMessage.target = newest;
+  thread.dbOnlyLatestMessageDate = newest.dateCreated;
+  return true;
+}
+
 /// [refreshThreadLatest] against the local database for the chat [chat].
 bool refreshThreadLatestFromDb(Chat chat) {
   final newest = newestMessageIn(chat.id!) ?? newestMessageIn(chat.id!, listing: false);
