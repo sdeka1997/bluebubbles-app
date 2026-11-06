@@ -167,6 +167,7 @@ class FindMyController extends GetxController {
     if (!_isAlive) return;
     _reportScreen(true);
     _startSession();
+    _followSelectionAgain();
   }
 
   /// Leaving the app counts as closing the screen; Find My quitting on the
@@ -184,6 +185,14 @@ class FindMyController extends GetxController {
     _reportScreen(true);
     final failed = friendsState.value.load == FindMyLoad.failed || devicesState.value.load == FindMyLoad.failed;
     if (failed) _startSession();
+    _followSelectionAgain();
+  }
+
+  /// The server may have relaunched Find My for the reopened screen, and a
+  /// fresh Find My follows nobody, so the selected friend is asked for again.
+  void _followSelectionAgain() {
+    _forgetFollow();
+    if (selection.value?.kind == FindMySelectionKind.friend) _follow(selectedFriendHandle);
   }
 
   void _setupRedactionListeners() {

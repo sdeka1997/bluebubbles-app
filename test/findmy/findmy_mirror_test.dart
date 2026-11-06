@@ -294,7 +294,7 @@ void main() {
       expect(icloud.follows, ["mom@example.com"]);
     });
 
-    testWidgets("after the app comes back, tapping the same person follows them again", (tester) async {
+    testWidgets("after the app comes back, the selected person is followed again", (tester) async {
       final mom = friend("mom@example.com");
       final controller = await openWith(tester, [mom]);
       await tap(tester, controller, mom);
@@ -303,8 +303,31 @@ void main() {
       expect(controller.isLocatingLive(mom), isFalse, reason: "Find My quit on the Mac, ending the follow");
       controller.onAppResumed();
       await tester.pump();
-      await tap(tester, controller, mom);
       expect(icloud.follows, ["mom@example.com", "mom@example.com"]);
+      expect(controller.isLocatingLive(mom), isTrue);
+      await close(tester);
+    });
+
+    testWidgets("after a reconnect, the selected person is followed again", (tester) async {
+      final mom = friend("mom@example.com");
+      final controller = await openWith(tester, [mom]);
+      await tap(tester, controller, mom);
+      icloud.answer("followFriend", data: following("mom@example.com"));
+      await tester.pump();
+
+      controller.onConnectionRestored();
+      await tester.pump();
+      expect(icloud.follows, ["mom@example.com", "mom@example.com"], reason: "the server relaunched Find My, which follows nobody");
+      expect(controller.isLocatingLive(mom), isTrue);
+      await close(tester);
+    });
+
+    testWidgets("a reconnect with nobody selected asks the server for no follow", (tester) async {
+      final controller = await openWith(tester, [friend("mom@example.com")]);
+
+      controller.onConnectionRestored();
+      await tester.pump();
+      expect(icloud.follows, isEmpty);
       await close(tester);
     });
   });
