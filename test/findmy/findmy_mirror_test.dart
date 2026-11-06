@@ -217,6 +217,32 @@ void main() {
       await close(tester);
     });
 
+    testWidgets("the person shows as live only once their first location after the tap arrives", (tester) async {
+      final mom = friend("mom@example.com");
+      final controller = await openWith(tester, [mom]);
+
+      await tap(tester, controller, mom);
+      expect(controller.isFollowedLive(mom), isFalse, reason: "selected, but not live yet");
+
+      controller.onFriendLocation(friend("mom@example.com", at: DateTime.now().add(const Duration(seconds: 1))));
+      expect(controller.isFollowedLive(controller.friends.single), isTrue);
+
+      controller.clearSelection();
+      expect(controller.isFollowedLive(controller.friends.single), isFalse, reason: "deselecting ends it");
+      await close(tester);
+    });
+
+    testWidgets("leaving the app ends the live look until a new location comes", (tester) async {
+      final mom = friend("mom@example.com");
+      final controller = await openWith(tester, [mom]);
+      await tap(tester, controller, mom);
+      controller.onFriendLocation(friend("mom@example.com", at: DateTime.now().add(const Duration(seconds: 1))));
+
+      controller.onAppPaused();
+      expect(controller.isFollowedLive(controller.friends.single), isFalse);
+      await close(tester);
+    });
+
     testWidgets("a location from before the tap does not stop the spinner", (tester) async {
       final mom = friend("mom@example.com", at: DateTime(2026, 6));
       final controller = await openWith(tester, [mom]);
@@ -227,13 +253,24 @@ void main() {
       await close(tester);
     });
 
-    testWidgets("the spinner stops by itself if no location comes, as Find My's does", (tester) async {
+    testWidgets("the spinner keeps going while live location starts on the Mac", (tester) async {
+      final mom = friend("mom@example.com");
+      final controller = await openWith(tester, [mom]);
+
+      await tap(tester, controller, mom);
+      await tester.pump(const Duration(seconds: 20));
+      expect(controller.isLocatingLive(mom), isTrue, reason: "Find My can take this long to start following");
+      await close(tester);
+    });
+
+    testWidgets("the spinner stops by itself if no location ever comes", (tester) async {
       final mom = friend("mom@example.com");
       final controller = await openWith(tester, [mom]);
 
       await tap(tester, controller, mom);
       await tester.pump(FindMyController.liveLocatingLimit);
       expect(controller.isLocatingLive(mom), isFalse);
+      expect(controller.isFollowedLive(mom), isFalse, reason: "nothing came, so nothing shows as live");
       expect(screenReports.last, "mom@example.com", reason: "she stays selected, and followed");
       await close(tester);
     });

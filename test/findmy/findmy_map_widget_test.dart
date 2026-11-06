@@ -314,6 +314,46 @@ void main() {
     });
   });
 
+  group('the selected pin', () {
+    Future<(FindMyController, FindMyFriend)> selectDad(WidgetTester tester) async {
+      final controller = openController();
+      await tester.pumpWidget(page(controller));
+      await answerOpening(tester);
+      final dad = friendAt(33.02, -96.70, DateTime(2026, 11, 6, 9));
+      controller.friends.value = [dad];
+      controller.buildFriendMarker(dad);
+      await controller.select(FindMySelection.ofFriend(dad), const LatLng(33.02, -96.70));
+      await tester.pump();
+      return (controller, dad);
+    }
+
+    testWidgets('has no ring or pulse until live location is running', (tester) async {
+      await selectDad(tester);
+      expect(find.byKey(const ValueKey('findmy-live-ring')), findsNothing);
+      expect(find.byKey(const ValueKey('findmy-live-pulse')), findsNothing);
+      await close(tester);
+    });
+
+    testWidgets('rings and pulses once live location is running, and stops when deselected', (tester) async {
+      final (controller, _) = await selectDad(tester);
+      controller.onFriendLocation(friendAt(33.03, -96.71, DateTime.now().add(const Duration(seconds: 1))));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('findmy-live-ring')), findsOneWidget);
+      expect(find.byKey(const ValueKey('findmy-live-pulse')), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 700));
+      final grown = tester.getSize(find.byKey(const ValueKey('findmy-live-pulse')));
+      await tester.pump(const Duration(milliseconds: 700));
+      final later = tester.getSize(find.byKey(const ValueKey('findmy-live-pulse')));
+      expect(grown, isNot(later), reason: 'the pulse moves');
+
+      controller.clearSelection();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('findmy-live-pulse')), findsNothing);
+      await close(tester);
+    });
+  });
+
   testWidgets('the selected card spins while the tapped person is being located', (tester) async {
     SettingsSvc.settings.skin.value = Skins.Material;
     await tester.pumpWidget(const GetMaterialApp(

@@ -1,4 +1,5 @@
 import 'package:bluebubbles/app/layouts/findmy/findmy_device_glyph.dart';
+import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_live_pulse.dart';
 import 'dart:async';
 
 import 'package:bluebubbles/database/models.dart';
@@ -87,9 +88,14 @@ class FindMyController extends GetxController {
   DateTime? _awaitingSince;
   Timer? _awaitingLimit;
 
-  /// How long a tapped friend's row may spin. Find My shows its spinner only
-  /// briefly, so a friend Apple has nothing new for stops spinning.
-  static const Duration liveLocatingLimit = Duration(seconds: 10);
+  /// The tapped friend once their first location after the tap has arrived:
+  /// Apple is following them live. Null until then, and for nobody.
+  final RxnString _liveFollowed = RxnString();
+
+  /// How long a tapped friend's row may spin. Live location can take a few
+  /// seconds to start on the Mac; a friend Apple has nothing new for stops
+  /// spinning after this.
+  static const Duration liveLocatingLimit = Duration(seconds: 45);
 
   /// Insets of the map area the opening camera frames; see [findMyCameraPadding].
   EdgeInsets cameraPadding = const EdgeInsets.all(findMyCameraMargin);
@@ -185,6 +191,7 @@ class FindMyController extends GetxController {
     if (!_isAlive) return;
     _reportScreen(false, null);
     _stopAwaitingLive();
+    _setLiveFollowed(null);
   }
 
   /// The server knows each connection separately, so a new one is told the
@@ -214,6 +221,7 @@ class FindMyController extends GetxController {
     _reportScreen(true, handle);
     if (handle == null) {
       _stopAwaitingLive();
+      _setLiveFollowed(null);
     } else {
       _startAwaitingLive(handle);
     }
@@ -388,7 +396,21 @@ class FindMyController extends GetxController {
     return awaiting != null && friend.stableId == awaiting;
   }
 
+  /// Whether [friend] is selected and being followed live: a location newer
+  /// than the tap has arrived for them. Their pin rings and pulses meanwhile.
+  bool isFollowedLive(FindMyFriend friend) {
+    final followed = _liveFollowed.value;
+    return followed != null && friend.stableId == followed;
+  }
+
+  void _setLiveFollowed(String? handle) {
+    if (_liveFollowed.value == handle) return;
+    _liveFollowed.value = handle;
+    _rebuildAllMarkers();
+  }
+
   void _startAwaitingLive(String handle) {
+    _setLiveFollowed(null);
     _awaitingLive.value = handle;
     _awaitingSince = DateTime.now();
     _awaitingLimit?.cancel();
@@ -521,7 +543,10 @@ class FindMyController extends GetxController {
       if (!hasUsableFindMyLocation(friend)) return;
       final since = _awaitingSince;
       final fresh = since != null && friend.lastUpdated != null && friend.lastUpdated!.isAfter(since);
-      if (fresh && friend.stableId != null && friend.stableId == _awaitingLive.value) _stopAwaitingLive();
+      if (fresh && friend.stableId != null && friend.stableId == _awaitingLive.value) {
+        _stopAwaitingLive();
+        _liveFollowed.value = friend.stableId;
+      }
       _withCachedFriendLocations([friend]);
       _saveCacheSoon();
 
@@ -879,30 +904,46 @@ class FindMyController extends GetxController {
   void buildFriendMarker(FindMyFriend friend) {
     final markerKey = markerIdentityForFriend(friend);
     final selected = isSelected(FindMySelection.ofFriend(friend));
+    final live = selected && isFollowedLive(friend);
+    final size = selected ? 54.0 : 35.0;
     _friendMarkerKeys.add(markerKey);
-    markers[markerKey] = Marker(
-      key: ValueKey('friend-$markerKey'),
-      point: markerPointForFriend(friend),
-      width: selected ? 54 : 35,
-      height: selected ? 54 : 35,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          border: selected ? Border.all(color: Get.context!.theme.colorScheme.primary, width: 4) : null,
-          boxShadow: selected ? const [BoxShadow(color: Colors.black26, blurRadius: 5)] : null,
-        ),
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(3),
-            child: ContactAvatarWidget(
-              editable: false,
-              handle: friend.handle ?? Handle(address: friend.title ?? "Unknown"),
-            ),
+    final pin = Container(
+      key: live ? const ValueKey('findmy-live-ring') : null,
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        border: live ? Border.all(color: Get.context!.theme.colorScheme.primary, width: 4) : null,
+        boxShadow: selected ? const [BoxShadow(color: Colors.black26, blurRadius: 5)] : null,
+      ),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(3),
+          child: ContactAvatarWidget(
+            editable: false,
+            handle: friend.handle ?? Handle(address: friend.title ?? "Unknown"),
           ),
         ),
       ),
-      alignment: Alignment.topCenter,
+    );
+    // A live pin pulses outward; the marker is sized for the pulse so it is not clipped
+    final markerSize = live ? size * findMyLivePulseScale : size;
+    markers[markerKey] = Marker(
+      key: ValueKey('friend-$markerKey'),
+      point: markerPointForFriend(friend),
+      width: markerSize,
+      height: markerSize,
+      child: live
+          ? Stack(
+              alignment: Alignment.center,
+              children: [
+                FindMyLivePulse(key: const ValueKey('findmy-live-pulse'), size: size, color: Get.context!.theme.colorScheme.primary),
+                pin,
+              ],
+            )
+          : pin,
+      alignment: live ? Alignment.center : Alignment.topCenter,
     );
   }
 
