@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:bluebubbles/app/layouts/findmy/findmy_warmup.dart';
 import 'package:bluebubbles/helpers/backend/settings_helpers.dart';
 import 'package:bluebubbles/utils/crypto_utils.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -710,6 +711,7 @@ class SocketService {
           _resetErrorLog();
           // A rejected password still connects briefly, and the sync would just 401.
           if (!authFailed.value) NetworkTasks.onConnect();
+          if (!authFailed.value) FindMyWarmup.instance.onConnected();
           Logger.info("Socket connected successfully to $serverAddress");
           _startHeartbeat();
           if (authFailed.value) unawaited(_clearAuthFailureIfAccepted());
