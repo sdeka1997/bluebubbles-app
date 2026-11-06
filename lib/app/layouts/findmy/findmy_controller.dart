@@ -34,12 +34,13 @@ import 'package:bluebubbles/app/layouts/findmy/findmy_pin_clipper.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 
 class FindMyController extends GetxController {
-  FindMyController({FindMyTileLoader? tiles, void Function(bool open)? reportScreen})
+  FindMyController({FindMyTileLoader? tiles, void Function(bool open, String? handle)? reportScreen})
       : tiles = tiles ?? FindMyTileLoader(),
         _reportScreen = reportScreen ?? _reportScreenToServer;
 
-  /// Tells the server whether this screen is open; see [_reportScreenToServer].
-  final void Function(bool open) _reportScreen;
+  /// Tells the server whether this screen is open and who is selected on it;
+  /// see [_reportScreenToServer].
+  final void Function(bool open, String? handle) _reportScreen;
 
   /// The map's one tile layer and HTTP client, for the life of the page.
   final FindMyTileLoader tiles;
@@ -76,15 +77,19 @@ class FindMyController extends GetxController {
   final Set<String> _deviceMarkerKeys = <String>{};
   final Rxn<Position> location = Rxn<Position>();
 
-  /// Apple's address for the friend the server was last asked to follow live.
-  String? _followed;
+  /// Apple's address for the selected friend as last reported to the server,
+  /// which follows them live; null for nobody.
+  String? _reported;
 
-  /// The followed friend until their first live location arrives: their row
-  /// spins, as Find My's does for a moment after clicking someone.
+  /// The followed friend until a location newer than the tap arrives: their
+  /// row spins, as Find My's does for a moment after clicking someone.
   final RxnString _awaitingLive = RxnString();
+  DateTime? _awaitingSince;
+  Timer? _awaitingLimit;
 
-  /// Bumped by every follow request; answers to an older one are ignored.
-  int _followGeneration = 0;
+  /// How long a tapped friend's row may spin. Find My shows its spinner only
+  /// briefly, so a friend Apple has nothing new for stops spinning.
+  static const Duration liveLocatingLimit = Duration(seconds: 10);
 
   /// Insets of the map area the opening camera frames; see [findMyCameraPadding].
   EdgeInsets cameraPadding = const EdgeInsets.all(findMyCameraMargin);
@@ -118,7 +123,7 @@ class FindMyController extends GetxController {
   void onInit() {
     super.onInit();
     unawaited(_startLocationUpdates());
-    _reportScreen(true);
+    _reportScreen(true, null);
     _open();
 
     // Listen via the event dispatcher rather than the socket itself — the socket is
@@ -150,13 +155,14 @@ class FindMyController extends GetxController {
 
   bool get _isAlive => !isClosed;
 
-  /// While this screen is open, Find My runs on the Mac and the server
-  /// publishes locations as it writes them; once it closes, the server quits
-  /// Find My, which also ends any live follow. Servers without this event
-  /// ignore it.
-  static void _reportScreenToServer(bool open) {
+  /// While this screen is open, Find My runs on the Mac, the server publishes
+  /// locations as it writes them, and the person named by [handle] is followed
+  /// live; once it closes, the server quits Find My, which also ends the
+  /// follow. The server keeps no other state, so the whole of it is sent on
+  /// every change. Servers without this event ignore it.
+  static void _reportScreenToServer(bool open, String? handle) {
     if (!GetIt.I.isRegistered<SocketService>()) return;
-    SocketSvc.sendMessage('findmy-screen', {'open': open}).then(
+    SocketSvc.sendMessage('findmy-screen', {'open': open, 'handle': handle}).then(
       (_) {},
       onError: (Object e) => Logger.info("Find My screen state not delivered: $e"),
     );
@@ -165,34 +171,48 @@ class FindMyController extends GetxController {
   /// Coming back to the app counts as opening the screen again.
   void onAppResumed() {
     if (!_isAlive) return;
-    _reportScreen(true);
     _startSession();
-    _followSelectionAgain();
+    _reportOpen(locateAgain: true);
   }
 
   /// Leaving the app counts as closing the screen; Find My quitting on the
   /// Mac ends any follow with it.
   void onAppPaused() {
     if (!_isAlive) return;
-    _reportScreen(false);
-    _forgetFollow();
+    _reportScreen(false, null);
+    _stopAwaitingLive();
   }
 
   /// The server knows each connection separately, so a new one is told the
   /// screen is open; a load that failed while offline is tried again.
   void onConnectionRestored() {
     if (!_isAlive) return;
-    _reportScreen(true);
     final failed = friendsState.value.load == FindMyLoad.failed || devicesState.value.load == FindMyLoad.failed;
     if (failed) _startSession();
-    _followSelectionAgain();
+    _reportOpen();
   }
 
-  /// The server may have relaunched Find My for the reopened screen, and a
-  /// fresh Find My follows nobody, so the selected friend is asked for again.
-  void _followSelectionAgain() {
-    _forgetFollow();
-    if (selection.value?.kind == FindMySelectionKind.friend) _follow(selectedFriendHandle);
+  /// Reports the screen open with who is selected. [locateAgain] spins the
+  /// selected friend's row again, for a Find My launched afresh.
+  void _reportOpen({bool locateAgain = false}) {
+    final selection = this.selection.value;
+    _reported = selection?.kind == FindMySelectionKind.friend ? selectedFriendHandle : null;
+    _reportScreen(true, _reported);
+    if (locateAgain && _reported != null) _startAwaitingLive(_reported!);
+  }
+
+  /// Reports a new selection, unless the server already has it.
+  void _reportSelection() {
+    final selection = this.selection.value;
+    final handle = selection?.kind == FindMySelectionKind.friend ? selectedFriendHandle : null;
+    if (handle == _reported) return;
+    _reported = handle;
+    _reportScreen(true, handle);
+    if (handle == null) {
+      _stopAwaitingLive();
+    } else {
+      _startAwaitingLive(handle);
+    }
   }
 
   void _setupRedactionListeners() {
@@ -352,42 +372,27 @@ class FindMyController extends GetxController {
   void clearSelection() {
     if (selection.value == null) return;
     selection.value = null;
-    _follow(null);
+    _reportSelection();
     _rebuildAllMarkers();
   }
 
-  /// Whether [friend]'s row spins: they were just tapped and their first live
-  /// location has yet to arrive.
+  /// Whether [friend]'s row spins: they were just tapped and no location
+  /// newer than the tap has arrived yet.
   bool isLocatingLive(FindMyFriend friend) {
     final awaiting = _awaitingLive.value;
     return awaiting != null && friend.stableId == awaiting;
   }
 
-  /// Follows one friend live, as clicking them in Find My does; null stops.
-  /// The server names no one Apple gave no address, so they are not followed.
-  void _follow(String? handle) {
-    if (handle == _followed) return;
-    final generation = ++_followGeneration;
-    _followed = handle;
+  void _startAwaitingLive(String handle) {
     _awaitingLive.value = handle;
-    bool current() => _isAlive && generation == _followGeneration;
-    HttpSvc.icloud.followFriend(handle).then(
-      (response) {
-        final data = response.data is Map ? response.data['data'] : null;
-        final active = data is Map && data['active'] == true;
-        if (current() && handle != null && !active) _forgetFollow();
-      },
-      onError: (Object e) {
-        Logger.warn("Find My live location request failed", error: e, tag: 'FindMyController');
-        if (current()) _forgetFollow();
-      },
-    );
+    _awaitingSince = DateTime.now();
+    _awaitingLimit?.cancel();
+    _awaitingLimit = Timer(liveLocatingLimit, _stopAwaitingLive);
   }
 
-  /// Nobody is followed any more, so tapping someone asks the server again.
-  void _forgetFollow() {
-    _followGeneration++;
-    _followed = null;
+  void _stopAwaitingLive() {
+    _awaitingLimit?.cancel();
+    _awaitingLimit = null;
     _awaitingLive.value = null;
   }
 
@@ -398,7 +403,7 @@ class FindMyController extends GetxController {
     bool selectionIsCurrent() => _isAlive && selection.value == selected && tabIndex.value == selectedTab;
 
     selection.value = selected;
-    _follow(selected.kind == FindMySelectionKind.friend ? selectedFriendHandle : null);
+    _reportSelection();
     _rebuildAllMarkers();
     popupController.hideAllPopups();
     await completer.future;
@@ -507,7 +512,9 @@ class FindMyController extends GetxController {
       Logger.info("Received new location for ${friend.handle?.address}");
       // Keep the last known good location when Apple pushes a no-fix or malformed update.
       if (!hasUsableFindMyLocation(friend)) return;
-      if (friend.stableId != null && friend.stableId == _awaitingLive.value) _awaitingLive.value = null;
+      final since = _awaitingSince;
+      final fresh = since != null && friend.lastUpdated != null && friend.lastUpdated!.isAfter(since);
+      if (fresh && friend.stableId != null && friend.stableId == _awaitingLive.value) _stopAwaitingLive();
       _withCachedFriendLocations([friend]);
       _saveCacheSoon();
 
@@ -953,7 +960,8 @@ class FindMyController extends GetxController {
 
   @override
   void onClose() {
-    _reportScreen(false);
+    _reportScreen(false, null);
+    _awaitingLimit?.cancel();
     _tabWorker?.dispose();
     _framingWorker?.dispose();
     _socketWorker?.dispose();

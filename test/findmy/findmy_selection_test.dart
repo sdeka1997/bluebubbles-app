@@ -77,7 +77,7 @@ void main() {
 
     test("selecting a friend exposes the handle to track; selecting a device clears it", () {
       fakeAsync((async) {
-        final controller = Get.put(FindMyController(reportScreen: (_) {}));
+        final controller = Get.put(FindMyController(reportScreen: (_, _) {}));
         async.flushMicrotasks();
 
         controller.select(FindMySelection.ofFriend(friend(address: "friend@example.com")), const LatLng(33, -96));
@@ -90,7 +90,7 @@ void main() {
 
     test("a friend selected from their map pin still yields their address to track", () {
       fakeAsync((async) {
-        final controller = Get.put(FindMyController(reportScreen: (_) {}));
+        final controller = Get.put(FindMyController(reportScreen: (_, _) {}));
         async.flushMicrotasks();
         final shown = friend(address: "friend@example.com");
         controller.friends.value = [shown];
@@ -103,7 +103,7 @@ void main() {
 
     test("switching tabs clears the selection", () {
       fakeAsync((async) {
-        final controller = Get.put(FindMyController(reportScreen: (_) {}));
+        final controller = Get.put(FindMyController(reportScreen: (_, _) {}));
         async.flushMicrotasks();
         controller.select(FindMySelection.ofFriend(friend(address: "friend@example.com")), const LatLng(33, -96));
 

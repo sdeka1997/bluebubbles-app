@@ -40,7 +40,8 @@ FindMyFriend friend(String address, {DateTime? at}) => FindMyFriend(
 
 void main() {
   late FakeICloudApi icloud;
-  late List<bool> screenReports;
+  /// Each findmy-screen report: null when the screen closed, else who is selected ("" for nobody).
+  late List<String?> screenReports;
 
   setUp(() {
     icloud = registerFindMyServices();
@@ -48,7 +49,9 @@ void main() {
   });
   tearDown(resetFindMyServices);
 
-  FindMyController open() => Get.put(FindMyController(reportScreen: screenReports.add));
+  FindMyController open() => Get.put(
+    FindMyController(reportScreen: (open, handle) => screenReports.add(open ? handle ?? "" : null)),
+  );
 
   /// Answers the reads the page opens with.
   void answerReads(FakeAsync async, {List<Map<String, dynamic>> friends = const []}) {
@@ -82,7 +85,6 @@ void main() {
     await tester.pump();
   }
 
-  Map<String, dynamic> following(String? handle) => {"active": handle != null, "handle": handle};
 
   group("opening and closing", () {
     test("opening reads what the server has and asks it for nothing else", () {
@@ -112,11 +114,11 @@ void main() {
       fakeAsync((async) {
         open();
         async.flushMicrotasks();
-        expect(screenReports, [true]);
+        expect(screenReports, [""]);
 
         Get.delete<FindMyController>();
         async.flushMicrotasks();
-        expect(screenReports, [true, false]);
+        expect(screenReports, ["", null]);
       });
     });
 
@@ -129,7 +131,7 @@ void main() {
         controller.onAppPaused();
         controller.onAppResumed();
         async.flushMicrotasks();
-        expect(screenReports, [true, false, true]);
+        expect(screenReports, ["", null, ""]);
         expect(icloud.pending("getFriends"), 1);
         expect(icloud.pending("getDevices"), 1);
       });
@@ -158,7 +160,7 @@ void main() {
 
         controller.onConnectionRestored();
         async.flushMicrotasks();
-        expect(screenReports, [true], reason: "the server knows each connection separately");
+        expect(screenReports, [""], reason: "the server knows each connection separately");
         expect(icloud.requests["getDevices"], hasLength(1));
       });
     });
@@ -177,12 +179,15 @@ void main() {
   });
 
   group("tapping a person", () {
-    testWidgets("asks the server to follow them live", (tester) async {
+    testWidgets("tells the server who is selected, which it follows live", (tester) async {
       final mom = friend("mom@example.com");
-      final controller = await openWith(tester, [mom]);
+      final dad = friend("dad@example.com");
+      final controller = await openWith(tester, [mom, dad]);
 
       await tap(tester, controller, mom);
-      expect(icloud.follows, ["mom@example.com"]);
+      await tap(tester, controller, dad);
+      expect(screenReports.skip(1), ["mom@example.com", "dad@example.com"]);
+      expect(icloud.requests.keys.toSet(), {"getFriends", "getDevices"}, reason: "the selection rides on the screen report");
       await close(tester);
     });
 
@@ -191,11 +196,9 @@ void main() {
       final controller = await openWith(tester, [mom]);
 
       await tap(tester, controller, mom);
-      icloud.answer("followFriend", data: following("mom@example.com"));
-      await tester.pump();
       expect(controller.isLocatingLive(mom), isTrue);
 
-      controller.onFriendLocation(friend("mom@example.com", at: DateTime(2026, 6)));
+      controller.onFriendLocation(friend("mom@example.com", at: DateTime.now().add(const Duration(seconds: 1))));
       expect(controller.isLocatingLive(controller.friends.single), isFalse);
       await close(tester);
     });
@@ -214,120 +217,100 @@ void main() {
       await close(tester);
     });
 
-    testWidgets("a follow the server could not start stops the spinner", (tester) async {
+    testWidgets("a location from before the tap does not stop the spinner", (tester) async {
+      final mom = friend("mom@example.com", at: DateTime(2026, 6));
+      final controller = await openWith(tester, [mom]);
+
+      await tap(tester, controller, mom);
+      controller.onFriendLocation(friend("mom@example.com", at: DateTime(2026, 6)));
+      expect(controller.isLocatingLive(mom), isTrue);
+      await close(tester);
+    });
+
+    testWidgets("the spinner stops by itself if no location comes, as Find My's does", (tester) async {
       final mom = friend("mom@example.com");
       final controller = await openWith(tester, [mom]);
 
       await tap(tester, controller, mom);
-      icloud.answer("followFriend", data: following(null));
-      await tester.pump();
+      await tester.pump(FindMyController.liveLocatingLimit);
       expect(controller.isLocatingLive(mom), isFalse);
+      expect(screenReports.last, "mom@example.com", reason: "she stays selected, and followed");
       await close(tester);
     });
 
-    testWidgets("a follow request that fails stops the spinner, and tapping again retries", (tester) async {
-      final mom = friend("mom@example.com");
-      final controller = await openWith(tester, [mom]);
-
-      await tap(tester, controller, mom);
-      icloud.fail("followFriend");
-      await tester.pump();
-      expect(controller.isLocatingLive(mom), isFalse);
-
-      await tap(tester, controller, mom);
-      expect(icloud.follows, ["mom@example.com", "mom@example.com"]);
-      await close(tester);
-    });
-
-    testWidgets("a late answer for an earlier tap does not touch the person tapped since", (tester) async {
-      final mom = friend("mom@example.com");
-      final dad = friend("dad@example.com");
-      final controller = await openWith(tester, [mom, dad]);
-
-      await tap(tester, controller, mom);
-      await tap(tester, controller, dad);
-      icloud.answer("followFriend", data: following(null));
-      await tester.pump();
-
-      expect(icloud.follows, ["mom@example.com", "dad@example.com"]);
-      expect(controller.isLocatingLive(dad), isTrue);
-      await close(tester);
-    });
-
-    testWidgets("selecting a device, clearing the selection or switching tabs stops following", (tester) async {
+    testWidgets("selecting a device, clearing the selection or switching tabs selects nobody", (tester) async {
       final mom = friend("mom@example.com");
       final controller = await openWith(tester, [mom]);
 
       await tap(tester, controller, mom);
       unawaited(controller.select(const FindMySelection.device("phone"), const LatLng(33, -96)));
       await tester.pump();
-      expect(icloud.follows, ["mom@example.com", null]);
+      expect(screenReports.last, "");
       expect(controller.isLocatingLive(mom), isFalse);
 
       await tap(tester, controller, mom);
       controller.clearSelection();
       await tester.pump();
+      expect(screenReports.last, "");
 
       await tap(tester, controller, mom);
       controller.tabIndex.value = 1;
       await tester.pump();
-      expect(icloud.follows, ["mom@example.com", null, "mom@example.com", null, "mom@example.com", null]);
+      expect(screenReports.last, "");
       await close(tester);
     });
 
-    testWidgets("a friend Apple gave no address can be selected, but nothing is asked of the server", (tester) async {
+    testWidgets("tapping the selected person again reports nothing new", (tester) async {
+      final mom = friend("mom@example.com");
+      final controller = await openWith(tester, [mom]);
+
+      await tap(tester, controller, mom);
+      await tap(tester, controller, mom);
+      expect(screenReports, ["", "mom@example.com"]);
+      await close(tester);
+    });
+
+    testWidgets("a friend Apple gave no address can be selected, but names nobody to follow", (tester) async {
       final unnamed = FindMyFriend.fromJson(staleFriendJson());
       final controller = await openWith(tester, [unnamed]);
 
       await tap(tester, controller, unnamed);
-      expect(icloud.follows, isEmpty);
+      expect(screenReports, [""]);
       expect(controller.isLocatingLive(unnamed), isFalse);
       await close(tester);
     });
 
-    testWidgets("closing the page asks the server for nothing more: quitting Find My ends the follow", (tester) async {
+    testWidgets("closing the page reports the screen closed: quitting Find My ends the follow", (tester) async {
       final mom = friend("mom@example.com");
       final controller = await openWith(tester, [mom]);
       await tap(tester, controller, mom);
 
       await close(tester);
-      expect(icloud.follows, ["mom@example.com"]);
+      expect(screenReports, ["", "mom@example.com", null]);
     });
 
-    testWidgets("after the app comes back, the selected person is followed again", (tester) async {
+    testWidgets("leaving and coming back reports the selected person again with the screen", (tester) async {
       final mom = friend("mom@example.com");
       final controller = await openWith(tester, [mom]);
       await tap(tester, controller, mom);
 
       controller.onAppPaused();
-      expect(controller.isLocatingLive(mom), isFalse, reason: "Find My quit on the Mac, ending the follow");
+      expect(controller.isLocatingLive(mom), isFalse, reason: "Find My quit on the Mac");
       controller.onAppResumed();
       await tester.pump();
-      expect(icloud.follows, ["mom@example.com", "mom@example.com"]);
-      expect(controller.isLocatingLive(mom), isTrue);
+      expect(screenReports, ["", "mom@example.com", null, "mom@example.com"]);
+      expect(controller.isLocatingLive(mom), isTrue, reason: "a fresh Find My locates her again");
       await close(tester);
     });
 
-    testWidgets("after a reconnect, the selected person is followed again", (tester) async {
+    testWidgets("a reconnect reports the selected person again with the screen", (tester) async {
       final mom = friend("mom@example.com");
       final controller = await openWith(tester, [mom]);
       await tap(tester, controller, mom);
-      icloud.answer("followFriend", data: following("mom@example.com"));
-      await tester.pump();
 
       controller.onConnectionRestored();
       await tester.pump();
-      expect(icloud.follows, ["mom@example.com", "mom@example.com"], reason: "the server relaunched Find My, which follows nobody");
-      expect(controller.isLocatingLive(mom), isTrue);
-      await close(tester);
-    });
-
-    testWidgets("a reconnect with nobody selected asks the server for no follow", (tester) async {
-      final controller = await openWith(tester, [friend("mom@example.com")]);
-
-      controller.onConnectionRestored();
-      await tester.pump();
-      expect(icloud.follows, isEmpty);
+      expect(screenReports, ["", "mom@example.com", "mom@example.com"]);
       await close(tester);
     });
   });

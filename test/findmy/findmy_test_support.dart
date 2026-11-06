@@ -100,15 +100,6 @@ class FakeICloudApi extends iCloudApi {
 
   @override
   Future<Response> getDevices({CancelToken? cancelToken}) => _request("getDevices", cancelToken);
-
-  /// The handle each live-location request named, in order; null asks to stop.
-  final List<String?> follows = [];
-
-  @override
-  Future<Response> followFriend(String? handle, {CancelToken? cancelToken}) {
-    follows.add(handle);
-    return _request("followFriend", cancelToken);
-  }
 }
 
 /// Registers the services the Find My controller reads, with requests that

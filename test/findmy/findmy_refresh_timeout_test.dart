@@ -52,7 +52,7 @@ void main() {
   test("coming back to the app cancels the opening load and ignores its late answers", () {
     fakeAsync((async) {
       icloud.honourCancel = false;
-      final controller = Get.put(FindMyController(reportScreen: (_) {}));
+      final controller = Get.put(FindMyController(reportScreen: (_, _) {}));
       async.flushMicrotasks();
 
       controller.onAppResumed();
