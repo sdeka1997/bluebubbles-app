@@ -60,9 +60,6 @@ class FakeICloudApi extends iCloudApi {
   final Map<String, List<Completer<Response>>> requests = {};
   final Map<String, List<CancelToken?>> tokens = {};
 
-  /// Whether each refresh asked the server to skip its cooldown, in order.
-  final Map<String, List<bool>> forced = {};
-
   /// Off models a transport that never noticed the cancel, so a request can
   /// still answer after the page gave up on it.
   bool honourCancel = true;
@@ -96,23 +93,22 @@ class FakeICloudApi extends iCloudApi {
       .firstWhere((c) => !c.isCompleted)
       .completeError(DioException.connectionError(requestOptions: RequestOptions(path: name), reason: 'offline'));
 
-  @override
-  Future<Response> refreshFriends({CancelToken? cancelToken, bool force = false}) {
-    forced.putIfAbsent("refreshFriends", () => []).add(force);
-    return _request("refreshFriends", cancelToken);
-  }
 
   @override
   Future<Response> getFriends({CancelToken? cancelToken}) => _request("getFriends", cancelToken);
 
-  @override
-  Future<Response> refreshDevices({CancelToken? cancelToken, bool force = false}) {
-    forced.putIfAbsent("refreshDevices", () => []).add(force);
-    return _request("refreshDevices", cancelToken);
-  }
 
   @override
   Future<Response> getDevices({CancelToken? cancelToken}) => _request("getDevices", cancelToken);
+
+  /// The handle each live-location request named, in order; null asks to stop.
+  final List<String?> follows = [];
+
+  @override
+  Future<Response> followFriend(String? handle, {CancelToken? cancelToken}) {
+    follows.add(handle);
+    return _request("followFriend", cancelToken);
+  }
 }
 
 /// Registers the services the Find My controller reads, with requests that

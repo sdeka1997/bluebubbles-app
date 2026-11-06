@@ -8,9 +8,10 @@ import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_map_widget.dart';
 import 'package:connectivity_plus_platform_interface/connectivity_plus_platform_interface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:bluebubbles/services/services.dart';
+import 'package:flutter_test/flutter_test.dart' hide EventDispatcher;
 import 'package:geolocator_platform_interface/geolocator_platform_interface.dart';
-import 'package:get/get.dart';
+import 'package:get/get.dart' hide Response;
 import 'package:http/testing.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
@@ -77,9 +78,6 @@ void main() {
   Future<void> answerOpening(WidgetTester tester) async {
     icloud.answer('getFriends');
     icloud.answer('getDevices');
-    await tester.pump();
-    icloud.answer('refreshFriends');
-    icloud.answer('refreshDevices');
     await tester.pump();
   }
 
@@ -191,8 +189,7 @@ void main() {
     icloud.answer('getFriends', data: [unnamedFriendJson(33.02, -96.70)]);
     icloud.answer('getDevices', data: [phoneJson]);
     await tester.pump();
-    icloud.answer('refreshFriends');
-    icloud.answer('refreshDevices', data: [phoneJson]);
+    EventDispatcherSvc.emit('findmy-devices-updated', [phoneJson]);
     await tester.pump();
     geolocator.fix.complete(position(32.78, -96.80));
     await tester.pump();
@@ -215,10 +212,7 @@ void main() {
     const elsewhere = LatLng(47.61, -122.33);
     controller.noteCameraGesture();
     controller.mapController.move(elsewhere, 10);
-    controller.refreshLocations();
-    await tester.pump();
-    icloud.answer('refreshFriends');
-    icloud.answer('refreshDevices', data: [phoneJson]);
+    EventDispatcherSvc.emit('findmy-devices-updated', [phoneJson]);
     await tester.pump();
     await tester.pump(findMyCameraSettle);
 

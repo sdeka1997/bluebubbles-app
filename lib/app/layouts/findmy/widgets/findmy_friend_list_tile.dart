@@ -1,7 +1,6 @@
 import 'package:bluebubbles/app/components/avatars/contact_avatar_widget.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_format.dart';
-import 'package:bluebubbles/app/layouts/findmy/findmy_refresh_progress.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_raw_data_dialog.dart';
 import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_selected_card.dart';
 import 'package:bluebubbles/database/models.dart';
@@ -27,8 +26,7 @@ class FindMyFriendListTile extends StatelessWidget {
       final hideContactInfo = shouldRedactFindMyContactInfo();
       final live = item.status == LocationStatus.live;
       final age = live ? 'Now' : (item.lastUpdated == null ? null : formatFindMyAge(item.lastUpdated!));
-      final refreshProgress = controller.friendRefreshProgress.value;
-      final spinning = findMyFriendRowSpinning(refreshProgress, item);
+      final spinning = controller.isLocatingLive(item);
       final address = controller.addressForFriend(item, preferLong: !withLocation);
       final displayLocation = hideContactInfo
           ? "Location"

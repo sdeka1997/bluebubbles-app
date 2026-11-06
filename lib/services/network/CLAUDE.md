@@ -16,7 +16,7 @@ sub-service instances. Each sub-service lives in `api/` and handles one domain a
 | `contact` | `ContactApi` | `api/contact_api.dart` | `fetchAll`, `query`, `create` |
 | `backup` | `BackupApi` | `api/backup_api.dart` | `getTheme`, `setTheme`, `deleteTheme`, `getSettings`, `setSettings`, `deleteSettings` |
 | `faceTime` | `FaceTimeApi` | `api/facetime_api.dart` | `answer`, `leave` |
-| `icloud` | `iCloudApi` | `api/icloud_api.dart` | `getDevices`, `refreshDevices`, `getFriends`, `refreshFriends`, `getAccountInfo`, `getAccountContact`, `setAccountAlias` |
+| `icloud` | `iCloudApi` | `api/icloud_api.dart` | `getDevices`, `getFriends`, `followFriend`, `getAccountInfo`, `getAccountContact`, `setAccountAlias` |
 | `firebase` | `FirebaseApi` | `api/firebase_api.dart` | `getFirebaseProjects`, `getGoogleInfo`, `getServerUrlRTDB`, `getServerUrlCF`, `setRestartDateCF` |
 
 **Core utilities (on `HttpService` directly):**

@@ -19,23 +19,6 @@ class iCloudApi {
     });
   }
 
-  /// Refresh FindMy devices on server; [force] relaunches Find My even within
-  /// the server's cooldown
-  Future<Response> refreshDevices({CancelToken? cancelToken, bool force = false}) async {
-    return _svc.runApiGuarded(() async {
-      final response = await _svc.dio.post(
-        "${_svc.apiRoot}/icloud/findmy/devices/refresh",
-        queryParameters: _svc.buildQueryParams({if (force) "force": "true"}),
-        cancelToken: cancelToken,
-        options: Options(
-          receiveTimeout: _svc.dio.options.receiveTimeout! * 12,
-          headers: _svc.headers,
-        ),
-      );
-      return _svc.returnSuccessOrError(response);
-    });
-  }
-
   /// Get FindMy friends from server
   Future<Response> getFriends({CancelToken? cancelToken}) async {
     return _svc.runApiGuarded(() async {
@@ -48,13 +31,14 @@ class iCloudApi {
     });
   }
 
-  /// Refresh FindMy friends on server; [force] relaunches Find My even within
-  /// the server's cooldown
-  Future<Response> refreshFriends({CancelToken? cancelToken, bool force = false}) async {
+  /// Asks the server to follow one friend live, as clicking them in Find My
+  /// does; another [handle] switches, null stops
+  Future<Response> followFriend(String? handle, {CancelToken? cancelToken}) async {
     return _svc.runApiGuarded(() async {
       final response = await _svc.dio.post(
-        "${_svc.apiRoot}/icloud/findmy/friends/refresh",
-        queryParameters: _svc.buildQueryParams({if (force) "force": "true"}),
+        "${_svc.apiRoot}/icloud/findmy/friends/live",
+        data: {"handle": handle},
+        queryParameters: _svc.buildQueryParams(),
         cancelToken: cancelToken,
       );
       return _svc.returnSuccessOrError(response);

@@ -25,8 +25,6 @@ import 'package:bluebubbles/app/layouts/findmy/findmy_format.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_load_state.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_cache.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_panel.dart';
-import 'package:bluebubbles/app/layouts/findmy/findmy_refresh_progress.dart';
-import 'package:bluebubbles/app/layouts/findmy/findmy_round_follower.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_scroll.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_selection.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_tiles.dart';
@@ -77,9 +75,16 @@ class FindMyController extends GetxController {
   final Set<String> _friendMarkerKeys = <String>{};
   final Set<String> _deviceMarkerKeys = <String>{};
   final Rxn<Position> location = Rxn<Position>();
-  /// The server's locating rounds, and which friends' rows still spin.
-  late final FindMyRoundFollower rounds = FindMyRoundFollower(pendingRequests: () => _pendingRequests.value);
-  Rx<FindMyRefreshProgress> get friendRefreshProgress => rounds.progress;
+
+  /// Apple's address for the friend the server was last asked to follow live.
+  String? _followed;
+
+  /// The followed friend until their first live location arrives: their row
+  /// spins, as Find My's does for a moment after clicking someone.
+  final RxnString _awaitingLive = RxnString();
+
+  /// Bumped by every follow request; answers to an older one are ignored.
+  int _followGeneration = 0;
 
   /// Insets of the map area the opening camera frames; see [findMyCameraPadding].
   EdgeInsets cameraPadding = const EdgeInsets.all(findMyCameraMargin);
@@ -122,7 +127,6 @@ class FindMyController extends GetxController {
     _findMyLocationListener = EventDispatcherSvc.stream.listen((event) {
       if (event.type == 'new-findmy-location') _handleNewFindMyLocation(event.data);
       if (event.type == 'findmy-devices-updated') _handleDevicesUpdated(event.data);
-      if (event.type == 'findmy-round' && _isAlive) rounds.socketRound(event.data, friends);
     });
 
     if (GetIt.I.isRegistered<SocketService>()) {
@@ -146,9 +150,10 @@ class FindMyController extends GetxController {
 
   bool get _isAlive => !isClosed;
 
-  /// While this screen is open, the server keeps publishing locations as Find
-  /// My writes them; once it closes, the server finishes its refresh and quits
-  /// Find My. Servers without this event ignore it.
+  /// While this screen is open, Find My runs on the Mac and the server
+  /// publishes locations as it writes them; once it closes, the server quits
+  /// Find My, which also ends any live follow. Servers without this event
+  /// ignore it.
   static void _reportScreenToServer(bool open) {
     if (!GetIt.I.isRegistered<SocketService>()) return;
     SocketSvc.sendMessage('findmy-screen', {'open': open}).then(
@@ -161,12 +166,15 @@ class FindMyController extends GetxController {
   void onAppResumed() {
     if (!_isAlive) return;
     _reportScreen(true);
-    _refresh(force: false);
+    _startSession();
   }
 
-  /// Leaving the app counts as closing the screen.
+  /// Leaving the app counts as closing the screen; Find My quitting on the
+  /// Mac ends any follow with it.
   void onAppPaused() {
-    if (_isAlive) _reportScreen(false);
+    if (!_isAlive) return;
+    _reportScreen(false);
+    _forgetFollow();
   }
 
   /// The server knows each connection separately, so a new one is told the
@@ -175,7 +183,7 @@ class FindMyController extends GetxController {
     if (!_isAlive) return;
     _reportScreen(true);
     final failed = friendsState.value.load == FindMyLoad.failed || devicesState.value.load == FindMyLoad.failed;
-    if (failed) _startSession(manual: false);
+    if (failed) _startSession();
   }
 
   void _setupRedactionListeners() {
@@ -335,7 +343,43 @@ class FindMyController extends GetxController {
   void clearSelection() {
     if (selection.value == null) return;
     selection.value = null;
+    _follow(null);
     _rebuildAllMarkers();
+  }
+
+  /// Whether [friend]'s row spins: they were just tapped and their first live
+  /// location has yet to arrive.
+  bool isLocatingLive(FindMyFriend friend) {
+    final awaiting = _awaitingLive.value;
+    return awaiting != null && friend.stableId == awaiting;
+  }
+
+  /// Follows one friend live, as clicking them in Find My does; null stops.
+  /// The server names no one Apple gave no address, so they are not followed.
+  void _follow(String? handle) {
+    if (handle == _followed) return;
+    final generation = ++_followGeneration;
+    _followed = handle;
+    _awaitingLive.value = handle;
+    bool current() => _isAlive && generation == _followGeneration;
+    HttpSvc.icloud.followFriend(handle).then(
+      (response) {
+        final data = response.data is Map ? response.data['data'] : null;
+        final active = data is Map && data['active'] == true;
+        if (current() && handle != null && !active) _forgetFollow();
+      },
+      onError: (Object e) {
+        Logger.warn("Find My live location request failed", error: e, tag: 'FindMyController');
+        if (current()) _forgetFollow();
+      },
+    );
+  }
+
+  /// Nobody is followed any more, so tapping someone asks the server again.
+  void _forgetFollow() {
+    _followGeneration++;
+    _followed = null;
+    _awaitingLive.value = null;
   }
 
   /// Selects one logical entity from either its map marker or drawer row.
@@ -345,6 +389,7 @@ class FindMyController extends GetxController {
     bool selectionIsCurrent() => _isAlive && selection.value == selected && tabIndex.value == selectedTab;
 
     selection.value = selected;
+    _follow(selected.kind == FindMySelectionKind.friend ? selectedFriendHandle : null);
     _rebuildAllMarkers();
     popupController.hideAllPopups();
     await completer.future;
@@ -440,11 +485,20 @@ class FindMyController extends GetxController {
   void _handleNewFindMyLocation(dynamic data) {
     if (!_isAlive) return;
     try {
-      final friend = FindMyFriend.fromJson(data);
+      onFriendLocation(FindMyFriend.fromJson(data));
+    } catch (e, s) {
+      Logger.warn("Failed to fetch FindMy locations", error: e, trace: s, tag: 'FindMyController');
+    }
+  }
+
+  /// A location Find My wrote for one friend.
+  void onFriendLocation(FindMyFriend friend) {
+    if (!_isAlive) return;
+    try {
       Logger.info("Received new location for ${friend.handle?.address}");
       // Keep the last known good location when Apple pushes a no-fix or malformed update.
       if (!hasUsableFindMyLocation(friend)) return;
-      rounds.fix(friend);
+      if (friend.stableId != null && friend.stableId == _awaitingLive.value) _awaitingLive.value = null;
       _withCachedFriendLocations([friend]);
       _saveCacheSoon();
 
@@ -477,91 +531,31 @@ class FindMyController extends GetxController {
   /// looking at saved pins rather than a spinner.
   static const Duration readDeadline = Duration(seconds: 20);
 
-  /// How long asking the server to locate friends may take: measured at
-  /// 0.85-5 s, so six times the slowest.
-  static const Duration friendRefreshDeadline = Duration(seconds: 30);
-
-  /// How long asking the server to locate devices may take. Measured at 24.8 s
-  /// and 25.3 s; a little over twice that lets a slow iCloud round land, well
-  /// inside Dio's own six-minute window for this call, which a tunnel that
-  /// drops the connection silently would otherwise leave the page waiting on.
-  static const Duration deviceRefreshDeadline = Duration(seconds: 60);
-
   final Rx<FindMySourceState> friendsState = FindMySourceState.idle.obs;
   final Rx<FindMySourceState> devicesState = FindMySourceState.idle.obs;
 
   /// Each load is one session; answers from an older one are ignored.
   int _generation = 0;
-  bool _manualSession = false;
   final List<CancelToken> _sessionTokens = [];
-  final RxInt _pendingRequests = 0.obs;
 
-  /// Whether the refresh button shows as busy: until the server has answered.
-  /// Rows show who is still coming after that.
-  bool get isRefreshing => _pendingRequests.value > 0;
-
-  /// The refresh button: asks the server to locate friends and devices,
-  /// relaunching Find My even within the server's cooldown.
-  void refreshLocations() => _refresh(force: true);
-
-  /// Ignored while a refresh is still waiting on the server; otherwise
-  /// replaces whatever load is running.
-  void _refresh({required bool force}) {
-    if (_manualSession && _pendingRequests.value > 0) return;
-    _startSession(manual: true, force: force);
-  }
-
-  /// The opening load: shows what was saved last time at once, reads the
-  /// server's stored friends and devices side by side, rendering each as it
-  /// arrives, then asks the server to locate both in the background.
+  /// The opening load: shows what was saved last time at once, then reads
+  /// the server's stored friends and devices side by side.
   void _open() {
     _showSaved();
-    _startSession(manual: false);
+    _startSession();
   }
 
-  /// One load of friends and devices. A refresh has no time limit: each
-  /// friend's row spins until their new location arrives over the socket, or
-  /// until the screen closes, since Apple reports people over minutes.
-  void _startSession({required bool manual, bool force = false}) {
+  /// Reads the friends and devices the server has, rendering each as it
+  /// arrives. Nothing is asked to refresh: Find My runs on the Mac while this
+  /// screen is open, and what it writes follows over the socket.
+  void _startSession() {
     if (!_isAlive) return;
     _cancelSession();
     final generation = ++_generation;
-    _manualSession = manual;
-    _pendingRequests.value = 0;
-    // Start progress before awaiting anything, so it shows for the whole
-    // session. Only events from this session can count.
-    rounds.begin(DateTime.now());
-
     friendsState.value = friendsState.value.loading();
     devicesState.value = devicesState.value.loading();
-    void locateFriends() => _request(
-      generation,
-      friendsState,
-      ({cancelToken}) => HttpSvc.icloud.refreshFriends(cancelToken: cancelToken, force: force),
-      friendRefreshDeadline,
-      _applyFriends(refreshed: true),
-    );
-    void locateDevices() => _request(
-      generation,
-      devicesState,
-      ({cancelToken}) => HttpSvc.icloud.refreshDevices(cancelToken: cancelToken, force: force),
-      deviceRefreshDeadline,
-      _applyDevices,
-    );
-    if (manual) {
-      locateFriends();
-      locateDevices();
-      return;
-    }
-    _request(generation, friendsState, HttpSvc.icloud.getFriends, readDeadline, (response) {
-      _applyFriends(refreshed: false)(response);
-      // Fresh fixes also arrive one by one over the socket while this runs.
-      if (friendsState.value.load == FindMyLoad.loaded) locateFriends();
-    });
-    _request(generation, devicesState, HttpSvc.icloud.getDevices, readDeadline, (response) {
-      _applyDevices(response);
-      if (devicesState.value.load == FindMyLoad.loaded) locateDevices();
-    });
+    _request(generation, friendsState, HttpSvc.icloud.getFriends, readDeadline, _applyFriends);
+    _request(generation, devicesState, HttpSvc.icloud.getDevices, readDeadline, _applyDevices);
   }
 
   void _cancelSession() {
@@ -583,7 +577,6 @@ class FindMyController extends GetxController {
   ) {
     final token = CancelToken();
     _sessionTokens.add(token);
-    _pendingRequests.value++;
     bool current() => _isAlive && generation == _generation;
 
     send(cancelToken: token)
@@ -596,37 +589,25 @@ class FindMyController extends GetxController {
         )
         .then(
           (response) {
-            if (!current()) return;
-            _pendingRequests.value--;
-            onResponse(response);
-            rounds.settleIfDone();
+            if (current()) onResponse(response);
           },
           onError: (Object e, StackTrace s) {
             if (!current()) return;
-            _pendingRequests.value--;
             Logger.warn("Find My ${state == friendsState ? 'friends' : 'devices'} request failed", error: e, tag: 'FindMyController');
             state.value = state.value.failed(describeFindMyError(e));
-            rounds.settleIfDone();
           },
         );
   }
 
-  /// The list a Find My response carries, or null when it carries none (the
-  /// device refresh endpoint of some server versions answers without data).
+  /// The list a Find My response carries, or null when it carries none.
   List? _dataOf(Response response) => response.data is Map ? response.data['data'] as List? : null;
 
-  /// The server's round from a refresh answer; null from servers that do
-  /// not say.
-  FindMyRound? _roundOf(Response response) =>
-      FindMyRound.tryParse(response.data is Map ? response.data['metadata'] : null);
-
-  void Function(Response) _applyFriends({required bool refreshed}) => (response) {
+  void _applyFriends(Response response) {
     try {
       final data = _dataOf(response);
       if (data != null) {
         final roster = data.map((e) => FindMyFriend.fromJson(e)).toList();
         _locationCache.rememberFriends(data.cast<Map<String, dynamic>>());
-        if (refreshed) rounds.answer(_roundOf(response), roster);
         _showFriends(roster);
         _saveCacheSoon();
       }
@@ -635,7 +616,7 @@ class FindMyController extends GetxController {
       Logger.error("Failed to parse FindMy Friends location data!", error: e, trace: s);
       friendsState.value = friendsState.value.failed(describeFindMyError(e));
     }
-  };
+  }
 
   void _applyDevices(Response response) => _applyDeviceList(() => _dataOf(response));
 

@@ -2,12 +2,10 @@
 
 ## Files
 - `findmy_page.dart` — main screen (map + list tabs); reads controller state only
-- `findmy_controller.dart` — state and logic: one load pipeline (cached seed, parallel reads, background friend refresh, cancellable sessions), socket updates, markers, camera framing
+- `findmy_controller.dart` — state and logic: one load pipeline (cached seed, parallel reads, cancellable sessions), socket updates, live follow of the tapped friend, markers, camera framing
 - `findmy_load_state.dart` — per-source load state (`FindMyLoad` idle/loading/loaded/failed + error and update time)
 - `findmy_location_cache.dart` — last known locations and the last friend/device lists, scoped to server + iCloud account, skipped in redacted mode; writes debounced
 - `findmy_products.dart` — sorts devices into the Devices and Items tabs once per device list (AirPods part collapsing, audio products)
-- `findmy_refresh_progress.dart` — refresh window: which friends are still being located, and when the refresh ends
-- `findmy_round_follower.dart` — follows the server's locating rounds from socket events and refresh answers; owns the refresh progress
 - `findmy_selection.dart` — the one selected friend or device, its marker key, and the Apple handle live tracking names
 - `findmy_tiles.dart` — the one tile provider: retrying HTTP client and bounded reload of failed tiles
 - `findmy_camera.dart` — camera framing, marker clustering, zoom constants and marker identity

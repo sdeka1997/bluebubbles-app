@@ -377,7 +377,6 @@ class SocketService {
       // stops firing the first time the connection is cycled.
       s.on("new-findmy-location", (data) => EventDispatcherSvc.emit('new-findmy-location', data)),
       s.on("findmy-devices-updated", (data) => EventDispatcherSvc.emit('findmy-devices-updated', data)),
-      s.on("findmy-round", (data) => EventDispatcherSvc.emit('findmy-round', data)),
     ]);
 
     // Report the attempt before making it. closeSocket() leaves the state at
