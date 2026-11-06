@@ -401,7 +401,6 @@ class ChatsService {
     Logger.info("Finished fetching chats (${chatStates.length}).", tag: "ChatBloc");
     if (!kIsWeb) {
       _logUnlistedThreads();
-      _repairListing();
     }
 
     // Calculate initial unread count now that all chat states are populated.
@@ -714,26 +713,6 @@ class ChatsService {
         b.dbOnlyLatestMessageDate ??
         DateTime.fromMillisecondsSinceEpoch(0);
     return -aDate.compareTo(bDate);
-  }
-
-  /// Puts back in place every listed thread whose stored date disagrees with
-  /// the messages this phone holds, logging each so the cause can be traced.
-  void _repairListing() {
-    try {
-      final lines = <String>[];
-      final changed = Database.runInTransaction(TxMode.write, () => repairListing(Database.chats.getAll(), lines.add));
-      Logger.info("Threads listed in the wrong place: ${changed.length}", tag: "ThreadCheck");
-      for (final line in lines.take(200)) {
-        Logger.info(line, tag: "ThreadCheck");
-      }
-      for (final chat in changed) {
-        final latest = chat.dbLatestMessage.target;
-        if (latest != null) updateChatLatestMessage(chat.guid, latest, allowOlder: true, repositionImmediate: false);
-      }
-      if (changed.isNotEmpty) _scheduleListVersionUpdate(immediate: true);
-    } catch (e, stack) {
-      Logger.warn("Could not check thread order", error: e, trace: stack, tag: "ThreadCheck");
-    }
   }
 
   /// Logs every thread that should be listed but isn't, so a missing
