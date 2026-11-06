@@ -24,8 +24,9 @@ class FindMyFriendListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Obx(() {
       final hideContactInfo = shouldRedactFindMyContactInfo();
-      final live = item.status == LocationStatus.live;
-      final age = live ? 'Now' : (item.lastUpdated == null ? null : formatFindMyAge(item.lastUpdated!));
+      // Live from the moment the ring appears: the server never marks a location live itself
+      final live = item.status == LocationStatus.live || controller.isFollowedLive(item);
+      final age = live ? 'Live' : (item.lastUpdated == null ? null : formatFindMyAge(item.lastUpdated!));
       final spinning = controller.isLocatingLive(item);
       final address = controller.addressForFriend(item, preferLong: !withLocation);
       final displayLocation = hideContactInfo

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bluebubbles/app/layouts/findmy/widgets/findmy_friend_list_tile.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_camera.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_controller.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_panel.dart';
@@ -64,7 +65,8 @@ FindMyFriend friendAt(double latitude, double longitude, DateTime at) => FindMyF
   handle: null,
   handleAddress: "dad@example.com",
   lastUpdated: at,
-  status: LocationStatus.live,
+  // What the server sends for every location; it never marks one live
+  status: LocationStatus.shallow,
   locatingInProgress: false,
   favoriteOrder: null,
 );
@@ -326,6 +328,38 @@ void main() {
       await tester.pump();
       return (controller, dad);
     }
+
+    testWidgets('their row says Live from the moment the ring appears, and stops when deselected', (tester) async {
+      final controller = openController();
+      await tester.pumpWidget(GetMaterialApp(
+        home: Material(
+          child: Column(children: [
+            SizedBox(width: 300, height: 300, child: FindMyMapWidget(controller: controller)),
+            Expanded(child: Obx(() => ListView(children: [
+              for (final f in controller.friends) FindMyFriendListTile(item: f, controller: controller),
+            ]))),
+          ]),
+        ),
+      ));
+      await answerOpening(tester);
+      final dad = friendAt(33.02, -96.70, DateTime(2026, 11, 6, 9));
+      controller.friends.value = [dad];
+      controller.buildFriendMarker(dad);
+      await controller.select(FindMySelection.ofFriend(dad), const LatLng(33.02, -96.70));
+      await tester.pump();
+      expect(find.textContaining('Live'), findsNothing, reason: 'not live until a new location arrives');
+
+      controller.onFriendLocation(friendAt(33.03, -96.71, DateTime.now().add(const Duration(seconds: 1))));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('findmy-live-ring')), findsOneWidget);
+      expect(find.textContaining('Live'), findsWidgets);
+      expect(find.textContaining('Now'), findsNothing);
+
+      controller.clearSelection();
+      await tester.pump();
+      expect(find.textContaining('Live'), findsNothing);
+      await close(tester);
+    });
 
     testWidgets('has no ring or pulse until live location is running', (tester) async {
       await selectDad(tester);
