@@ -3,6 +3,7 @@ import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
+import 'package:bluebubbles/helpers/types/helpers/message_page.dart';
 import 'package:bluebubbles/services/backend/interfaces/contact_v2_interface.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -778,7 +779,12 @@ class ChatActions {
       final messageBox = Database.messages;
       final messages = <Message>[];
 
-      if (searchAround == null) {
+      final page = searchAround == null
+          ? newestMessagesPage(chatId, offset: offset, limit: limit, includeDeleted: includeDeleted)
+          : null;
+      if (page != null) {
+        messages.addAll(page);
+      } else if (searchAround == null) {
         final query = (messageBox.query(includeDeleted
                 ? Message_.dateCreated.notNull().and(Message_.dateDeleted.isNull().or(Message_.dateDeleted.notNull()))
                 : Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull()))

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:app_links/app_links.dart';
-import 'package:bluebubbles/utils/memory_trace.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/app/components/wallpaper/chat_wallpaper_type.dart';
 import 'package:bluebubbles/app/components/wallpaper/wallpaper_config_codec.dart';
@@ -400,7 +399,6 @@ class ChatsService {
 
     loadedAllChats.complete();
     Logger.info("Finished fetching chats (${chatStates.length}).", tag: "ChatBloc");
-    MemTrace.mark('chat list loaded (${chatStates.length} chats)');
     if (!kIsWeb) {
       _logUnlistedThreads();
     }
