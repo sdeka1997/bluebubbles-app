@@ -24,24 +24,30 @@ class SqliteCopyCheck {
     body: _runInIsolate,
   );
 
-  /// Runs the copy on its own isolate, attached to the app's open ObjectBox store,
-  /// so the UI isolate only waits on a port.
+  /// Runs the copy on its own isolate so the UI isolate only waits on a port.
   static Future<void> _runInIsolate() async {
-    final ByteData reference = Database.store.reference;
-    final path = join(Database.appDocPath, fileName);
-    await Isolate.run(
-      () async {
-        final store = Store.fromReference(getObjectBoxModel(), reference);
-        try {
-          await runSqliteCopyCheck(store: store, file: File(path), log: debugPrint);
-        } finally {
-          // A store from a reference never closes the app's native store.
-          store.close();
-        }
-      },
-      debugName: 'sqlite-copy-check',
+    await runSqliteCopyCheckInIsolate(
+      objectBoxPath: join(Database.appDocPath, 'objectbox'),
+      sqlitePath: join(Database.appDocPath, fileName),
     );
   }
+}
+
+/// [runSqliteCopyCheck] on a new isolate attached to the ObjectBox store already
+/// open at [objectBoxPath] (as the app's worker isolates attach). Closing the
+/// attached instance leaves the app's store open.
+Future<bool> runSqliteCopyCheckInIsolate({required String objectBoxPath, required String sqlitePath}) {
+  return Isolate.run(
+    () async {
+      final store = Store.attach(getObjectBoxModel(), objectBoxPath);
+      try {
+        return await runSqliteCopyCheck(store: store, file: File(sqlitePath), log: debugPrint);
+      } finally {
+        store.close();
+      }
+    },
+    debugName: 'sqlite-copy-check',
+  );
 }
 
 /// Starts [body] at most once per process, never twice at the same time, and

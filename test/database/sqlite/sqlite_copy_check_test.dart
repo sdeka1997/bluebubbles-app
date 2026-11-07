@@ -51,6 +51,19 @@ void main() {
     expect(count.read<int>('c'), 25);
   });
 
+  test('the copy runs on its own isolate attached to the open store', () async {
+    final path = '${directory.path}/bluebubbles.db';
+    final ok = await runSqliteCopyCheckInIsolate(objectBoxPath: '${directory.path}/objectbox', sqlitePath: path);
+    expect(ok, isTrue);
+
+    final database = AppDatabase.file(File(path));
+    addTearDown(database.close);
+    final count = await database.customSelect('SELECT count(*) AS c FROM messages').getSingle();
+    expect(count.read<int>('c'), 25);
+    // The app's store is still open and usable.
+    expect(store.box<Message>().count(), 25);
+  });
+
   test('a later launch copies only the new rows', () async {
     final file = File('${directory.path}/bluebubbles.db');
     await runSqliteCopyCheck(store: store, file: file, log: (_) {});
