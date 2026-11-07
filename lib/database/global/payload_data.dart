@@ -129,11 +129,9 @@ class MediaMetadata {
     }
 
     if (json["size"] is String && json["size"].contains(",")) {
-      size = Size(double.parse(json["size"].split(",").first.toString().numericOnly()),
-          double.parse(json["size"].split(",").last.toString().numericOnly()));
+      size = Size(_dimension(json["size"].split(",").first), _dimension(json["size"].split(",").last));
     } else if (json["size"] is Map) {
-      size = Size(double.parse(json["size"]["width"].toString().numericOnly()),
-          double.parse(json["size"]["height"].toString().numericOnly()));
+      size = Size(_dimension(json["size"]["width"]), _dimension(json["size"]["height"]));
     } else if (json["size"] is Size) {
       size = json['size'];
     } else {
@@ -145,6 +143,11 @@ class MediaMetadata {
       url: json["URL"]?["NS.relative"],
     );
   }
+
+  /// One side of a size, as Apple ("{1200, 630.5}") or a save of ours ("1200.0,630.5") writes it.
+  /// Keeps the decimal point: dropping it turned 630.5 into 6305 on every reload.
+  static double _dimension(dynamic value) =>
+      double.parse(RegExp(r'-?\d+(\.\d+)?').firstMatch(value.toString())?.group(0) ?? '0');
 
   Map<String, dynamic> toJson() => {
         "size": (size == null) ? "0,0" : "${size!.width},${size!.height}",
