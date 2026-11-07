@@ -33,7 +33,7 @@ void main() {
 
       // One 75k-message chat, the rest spread; 15% reactions; old history saved last.
       final latest = <int, Message>{};
-      final base = 1500000000000;
+      const base = 1500000000000;
       var made = 0;
       final lateHistory = min(8000, total ~/ 50);
       while (made < total) {
