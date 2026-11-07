@@ -53,6 +53,7 @@ dependencies:
   dio: ^5.9.0
   dlibphonenumber: ^1.1.46 # phone number parsing
   dynamic_color: ^1.8.1 # Pinned because of flutter SDK
+  drift: ^2.31.0
   easy_debounce: ^2.0.3
   emoji_picker_flutter: ^4.3.0
   encrypter_plus: ^5.1.0
@@ -234,6 +235,7 @@ dependency_overrides:
 
 dev_dependencies:
   build_runner: ^2.7.1
+  drift_dev: ^2.31.0
   build_verify: ^3.1.0
   flutter_launcher_icons: ^0.14.3
   flutter_lints: ^6.0.0
