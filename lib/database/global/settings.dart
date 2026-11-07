@@ -69,6 +69,11 @@ class Settings {
   // Size of the incremental catch-up in progress (0 when none), so its
   // progress bar carries across pauses.
   final RxInt incrementalCatchUpTotal = 0.obs;
+  // The same three markers for SQLite builds (sync_marker.dart), so the ones
+  // above stay where the last ObjectBox build left them.
+  final RxInt sqliteLastIncrementalSync = 0.obs;
+  final RxInt sqliteLastIncrementalSyncRowId = 0.obs;
+  final RxInt sqliteIncrementalCatchUpTotal = 0.obs;
   final RxInt refreshRate = 0.obs;
 
   /// `CacheService` purge level applied when the app is backgrounded on mobile:
@@ -356,6 +361,9 @@ class Settings {
       'lastIncrementalSync': lastIncrementalSync.value,
       'lastIncrementalSyncRowId': lastIncrementalSyncRowId.value,
       'incrementalCatchUpTotal': incrementalCatchUpTotal.value,
+      'sqliteLastIncrementalSync': sqliteLastIncrementalSync.value,
+      'sqliteLastIncrementalSyncRowId': sqliteLastIncrementalSyncRowId.value,
+      'sqliteIncrementalCatchUpTotal': sqliteIncrementalCatchUpTotal.value,
       'refreshRate': refreshRate.value,
       'colorfulAvatars': colorfulAvatars.value,
       'colorfulBubbles': colorfulBubbles.value,
@@ -538,6 +546,12 @@ class Settings {
         map['lastIncrementalSyncRowId'] ?? SettingsSvc.settings.lastIncrementalSyncRowId.value;
     SettingsSvc.settings.incrementalCatchUpTotal.value =
         map['incrementalCatchUpTotal'] ?? SettingsSvc.settings.incrementalCatchUpTotal.value;
+    SettingsSvc.settings.sqliteLastIncrementalSync.value =
+        map['sqliteLastIncrementalSync'] ?? SettingsSvc.settings.sqliteLastIncrementalSync.value;
+    SettingsSvc.settings.sqliteLastIncrementalSyncRowId.value =
+        map['sqliteLastIncrementalSyncRowId'] ?? SettingsSvc.settings.sqliteLastIncrementalSyncRowId.value;
+    SettingsSvc.settings.sqliteIncrementalCatchUpTotal.value =
+        map['sqliteIncrementalCatchUpTotal'] ?? SettingsSvc.settings.sqliteIncrementalCatchUpTotal.value;
     SettingsSvc.settings.refreshRate.value = map['refreshRate'] ?? SettingsSvc.settings.refreshRate.value;
     SettingsSvc.settings.colorfulAvatars.value = map['colorfulAvatars'] ?? SettingsSvc.settings.colorfulAvatars.value;
     SettingsSvc.settings.colorfulBubbles.value = map['colorfulBubbles'] ?? SettingsSvc.settings.colorfulBubbles.value;
@@ -793,6 +807,9 @@ class Settings {
     s.lastIncrementalSync.value = map['lastIncrementalSync'] ?? 0;
     s.lastIncrementalSyncRowId.value = map['lastIncrementalSyncRowId'] ?? 0;
     s.incrementalCatchUpTotal.value = map['incrementalCatchUpTotal'] ?? 0;
+    s.sqliteLastIncrementalSync.value = map['sqliteLastIncrementalSync'] ?? 0;
+    s.sqliteLastIncrementalSyncRowId.value = map['sqliteLastIncrementalSyncRowId'] ?? 0;
+    s.sqliteIncrementalCatchUpTotal.value = map['sqliteIncrementalCatchUpTotal'] ?? 0;
     s.refreshRate.value = map['refreshRate'] ?? 0;
     s.colorfulAvatars.value = map['colorfulAvatars'] ?? false;
     s.colorfulBubbles.value = map['colorfulBubbles'] ?? false;
