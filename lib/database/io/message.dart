@@ -551,7 +551,11 @@ class Message {
       bDateToUse = b.dateCreated!.isBefore(b.dateDelivered!) ? b.dateCreated! : b.dateDelivered!;
     }
 
-    return descending ? bDateToUse.compareTo(aDateToUse) : aDateToUse.compareTo(bDateToUse);
+    // Equal times fall back to the id, so this order is exactly the SQLite paging
+    // key (sort_at, id). A message not saved yet gets the next id: it sorts last.
+    var result = aDateToUse.compareTo(bDateToUse);
+    if (result == 0 && a.id != b.id) result = a.id == null ? 1 : (b.id == null ? -1 : a.id!.compareTo(b.id!));
+    return descending ? -result : result;
   }
 
   String get fullText => sanitizeString([subject, text].where((e) => !isNullOrEmpty(e)).join("\n"));
