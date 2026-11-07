@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:bluebubbles/utils/memory_trace.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
@@ -169,6 +170,7 @@ class SyncService {
 
     _lastIncrementalSyncTimestamp = now;
     isIncrementalSyncing.value = true;
+    MemTrace.mark('sync started');
     _backgroundedDuringSync = false;
     incrementalSyncSeen.value = 0;
     incrementalSyncTotal.value = 0;
@@ -185,6 +187,7 @@ class SyncService {
     // service twins. This is intentionally not a full chat resync: local names,
     // pinning, mute, archive and other app-owned settings remain untouched.
     await _refreshServerChatMetadata();
+    MemTrace.mark('sync: duplicate conversations merged');
 
     // Per-page tracking: record message IDs and chat subtitle message IDs that were
     // already applied by per-page events so the final return can skip redundant work.
@@ -317,7 +320,9 @@ class SyncService {
     // Runs after the messages are in, so a message synced and deleted in the
     // same window still ends up hidden. Not counted toward `errors`: an older
     // server without the endpoints must not make the user think sync failed.
+    MemTrace.mark('sync: new messages saved');
     await AppleStateCatchUp.run();
+    MemTrace.mark('sync: read and deleted state caught up');
 
     final contactSyncResult = await performContactSyncToHandles();
     final contactUploadResult = await performContactSyncToServer();
@@ -341,6 +346,7 @@ class SyncService {
     incrementalSyncSeen.value = 0;
     incrementalSyncTotal.value = 0;
     isIncrementalSyncing.value = false;
+    MemTrace.mark('sync finished');
   }
 
   Future<bool> performContactSyncToHandles() async {

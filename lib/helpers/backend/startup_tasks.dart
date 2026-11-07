@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:bluebubbles/utils/memory_trace.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/database/database.dart';
@@ -182,6 +183,7 @@ class StartupTasks {
 
   static Future<void> initStartupServices({bool isBubble = false}) async {
     debugPrint("Initializing startup services...");
+    MemTrace.start();
     await _initCoreServices(headless: false);
 
     final startupInteropReady = _preRegisterInteropServices(
@@ -194,6 +196,7 @@ class StartupTasks {
     await _step("Opening database...");
     await Database.init();
     Logger.info("Database initialized");
+    MemTrace.mark('database opened');
     startupInteropReady.complete();
 
     // Register the global isolate
@@ -288,6 +291,7 @@ class StartupTasks {
     );
 
     await setSplashStatus("Finishing up...");
+    MemTrace.mark('startup finished');
     Logger.info(
         "Startup services initialization complete! Running localhost detection then starting incremental sync...");
 
