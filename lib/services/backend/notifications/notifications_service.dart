@@ -105,6 +105,19 @@ class NotificationsService {
 
   bool get hideContent => SettingsSvc.settings.hideTextPreviews.value;
 
+  /// Ids of the chat notifications Android is showing (each is posted under its
+  /// chat's id), or null where they can't be listed.
+  Future<Set<int>?> shownChatNotificationIds() async {
+    if (kIsWeb || !Platform.isAndroid) return null;
+    try {
+      final shown = await flnp.getActiveNotifications();
+      return shown.map((n) => n.id).whereType<int>().toSet();
+    } catch (e, s) {
+      Logger.warn('Could not list shown notifications', error: e, trace: s);
+      return null;
+    }
+  }
+
   Future<void> init({bool headless = false}) async {
     this.headless = headless;
     if (!kIsWeb && !headless) {

@@ -277,7 +277,7 @@ class FullSyncManager extends SyncManager {
   @override
   Future<void> complete() async {
     addToOutput("Reloading your contacts...");
-    await ContactsSvcV2.syncContactsToHandles();
+    await ContactsSvcV2.syncContactsToHandles(force: true);
     addToOutput("Reloading your chats...");
 
     ChatsSvc.reset();

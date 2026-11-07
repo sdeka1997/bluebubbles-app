@@ -14,6 +14,11 @@ import 'package:universal_io/io.dart';
 // ignore: non_constant_identifier_names
 ContactServiceV2 get ContactsSvcV2 => GetIt.I<ContactServiceV2>();
 
+/// Whether contacts are due a refresh from the server. A refresh within the last
+/// minute already has them: the app's start and its first sync both ask.
+bool contactRefreshIsDue({required DateTime? lastRefreshed, required DateTime now}) =>
+    lastRefreshed == null || now.difference(lastRefreshed) > const Duration(minutes: 1);
+
 /// ContactServiceV2 - UI-side service for the new contact architecture
 /// This service manages the state and triggers isolate operations
 /// Follows the architecture outlined in FR-1.md Section III
@@ -30,6 +35,11 @@ class ContactServiceV2 {
   /// Set when contact change events arrive while the app is backgrounded;
   /// consumed by [runPendingContactSync] on the next app resume.
   bool _pendingContactSync = false;
+
+  /// When contacts were last fetched from the server. The app's start and the
+  /// sync that follows it both ask for a refresh seconds apart; each fetch
+  /// downloads every contact with its photo.
+  DateTime? _lastRefreshed;
 
   bool get hasContactAccessSync {
     return _hasContactAccess;
@@ -134,15 +144,21 @@ class ContactServiceV2 {
     if (!_pendingContactSync) return;
     _pendingContactSync = false;
     Logger.info('[ContactServiceV2] Running contact sync deferred from background');
-    await syncContactsToHandles(wait: false);
+    await syncContactsToHandles(wait: false, force: true);
   }
 
-  Future<List<int>> syncContactsToHandles({bool wait = true}) async {
+  Future<List<int>> syncContactsToHandles({bool wait = true, bool force = false}) async {
     final access = await hasContactAccess;
     if (!access) {
       Logger.warn('[ContactServiceV2] Cannot fetch contacts without permission');
       return [];
     }
+    final now = DateTime.now();
+    if (!force && !contactRefreshIsDue(lastRefreshed: _lastRefreshed, now: now)) {
+      Logger.info('[ContactServiceV2] Contacts were refreshed moments ago, skipping');
+      return [];
+    }
+    _lastRefreshed = now;
 
     try {
       Logger.info('[ContactServiceV2] Starting contact fetch and match...');

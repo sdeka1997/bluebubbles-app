@@ -5,6 +5,7 @@ import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
+import 'package:bluebubbles/utils/memory_trace.dart';
 
 /// A validated `message-deleted` / `message-restored` event.
 class RecoverableMessageEvent {
@@ -82,6 +83,60 @@ AppleStateSnapshot parseAppleStateSnapshot({dynamic chatState, dynamic recentlyD
   return AppleStateSnapshot(readByChat: readByChat, deletedMessages: deletedMessages, deletedChats: deletedChats);
 }
 
+/// What a catch-up has to do on this device, worked out before anything is written.
+class AppleStateCatchUpPlan {
+  const AppleStateCatchUpPlan({
+    this.deleteChats = const [],
+    this.readStateChanges = const {},
+    this.clearNotificationFor = const [],
+  });
+
+  /// Chats Apple deleted whole.
+  final List<Chat> deleteChats;
+
+  /// Chats whose read state differs from Apple's, mapped to whether they should be unread.
+  final Map<Chat, bool> readStateChanges;
+
+  /// Chats already read here that still have a notification showing.
+  final List<Chat> clearNotificationFor;
+}
+
+/// Compares this device's chats with Apple's state. [shownNotificationIds] are the
+/// chat notifications Android is showing (each is posted under its chat's id); null
+/// when they could not be read, which falls back to clearing every read chat.
+///
+/// Nearly every chat is read on both sides with nothing showing, so nearly every
+/// chat needs nothing: asking Android to clear ~1,800 notifications one at a time
+/// took ~10 s on every app open.
+AppleStateCatchUpPlan planAppleStateCatchUp(
+  Iterable<Chat> chats,
+  AppleStateSnapshot snapshot, {
+  required Set<int>? shownNotificationIds,
+}) {
+  final deleteChats = <Chat>[];
+  final readStateChanges = <Chat, bool>{};
+  final clearNotificationFor = <Chat>[];
+  for (final chat in chats) {
+    if (snapshot.deletedChats.contains(chat.guid)) {
+      deleteChats.add(chat);
+      continue;
+    }
+    final read = snapshot.readByChat[chat.guid];
+    if (read == null) continue;
+    if ((chat.hasUnreadMessage ?? false) == read) {
+      readStateChanges[chat] = !read;
+    } else if (read && (shownNotificationIds == null || shownNotificationIds.contains(chat.id))) {
+      // Already read here, but a notification posted before the read arrived may still be up.
+      clearNotificationFor.add(chat);
+    }
+  }
+  return AppleStateCatchUpPlan(
+    deleteChats: deleteChats,
+    readStateChanges: readStateChanges,
+    clearNotificationFor: clearNotificationFor,
+  );
+}
+
 /// Brings the device in line with Apple after it was offline.
 ///
 /// The live `chat-read-status-changed`, `message-deleted` and `chat-deleted`
@@ -109,22 +164,23 @@ class AppleStateCatchUp {
 
   static Future<void> apply(AppleStateSnapshot snapshot) async {
     var changed = 0;
-    for (final chat in ChatsSvc.allChats.toList()) {
-      if (snapshot.deletedChats.contains(chat.guid)) {
-        await ChatsSvc.softDeleteChat(chat);
-        changed++;
-        continue;
-      }
-      final read = snapshot.readByChat[chat.guid];
-      if (read == null) continue;
-      if ((chat.hasUnreadMessage ?? false) == read) {
-        await ChatsSvc.setChatHasUnreadFromServer(chat, !read);
-        changed++;
-      } else if (read) {
-        // Already read here, but a notification posted before the read arrived may still be up.
-        await ChatInterface.clearNotificationForChat(chatId: chat.id!, chatGuid: chat.guid);
-      }
+    final plan = planAppleStateCatchUp(ChatsSvc.allChats.toList(), snapshot,
+        shownNotificationIds: await NotificationsSvc.shownChatNotificationIds());
+    MemTrace.mark('catch-up: planned (${plan.deleteChats.length} deleted, '
+        '${plan.readStateChanges.length} read changes, ${plan.clearNotificationFor.length} notifications)');
+    for (final chat in plan.deleteChats) {
+      await ChatsSvc.softDeleteChat(chat);
+      changed++;
     }
+    MemTrace.mark('catch-up: deleted chats');
+    for (final entry in plan.readStateChanges.entries) {
+      await ChatsSvc.setChatHasUnreadFromServer(entry.key, entry.value);
+      changed++;
+    }
+    for (final chat in plan.clearNotificationFor) {
+      await ChatInterface.clearNotificationForChat(chatId: chat.id!, chatGuid: chat.guid);
+    }
+    MemTrace.mark('catch-up: read state applied');
 
     for (final guid in snapshot.deletedMessages) {
       final message = Message.findOne(guid: guid);
@@ -132,6 +188,7 @@ class AppleStateCatchUp {
       await RecoverableMessages.apply(guid, hide: true);
       changed++;
     }
+    MemTrace.mark('catch-up: deleted messages hidden');
 
     if (changed > 0) Logger.info('Caught up $changed change(s) from Apple', tag: 'AppleStateCatchUp');
   }

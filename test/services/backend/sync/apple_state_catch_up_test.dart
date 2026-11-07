@@ -1,3 +1,4 @@
+import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/backend/sync/apple_state_catch_up.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -78,6 +79,76 @@ void main() {
       expect(snapshot.readByChat, isEmpty);
       expect(snapshot.deletedMessages, isEmpty);
       expect(snapshot.deletedChats, isEmpty);
+    });
+  });
+
+  group('planAppleStateCatchUp', () {
+    Chat chat(int id, String guid, {bool unread = false}) => Chat(id: id, guid: guid, hasUnreadMessage: unread);
+
+    test('a chat read on both sides with no notification showing is left alone', () {
+      final plan = planAppleStateCatchUp(
+        [chat(1, 'a'), chat(2, 'b')],
+        const AppleStateSnapshot(readByChat: {'a': true, 'b': true}),
+        shownNotificationIds: const {},
+      );
+
+      expect(plan.clearNotificationFor, isEmpty);
+      expect(plan.readStateChanges, isEmpty);
+      expect(plan.deleteChats, isEmpty);
+    });
+
+    test('a read chat whose notification is still showing has it cleared', () {
+      final plan = planAppleStateCatchUp(
+        [chat(1, 'a'), chat(2, 'b')],
+        const AppleStateSnapshot(readByChat: {'a': true, 'b': true}),
+        shownNotificationIds: const {2},
+      );
+
+      expect(plan.clearNotificationFor.map((c) => c.guid), ['b']);
+    });
+
+    test('when the shown notifications cannot be read, every read chat is cleared as before', () {
+      final plan = planAppleStateCatchUp(
+        [chat(1, 'a'), chat(2, 'b')],
+        const AppleStateSnapshot(readByChat: {'a': true, 'b': true}),
+        shownNotificationIds: null,
+      );
+
+      expect(plan.clearNotificationFor.map((c) => c.guid), ['a', 'b']);
+    });
+
+    test('a chat whose read state differs from Apple is changed to match', () {
+      final plan = planAppleStateCatchUp(
+        [chat(1, 'a', unread: true), chat(2, 'b')],
+        const AppleStateSnapshot(readByChat: {'a': true, 'b': false}),
+        shownNotificationIds: const {},
+      );
+
+      expect({for (final e in plan.readStateChanges.entries) e.key.guid: e.value}, {'a': false, 'b': true});
+      expect(plan.clearNotificationFor, isEmpty);
+    });
+
+    test('a chat Apple deleted whole is deleted and nothing else is done to it', () {
+      final plan = planAppleStateCatchUp(
+        [chat(1, 'a', unread: true)],
+        const AppleStateSnapshot(readByChat: {'a': true}, deletedChats: {'a'}),
+        shownNotificationIds: const {1},
+      );
+
+      expect(plan.deleteChats.map((c) => c.guid), ['a']);
+      expect(plan.readStateChanges, isEmpty);
+      expect(plan.clearNotificationFor, isEmpty);
+    });
+
+    test('a chat Apple did not report is left alone', () {
+      final plan = planAppleStateCatchUp(
+        [chat(1, 'a', unread: true)],
+        const AppleStateSnapshot(),
+        shownNotificationIds: const {1},
+      );
+
+      expect(plan.readStateChanges, isEmpty);
+      expect(plan.clearNotificationFor, isEmpty);
     });
   });
 }
