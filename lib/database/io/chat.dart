@@ -74,6 +74,11 @@ class Chat {
   /// Keep [dbOnlyLatestMessageDate] in sync via [setLatestMessage].
   final dbLatestMessage = ToOne<Message>();
 
+  /// The latest message as the SQLite ChatRepo loads it with the chat (its id is
+  /// `dbLatestMessage.targetId`). Not stored; null for chats read from ObjectBox.
+  @Transient()
+  Message? latestMessage;
+
   @Property(uid: 526293286661780207)
   DateTime? dbOnlyLatestMessageDate;
 
