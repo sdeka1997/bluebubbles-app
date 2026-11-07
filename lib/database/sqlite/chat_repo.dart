@@ -1,8 +1,10 @@
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart' show listsThread;
 import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:bluebubbles/database/sqlite/handle_repo.dart';
 import 'package:bluebubbles/database/sqlite/message_repo.dart';
+import 'package:bluebubbles/database/sqlite/row_writes.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:collection/collection.dart';
 
@@ -96,4 +98,114 @@ class ChatRepo {
       chat.latestMessage = latest[chat.dbLatestMessage.targetId];
     }
   }
+
+  // Writes. Each takes the open [WriteTx] of the caller's Db.write.
+
+  /// Inserts or updates [chats] by guid, keeping a stored chat's id. Every
+  /// column is written from the object (as ObjectBox's `put`), so callers
+  /// merge into the stored chat first. Participants: [setParticipants].
+  Future<List<Chat>> upsert(WriteTx tx, List<Chat> chats) async {
+    await saveByKey(tx, 'chats', 'guid', chats, key: (c) => c.guid, setId: (c, id) => c.id = id, toRow: chatToRow);
+    return chats;
+  }
+
+  /// Makes [handleIds] the participants of [chatId] (ids with no stored
+  /// handle are skipped). Reported as a change of the chat in `chat_handles`.
+  Future<void> setParticipants(WriteTx tx, int chatId, Iterable<int> handleIds) async {
+    await tx.execute('DELETE FROM chat_handles WHERE chat_id = ?', [chatId]);
+    for (final handleId in handleIds.toSet()) {
+      await tx.execute('INSERT INTO chat_handles (chat_id, handle_id) SELECT ?, id FROM handles WHERE id = ?', [chatId, handleId]);
+    }
+    tx.markChanged('chat_handles', [chatId]);
+  }
+
+  Future<void> setUnread(WriteTx tx, Iterable<int> chatIds, bool unread) async {
+    for (final chunk in chatIds.toSet().toList().slices(500)) {
+      await tx.execute(
+          'UPDATE chats SET has_unread_message = ? WHERE id IN (${sqlPlaceholders(chunk.length)})', [unread, ...chunk]);
+    }
+  }
+
+  Future<void> setLastReadMessageGuid(WriteTx tx, int chatId, String? guid) =>
+      tx.execute('UPDATE chats SET last_read_message_guid = ? WHERE id = ?', [guid, chatId]);
+
+  // The latest pointer (chats.latest_message_id / latest_message_date_us),
+  // with the rules of chat_list_message.dart: only an ordinary item
+  // ([listsThread]) that is not deleted lists a thread, a thread holding only
+  // status items lists nothing, and arrivals move the pointer only forward.
+  // "Newest" is the last row of the chat screen, (sort_at, id); the stored
+  // date stays the message's date_created, which orders the chat list.
+
+  /// [refreshThreadLatestFromDb]: points [chatId] at its newest listing
+  /// message, reading that one row from messages_chat_time. Returns whether
+  /// the pointer changed.
+  Future<bool> refreshLatest(WriteTx tx, int chatId) async {
+    final newest = await _newestIn(tx, chatId, listing: true) ?? await _newestIn(tx, chatId, listing: false);
+    if (newest == null) return false;
+    final listed = listsThread(newest) ? newest : null;
+    final current = await _pointer(tx, chatId);
+    if (current == null) return false;
+    if (current.$1 == listed?.id && (listed != null || current.$2 == null)) return false;
+    await _setLatest(tx, chatId, listed);
+    return true;
+  }
+
+  /// [relistChatsShownByEvents]: refreshes the chats of [chatIds] whose
+  /// pointer is at a status item. Returns the ids that changed.
+  Future<List<int>> relistShownByEvents(WriteTx tx, Iterable<int> chatIds) async {
+    final changed = <int>[];
+    for (final chatId in chatIds.toSet()) {
+      final current = await _pointer(tx, chatId);
+      if (current?.$1 == null) continue;
+      final latest = await MessageRepo(tx).row(current!.$1!);
+      if (latest == null || listsThread(latest)) continue;
+      if (await refreshLatest(tx, chatId)) changed.add(chatId);
+    }
+    return changed;
+  }
+
+  /// [keepNewestOf]: points [chatId] at the newest of [added] (stored messages,
+  /// with ids) when it is newer than what the chat is listed by, or when the
+  /// chat is listed by nothing, a status item, a deleted or a missing message.
+  /// Reads only the current pointer, never the chat's history. Returns whether
+  /// the pointer changed.
+  Future<bool> keepNewest(WriteTx tx, int chatId, Iterable<Message> added) async {
+    final newest = added
+        .where((m) => m.id != null && m.dateDeleted == null && m.dateCreated != null && listsThread(m))
+        .sorted((a, b) => MessageKey.of(a).compareTo(MessageKey.of(b)))
+        .lastOrNull;
+    if (newest == null) return false;
+    final pointer = await _pointer(tx, chatId);
+    if (pointer == null) return false;
+    final (currentId, listedAt) = pointer;
+    final current = currentId == null ? null : await MessageRepo(tx).row(currentId);
+    final currentCounts = current != null && listsThread(current) && current.dateDeleted == null && listedAt != null;
+    if (currentCounts && MessageKey.of(newest).compareTo(MessageKey.of(current)) <= 0) return false;
+    if (currentId == newest.id && listedAt == newest.dateCreated) return false;
+    await _setLatest(tx, chatId, newest);
+    return true;
+  }
+
+  /// (latest_message_id, latest_message_date) of [chatId], or null when there is no such chat.
+  Future<(int?, DateTime?)?> _pointer(DbReader reader, int chatId) async {
+    final rows =
+        await reader.select('SELECT latest_message_id, latest_message_date_us FROM chats WHERE id = ?', [chatId]);
+    if (rows.isEmpty) return null;
+    final us = rows.single['latest_message_date_us'] as int?;
+    return (rows.single['latest_message_id'] as int?, us == null ? null : DateTime.fromMicrosecondsSinceEpoch(us));
+  }
+
+  Future<Message?> _newestIn(DbReader reader, int chatId, {required bool listing}) async {
+    final rows = await reader.select(
+        'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? '
+        'AND date_deleted_us IS NULL AND date_created_us IS NOT NULL '
+        '${listing ? 'AND (item_type IS NULL OR item_type = 0) ' : ''}'
+        'ORDER BY sort_at_us DESC, id DESC LIMIT 1',
+        [chatId]);
+    return rows.isEmpty ? null : messageFromRow(rows.single);
+  }
+
+  Future<void> _setLatest(WriteTx tx, int chatId, Message? message) => tx.execute(
+      'UPDATE chats SET latest_message_id = ?, latest_message_date_us = ? WHERE id = ?',
+      [message?.id, message?.dateCreated?.microsecondsSinceEpoch, chatId]);
 }

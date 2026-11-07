@@ -1,5 +1,6 @@
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
+import 'package:bluebubbles/database/sqlite/row_writes.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:collection/collection.dart';
 
@@ -33,5 +34,13 @@ class AttachmentRepo {
       list.sort((a, b) => a.id!.compareTo(b.id!));
     }
     return result;
+  }
+
+  /// Inserts or updates [attachments] by guid, keeping a stored attachment's
+  /// id; the owner is `message.targetId`. Sets each attachment's id.
+  Future<List<Attachment>> upsert(WriteTx tx, List<Attachment> attachments) async {
+    await saveByKey(tx, 'attachments', 'guid', attachments,
+        key: (a) => a.guid, setId: (a, id) => a.id = id, toRow: attachmentToRow);
+    return attachments;
   }
 }

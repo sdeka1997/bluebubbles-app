@@ -178,6 +178,22 @@ class WriteTx extends _Tx {
     return db.database.customStatement(sql, args);
   }
 
+  /// Inserts [row] and returns its id. A null `id` is left to SQLite.
+  Future<int> insert(String table, Map<String, Object?> row) async {
+    final columns = [for (final e in row.entries) if (e.key != 'id' || e.value != null) e.key];
+    final rows = await select(
+        'INSERT INTO $table (${columns.join(', ')}) VALUES (${List.filled(columns.length, '?').join(', ')}) RETURNING id',
+        [for (final c in columns) row[c]]);
+    return rows.single['id'] as int;
+  }
+
+  /// Writes every column of [row] over the stored row with the same `id`.
+  Future<void> update(String table, Map<String, Object?> row) {
+    final columns = row.keys.where((c) => c != 'id').toList();
+    return execute('UPDATE $table SET ${columns.map((c) => '$c = ?').join(', ')} WHERE id = ?',
+        [for (final c in columns) row[c], row['id']]);
+  }
+
   /// Reports rows the update hook cannot see: tables WITHOUT ROWID (the join
   /// tables, reported by their parent id) and `DELETE FROM t` with no WHERE.
   void markChanged(String table, Iterable<int> ids) => _marked.putIfAbsent(table, () => {}).addAll(ids);

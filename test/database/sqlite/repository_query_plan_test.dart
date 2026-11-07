@@ -2,6 +2,7 @@
 // no full table scan, no temporary B-tree sort. Checked on the statements the
 // methods actually send (Db.recordStatements), without and with ANALYZE stats
 // (the phone's copied file has none today).
+import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
 import 'package:bluebubbles/database/sqlite/chat_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
@@ -18,7 +19,13 @@ Future<List<(String, List<String>)>> plansOf(Db db, Future<void> Function() fn) 
   return [
     for (final (sql, args) in statements)
       (sql, [for (final row in await db.database.customSelect('EXPLAIN QUERY PLAN $sql', variables: [
-        for (final a in args) a is int ? Variable.withInt(a) : Variable.withString(a as String),
+        for (final a in args)
+          switch (a) {
+            null => const Variable<Object>(null),
+            final int v => Variable.withInt(v),
+            final bool v => Variable.withBool(v),
+            _ => Variable.withString(a as String),
+          },
       ]).get()) row.read<String>('detail')]),
   ];
 }
@@ -158,6 +165,72 @@ void main() {
       test('AttachmentRepo.byGuid -> unique guid index; forMessages -> attachments_message', () async {
         expectIndexed(await plansOf(db, () => attachments.byGuid('a15')), {'sqlite_autoindex_attachments_1 (guid=?)'});
         expectIndexed(await plansOf(db, () => attachments.forMessages([15, 30])), {'attachments_message (message_id=?)'});
+      });
+
+      group('writes: every lookup a write makes is on an index', () {
+        Message incoming(String guid, int chatId) =>
+            Message(guid: guid, dateCreated: at(baseMs + 9999000), isFromMe: true)..chat.targetId = chatId;
+
+        test('MessageRepo.upsert -> unique guid index, then by primary key', () async {
+          expectIndexed(await plansOf(db, () => db.write((tx) => messages.upsert(tx, [incoming('m15', 1), incoming('fresh', 2)]))),
+              {'sqlite_autoindex_messages_1 (guid=?)'});
+        });
+
+        test('MessageRepo.replace / softDelete / restore -> unique guid index', () async {
+          expectIndexed(await plansOf(db, () => db.write((tx) => messages.replace(tx, 'm15', incoming('m15b', 1)))),
+              {'sqlite_autoindex_messages_1 (guid=?)', 'messages USING INTEGER PRIMARY KEY (rowid=?)'});
+          expectIndexed(await plansOf(db, () => db.write((tx) => messages.softDelete(tx, 'm16'))), {'sqlite_autoindex_messages_1 (guid=?)'});
+          expectIndexed(await plansOf(db, () => db.write((tx) => messages.restore(tx, 'm16'))), {'sqlite_autoindex_messages_1 (guid=?)'});
+        });
+
+        test('MessageRepo.delete -> unique guid index; attachments detached via attachments_message', () async {
+          expectIndexed(await plansOf(db, () => db.write((tx) => messages.delete(tx, ['m20', 'm40']))),
+              {'sqlite_autoindex_messages_1 (guid=?)', 'attachments_message (message_id=?)'});
+        });
+
+        test('ChatRepo.upsert -> unique guid index; setParticipants / setUnread -> primary keys', () async {
+          expectIndexed(await plansOf(db, () => db.write((tx) => chats.upsert(tx, [Chat(guid: 'chat-5'), Chat(guid: 'new')]))),
+              {'sqlite_autoindex_chats_1 (guid=?)'});
+          expectIndexed(await plansOf(db, () => db.write((tx) => chats.setParticipants(tx, 5, [1, 2]))),
+              {'chat_handles USING PRIMARY KEY (chat_id=?)', 'handles USING INTEGER PRIMARY KEY (rowid=?)'});
+          expectIndexed(await plansOf(db, () => db.write((tx) => chats.setUnread(tx, [1, 2], true))),
+              {'chats USING INTEGER PRIMARY KEY (rowid=?)'});
+        });
+
+        test('ChatRepo.refreshLatest -> newest row of the chat on messages_chat_time, walked backwards', () async {
+          expectIndexed(await plansOf(db, () => db.write((tx) => chats.refreshLatest(tx, 1))),
+              {'messages_chat_time (chat_id=?)', 'chats USING INTEGER PRIMARY KEY (rowid=?)'});
+        });
+
+        test('ChatRepo.keepNewest / relistShownByEvents -> primary keys only (never the chat history)', () async {
+          final added = (await messages.byIds([5999])).values.toList();
+          final plans = await plansOf(db, () => db.write((tx) => chats.keepNewest(tx, 1, added)));
+          expectIndexed(plans, {'chats USING INTEGER PRIMARY KEY (rowid=?)', 'messages USING INTEGER PRIMARY KEY (rowid=?)'});
+          expect(plans.expand((p) => p.$2).where((d) => d.contains('messages_chat_time') || d.contains('messages_timeline')), isEmpty);
+          expectIndexed(await plansOf(db, () => db.write((tx) => chats.relistShownByEvents(tx, [1, 2]))),
+              {'chats USING INTEGER PRIMARY KEY (rowid=?)'});
+        });
+
+        test('HandleRepo.upsert / insertMissing -> unique address+service index', () async {
+          expectIndexed(
+              await plansOf(db, () => db.write((tx) => handles.upsert(tx, [Handle(address: '+1000001'), Handle(address: 'x@y.z')]))),
+              {'sqlite_autoindex_handles_1 (unique_address_and_service=?)'});
+          expectIndexed(await plansOf(db, () => db.write((tx) => handles.insertMissing(tx, [Handle(address: '+1000002')]))),
+              {'sqlite_autoindex_handles_1 (unique_address_and_service=?)'});
+        });
+
+        test('HandleRepo.byRowIds / adoptServerRowIds -> handles_rowid', () async {
+          expectIndexed(await plansOf(db, () => handles.byRowIds([5, 6])), {'handles_rowid (original_rowid=?)'});
+          final h = (await handles.byId(3))!;
+          expectIndexed(await plansOf(db, () => db.write((tx) => handles.adoptServerRowIds(tx, [(h, 5)]))),
+              {'handles_rowid (original_rowid=?)'});
+        });
+
+        test('AttachmentRepo.upsert -> unique guid index', () async {
+          expectIndexed(
+              await plansOf(db, () => db.write((tx) => attachments.upsert(tx, [Attachment(guid: 'a20'), Attachment(guid: 'new')]))),
+              {'sqlite_autoindex_attachments_1 (guid=?)'});
+        });
       });
     });
   }

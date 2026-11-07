@@ -51,6 +51,7 @@ class Seed {
     int? handleRelationId,
     String? threadOriginator,
     String? text,
+    int? itemType,
   }) {
     final m = Message(
       id: id,
@@ -65,6 +66,7 @@ class Seed {
       originalROWID: originalRowId,
       threadOriginatorGuid: threadOriginator,
       text: text ?? 'text $id',
+      itemType: itemType,
     );
     m.chat.targetId = chatId;
     m.handleRelation.targetId = handleRelationId;

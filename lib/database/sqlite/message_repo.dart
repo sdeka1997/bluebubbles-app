@@ -1,6 +1,7 @@
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
+import 'package:bluebubbles/database/sqlite/row_writes.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:collection/collection.dart';
 
@@ -176,10 +177,83 @@ class MessageRepo {
     });
   }
 
+  /// The stored message [id] without its attachments (latest-pointer checks).
+  Future<Message?> row(int id) async {
+    final rows = await db.select('SELECT * FROM messages WHERE id = ?', [id]);
+    return rows.isEmpty ? null : messageFromRow(rows.single);
+  }
+
   Future<Message?> _single(List<Map<String, Object?>> rows) async {
     if (rows.isEmpty) return null;
     final m = messageFromRow(rows.single);
     await attachmentsFor([m]);
     return m;
+  }
+
+  // Writes. Each takes the open [WriteTx] of the caller's Db.write, so a sync
+  // batch or a fold is one transaction however many methods it calls.
+
+  /// Inserts or updates [messages] by guid, keeping a stored message's id;
+  /// `sort_at_us` follows the dates. Sets each message's id. Relations are
+  /// written from `chat.targetId` / `handleRelation.targetId`.
+  Future<List<Message>> upsert(WriteTx tx, List<Message> messages) async {
+    await saveByKey(tx, 'messages', 'guid', messages,
+        key: (m) => m.guid, setId: (m, id) => m.id = id, toRow: messageToRow);
+    return messages;
+  }
+
+  /// Updates the stored message [oldGuid] from [incoming] as a send receipt,
+  /// guid swap or edit does (MessageActions.replaceMessage): new guid and
+  /// text, delivery/read/edit dates when given, error state always. Keeps the
+  /// id, chat and sender. Returns the stored message, or null when none.
+  Future<Message?> replace(WriteTx tx, String oldGuid, Message incoming) async {
+    final existing = await MessageRepo(tx).byGuid(oldGuid);
+    if (existing == null) return null;
+    existing.guid = incoming.guid ?? existing.guid;
+    if (incoming.text != null) existing.text = incoming.text;
+    existing.service ??= incoming.service;
+    existing.dateDelivered = incoming.dateDelivered ?? existing.dateDelivered;
+    existing.isDelivered = incoming.isDelivered;
+    existing.dateRead = incoming.dateRead ?? existing.dateRead;
+    existing.dateEdited = incoming.dateEdited ?? existing.dateEdited;
+    if (incoming.attributedBody.isNotEmpty) existing.attributedBody = incoming.attributedBody;
+    if (incoming.messageSummaryInfo.isNotEmpty) existing.messageSummaryInfo = incoming.messageSummaryInfo;
+    existing.payloadData = incoming.payloadData ?? existing.payloadData;
+    existing.wasDeliveredQuietly = incoming.wasDeliveredQuietly || existing.wasDeliveredQuietly;
+    existing.didNotifyRecipient = incoming.didNotifyRecipient || existing.didNotifyRecipient;
+    existing.error = incoming.error;
+    existing.errorMessage = incoming.errorMessage;
+    await tx.update('messages', messageToRow(existing));
+    return existing;
+  }
+
+  /// Hides the message [guid] (sets `date_deleted`). Returns whether it exists.
+  Future<bool> softDelete(WriteTx tx, String guid, {DateTime? at}) async {
+    final rows = await tx.select('UPDATE messages SET date_deleted_us = ? WHERE guid = ? RETURNING id',
+        [(at ?? DateTime.now().toUtc()).microsecondsSinceEpoch, guid]);
+    return rows.isNotEmpty;
+  }
+
+  /// Clears `date_deleted` of [guid]. Returns whether it was deleted.
+  Future<bool> restore(WriteTx tx, String guid) async {
+    final rows = await tx.select(
+        'UPDATE messages SET date_deleted_us = NULL WHERE guid = ? AND date_deleted_us IS NOT NULL RETURNING id', [guid]);
+    return rows.isNotEmpty;
+  }
+
+  /// Removes the messages [guids]. Their attachments stay, unlinked, as
+  /// ObjectBox leaves them and the S1 copy stores them. Returns the removed ids.
+  Future<List<int>> delete(WriteTx tx, Iterable<String> guids) async {
+    final ids = <int>[];
+    for (final chunk in guids.toSet().toList().slices(500)) {
+      final rows = await tx.select('SELECT id FROM messages WHERE guid IN (${sqlPlaceholders(chunk.length)})', chunk);
+      ids.addAll(rows.map((r) => r['id'] as int));
+    }
+    for (final chunk in ids.slices(500)) {
+      final list = sqlPlaceholders(chunk.length);
+      await tx.execute('UPDATE attachments SET message_id = NULL WHERE message_id IN ($list)', chunk);
+      await tx.execute('DELETE FROM messages WHERE id IN ($list)', chunk);
+    }
+    return ids;
   }
 }
