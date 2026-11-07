@@ -1,5 +1,7 @@
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart' show listsThread;
+import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart'
+    show assignThreadKeys, canonicalTwinFor, carryOverThreadSettings;
 import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:bluebubbles/database/sqlite/handle_repo.dart';
@@ -87,8 +89,9 @@ class ChatRepo {
     });
   }
 
-  /// Participants (one join per 500 chats) and latest messages (one id lookup).
-  Future<void> _fill(List<Chat> chats) async {
+  /// Participants (one join per 500 chats) and, with [latest], latest
+  /// messages (one id lookup).
+  Future<void> _fill(List<Chat> chats, {bool latest = true}) async {
     if (chats.isEmpty) return;
     final byId = {for (final c in chats) c.id!: c};
     final participantIds = <int, List<int>>{};
@@ -100,14 +103,14 @@ class ChatRepo {
       }
     }
     final handles = await HandleRepo(db).byIds(participantIds.values.flattened);
-    final latestIds = {for (final c in chats) if (c.dbLatestMessage.targetId != 0) c.dbLatestMessage.targetId};
-    final latest = await MessageRepo(db).byIds(latestIds);
+    final latestIds = {if (latest) for (final c in chats) if (c.dbLatestMessage.targetId != 0) c.dbLatestMessage.targetId};
+    final latestMessages = await MessageRepo(db).byIds(latestIds);
     for (final chat in chats) {
       final participants = (participantIds[chat.id] ?? const <int>[]).map((id) => handles[id]).whereType<Handle>().toList()
         ..sort((a, b) => a.id!.compareTo(b.id!));
       chat.handles.addAll(participants);
       chat.participants = participants;
-      chat.latestMessage = latest[chat.dbLatestMessage.targetId];
+      if (latest) chat.latestMessage = latestMessages[chat.dbLatestMessage.targetId];
     }
   }
 
@@ -220,4 +223,59 @@ class ChatRepo {
   Future<void> _setLatest(WriteTx tx, int chatId, Message? message) => tx.execute(
       'UPDATE chats SET latest_message_id = ?, latest_message_date_us = ? WHERE id = ?',
       [message?.id, message?.dateCreated?.microsecondsSinceEpoch, chatId]);
+
+  /// `foldServiceTwins` (service_twin_helpers.dart) on SQLite: regroups every
+  /// chat (stores changed thread keys), then for each chat of [chats], or whose
+  /// thread changed, that is folded into another: carries its pin, mute,
+  /// archive and custom name over to the thread, moves all its messages there
+  /// with one UPDATE (each keeps `apple_chat_guid`, the chat it came from) and
+  /// moves the thread's latest pointer forward from the moved rows only.
+  /// Runs in the caller's write. Returns each folded chat's guid mapped to its
+  /// thread, one instance per thread, with its pointer as stored.
+  Future<Map<String, Chat>> foldServiceTwins(WriteTx tx, Iterable<Chat> chats) async {
+    final all = (await tx.select('SELECT * FROM chats')).map(chatFromRow).toList();
+    await ChatRepo(tx)._fill(all, latest: false);
+    final regrouped = assignThreadKeys(all);
+    for (final chat in regrouped) {
+      await tx.execute('UPDATE chats SET thread_key = ? WHERE id = ?', [chat.threadKey, chat.id]);
+    }
+    final byGuid = {for (final c in all) c.guid: c};
+    final inThread = all.where((c) => c.threadKey?.isNotEmpty ?? false).groupListsBy((c) => c.threadKey!);
+    // A thread's first chat can change when a chat joins it, so every chat in
+    // a touched thread is checked, not only the ones whose key changed.
+    final touched = <String, Chat>{};
+    for (final chat in [...chats, ...regrouped]) {
+      final stored = byGuid[chat.guid];
+      if (stored == null) continue;
+      touched[stored.guid] = stored;
+      for (final c in inThread[stored.threadKey] ?? const <Chat>[]) {
+        touched.putIfAbsent(c.guid, () => c);
+      }
+    }
+    final folded = <String, Chat>{};
+    for (final twin in touched.values) {
+      final canonical = canonicalTwinFor(twin, inThread[twin.threadKey] ?? const []);
+      if (canonical == null) continue;
+      folded[twin.guid] = canonical;
+      if (carryOverThreadSettings(canonical, [twin])) {
+        await tx.execute(
+            'UPDATE chats SET is_pinned = ?, pin_index = ?, mute_type = ?, mute_args = ?, is_archived = ?, '
+            'display_name = ?, lock_chat_name = ? WHERE id = ?',
+            [
+              canonical.isPinned, canonical.pinIndex, canonical.muteType, canonical.muteArgs, canonical.isArchived,
+              canonical.displayName, canonical.lockChatName, canonical.id,
+            ]);
+      }
+      final moved = await tx.select(
+          'UPDATE messages SET apple_chat_guid = coalesce(apple_chat_guid, ?), chat_id = ? WHERE chat_id = ? RETURNING *',
+          [twin.guid, canonical.id, twin.id]);
+      if (moved.isEmpty) continue;
+      if (await keepNewest(tx, canonical.id!, moved.map(messageFromRow))) {
+        final (id, date) = (await _pointer(tx, canonical.id!))!;
+        canonical.dbLatestMessage.targetId = id;
+        canonical.dbOnlyLatestMessageDate = date;
+      }
+    }
+    return folded;
+  }
 }

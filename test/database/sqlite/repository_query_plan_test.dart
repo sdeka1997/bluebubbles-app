@@ -299,6 +299,19 @@ void main() {
               {'chats USING INTEGER PRIMARY KEY (rowid=?)'});
         });
 
+        test('ChatRepo.foldServiceTwins: messages move on messages_chat_time; chats (with participants) read whole, as getAll today', () async {
+          await db.write((tx) => tx.execute("UPDATE chats SET chat_identifier = 'same' WHERE id IN (7, 8)"));
+          final plans = await plansOf(db, () => db.write((tx) => chats.foldServiceTwins(tx, const [])));
+          expect(plans.where((p) => p.$1.startsWith('UPDATE messages')), isNotEmpty, reason: 'chat 8 folds into 7');
+          for (final (sql, lines) in plans) {
+            for (final line in lines) {
+              expect(line, isNot(contains('TEMP B-TREE')), reason: '$sql\n$lines');
+              final scanned = RegExp(r'^SCAN (\w+)$').firstMatch(line)?.group(1);
+              if (scanned != null) expect(['chats', 'chat_handles', 'handles', 'contact_handles'], contains(scanned), reason: '$sql\n$lines');
+            }
+            if (sql.startsWith('UPDATE messages')) expect(lines.join(), contains('messages_chat_time (chat_id=?)'));
+          }
+        });
         test('HandleRepo.upsert / insertMissing -> unique address+service index', () async {
           expectIndexed(
               await plansOf(db, () => db.write((tx) => handles.upsert(tx, [Handle(address: '+1000001'), Handle(address: 'x@y.z')]))),
