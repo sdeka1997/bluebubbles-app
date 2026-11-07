@@ -5,6 +5,8 @@
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
 import 'package:bluebubbles/database/sqlite/chat_repo.dart';
+import 'package:bluebubbles/database/sqlite/contact_repo.dart';
+import 'package:bluebubbles/database/sqlite/custom_group_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:bluebubbles/database/sqlite/handle_repo.dart';
 import 'package:bluebubbles/database/sqlite/message_repo.dart';
@@ -40,11 +42,26 @@ void expectIndexed(List<(String, List<String>)> plans, Set<String> expected) {
       expect(line, isNot(contains('TEMP B-TREE')), reason: '$sql\n$lines');
       // An ordered walk of the intended index with a LIMIT is fine; a table scan is not.
       expect(RegExp(r'^SCAN \w+$').hasMatch(line), isFalse, reason: '$sql\n$lines');
-      if (line.startsWith('SCAN')) expect(line, contains('USING INDEX'), reason: '$sql\n$lines');
+      if (line.startsWith('SCAN')) expect(line, matches(r'USING (COVERING )?INDEX'), reason: '$sql\n$lines');
     }
   }
   for (final index in expected) {
     expect(details.any((d) => d.contains(index)), isTrue, reason: 'expected $index in\n${details.join('\n')}');
+  }
+}
+
+/// A read of a whole small table on purpose (contacts, custom groups: one row
+/// per address-book card or settings entry; ObjectBox reads them whole today).
+/// It may scan only [tables]: the table itself and, with ANALYZE stats, the
+/// small tables it fills from (an IN list of most of their ids is cheaper as a
+/// scan). Nothing sorts in a temporary B-tree.
+void expectWholeTable(List<(String, List<String>)> plans, Set<String> tables) {
+  for (final (sql, lines) in plans) {
+    for (final line in lines) {
+      expect(line, isNot(contains('TEMP B-TREE')), reason: '$sql\n$lines');
+      final scanned = RegExp(r'^SCAN (\w+)').firstMatch(line)?.group(1);
+      if (scanned != null) expect(tables, contains(scanned), reason: '$sql\n$lines');
+    }
   }
 }
 
@@ -76,6 +93,9 @@ void main() {
       if (i % 20 == 0) seed.attachment(i, i);
     }
     await seed.into(db);
+    for (var g = 1; g <= 10; g++) {
+      await db.write((tx) => CustomGroupRepo(db).create(tx, 'Group $g', [for (var c = g; c <= 200; c += 10) 'chat-$c']));
+    }
   }
 
   for (final analyzed in [false, true]) {
@@ -167,6 +187,74 @@ void main() {
         expectIndexed(await plansOf(db, () => attachments.forMessages([15, 30])), {'attachments_message (message_id=?)'});
       });
 
+      group('ContactRepo / CustomGroupRepo', () {
+        late ContactRepo contacts;
+        late CustomGroupRepo groups;
+        setUp(() {
+          contacts = ContactRepo(db);
+          groups = CustomGroupRepo(db);
+        });
+
+        test('ContactRepo.byId / byIds -> primary key; handles via contact_handles key', () async {
+          expectIndexed(await plansOf(db, () => contacts.byIds([1, 2])), {
+            'contacts USING INTEGER PRIMARY KEY (rowid=?)',
+            'contact_handles USING PRIMARY KEY (contact_id=?)',
+            'handles USING INTEGER PRIMARY KEY (rowid=?)',
+          });
+        });
+
+        test('ContactRepo.byNativeId -> unique native id index', () async {
+          expectIndexed(await plansOf(db, () => contacts.byNativeId('native-5')), {'sqlite_autoindex_contacts_1 (native_contact_id=?)'});
+        });
+
+        test('ContactRepo.forHandles -> contact_handles_handle', () async {
+          expectIndexed(await plansOf(db, () => contacts.forHandles([1, 2, 3])), {'contact_handles_handle (handle_id=?)'});
+        });
+
+        test('ContactRepo.nativeIds -> covering unique index, no table read', () async {
+          expectWholeTable(await plansOf(db, () => contacts.nativeIds()), {'contacts'});
+          expect((await plansOf(db, () => contacts.nativeIds())).single.$2.single, contains('COVERING INDEX'));
+        });
+
+        test('ContactRepo.all / byAddress read the whole contacts table, as today, and never sort in SQL', () async {
+          expectWholeTable(await plansOf(db, () => contacts.all()), {'contacts', 'contact_handles', 'handles'});
+          expectWholeTable(await plansOf(db, () => contacts.byAddress('+1000005')), {'contacts'});
+        });
+
+        test('ContactRepo writes -> unique native id; setHandles / deleteByNativeIds -> keys', () async {
+          expectIndexed(
+              await plansOf(db, () => db.write((tx) => contacts.upsert(tx, [ContactV2(displayName: 'x', nativeContactId: 'native-5')]))),
+              {'sqlite_autoindex_contacts_1 (native_contact_id=?)'});
+          expectIndexed(await plansOf(db, () => db.write((tx) => contacts.setHandles(tx, 5, [5, 6]))),
+              {'contact_handles USING PRIMARY KEY (contact_id=?)', 'handles USING INTEGER PRIMARY KEY (rowid=?)'});
+          expectIndexed(await plansOf(db, () => db.write((tx) => contacts.deleteByNativeIds(tx, ['native-7']))),
+              {'sqlite_autoindex_contacts_1 (native_contact_id=?)', 'contact_handles USING PRIMARY KEY (contact_id=?)'});
+        });
+
+        test('CustomGroupRepo.byId -> primary key; chats via custom_group_chats key', () async {
+          expectIndexed(await plansOf(db, () => groups.byId(1)), {
+            'custom_groups USING INTEGER PRIMARY KEY (rowid=?)',
+            'custom_group_chats USING PRIMARY KEY (group_id=?)',
+            'chats USING INTEGER PRIMARY KEY (rowid=?)',
+          });
+        });
+
+        test('CustomGroupRepo.all reads the whole (tiny) groups table; idsForChat -> custom_group_chats_chat', () async {
+          // Every group's chats are filled like ChatRepo pages (participants, latest
+          // message, its attachments); with stats, the seed's 300 attachments make an
+          // IN list of 200 latest-message ids cheaper as a scan.
+          expectWholeTable(await plansOf(db, () => groups.all()),
+              {'custom_groups', 'custom_group_chats', 'chats', 'chat_handles', 'handles', 'messages', 'attachments'});
+          expectIndexed(await plansOf(db, () => groups.idsForChat(5)), {'custom_group_chats_chat (chat_id=?)'});
+        });
+
+        test('CustomGroupRepo writes -> keys and unique chat guid', () async {
+          expectIndexed(await plansOf(db, () => db.write((tx) => groups.create(tx, 'New', ['chat-1', 'chat-2']))),
+              {'custom_group_chats USING PRIMARY KEY (group_id=?)', 'sqlite_autoindex_chats_1 (guid=?)'});
+          expectIndexed(await plansOf(db, () => db.write((tx) => groups.delete(tx, 2))),
+              {'custom_group_chats USING PRIMARY KEY (group_id=?)', 'custom_groups USING INTEGER PRIMARY KEY (rowid=?)'});
+        });
+      });
       group('writes: every lookup a write makes is on an index', () {
         Message incoming(String guid, int chatId) =>
             Message(guid: guid, dateCreated: at(baseMs + 9999000), isFromMe: true)..chat.targetId = chatId;

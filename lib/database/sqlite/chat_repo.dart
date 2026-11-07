@@ -33,6 +33,18 @@ class ChatRepo {
 
   Future<Chat?> byGuid(String guid) => _one('SELECT * FROM chats WHERE guid = ?', [guid]);
 
+  Future<Map<int, Chat>> byIds(Iterable<int> ids) {
+    return db.snapshot((reader) async {
+      final chats = <Chat>[];
+      for (final chunk in ids.toSet().toList().slices(500)) {
+        final rows = await reader.select('SELECT * FROM chats WHERE id IN (${sqlPlaceholders(chunk.length)})', chunk);
+        chats.addAll(rows.map(chatFromRow));
+      }
+      await ChatRepo(reader)._fill(chats);
+      return {for (final c in chats) c.id!: c};
+    });
+  }
+
   /// One page of the chat list in the order today's list query loads it
   /// (ChatActions.getChatsAsync): not deleted, newest latest message first.
   /// [after] is the last chat of the previous page. Pins and folded twins are
