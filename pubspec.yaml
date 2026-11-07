@@ -130,6 +130,7 @@ dependencies:
   objectbox_flutter_libs: any
   passkit: any
   passkit_ui: any
+  sqlite3: ^2.9.4
   sqlite3_flutter_libs: ^0.5.24 # required for network_tools drift/ARP service on Android
   open_filex: ^4.7.0
   package_info_plus: ^9.0.1
