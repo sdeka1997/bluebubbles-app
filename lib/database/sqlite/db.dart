@@ -7,12 +7,31 @@ import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqlite3/common.dart' show CommonDatabase, SqliteUpdate;
 
-/// Rows changed by one committed [Db.write], by table name. Slice B posts these
-/// to the other isolates (`IsolateEvent.dbChanged`) so they re-read those ids.
+/// Rows changed by one committed [Db.write], by table name. Posted to the main
+/// isolate as `IsolateEvent.dbChanged` (db_change_events.dart) so it re-reads
+/// those ids.
 class DbChanges {
   DbChanges(this.tables);
 
+  /// The [toMap] payload back, or null when [map] holds no change.
+  static DbChanges? tryFromMap(Object? map) {
+    final tables = map is Map ? map['tables'] : null;
+    if (tables is! Map) return null;
+    final parsed = <String, Set<int>>{
+      for (final MapEntry(:key, :value) in tables.entries)
+        if (key is String && value is Iterable && value.isNotEmpty) key: value.whereType<int>().toSet(),
+    };
+    return parsed.isEmpty ? null : DbChanges(parsed);
+  }
+
+  factory DbChanges.fromMap(Map map) => tryFromMap(map) ?? DbChanges({});
+
   final Map<String, Set<int>> tables;
+
+  /// Sendable between isolates: `{'tables': {table: [ids]}}`.
+  Map<String, dynamic> toMap() => {
+        'tables': {for (final MapEntry(:key, :value) in tables.entries) key: value.toList()},
+      };
 
   bool get isEmpty => tables.isEmpty;
 

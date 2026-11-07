@@ -409,6 +409,10 @@ class GlobalIsolate {
     });
   }
 
+  /// Feeds [message] in as if the spawned isolate had sent it.
+  @visibleForTesting
+  void debugHandleIsolateMessage(dynamic message) => _handleIsolateMessage(message);
+
   void _handleIsolateMessage(dynamic message) {
     if (message is SendPort) {
       _sendPort = message;

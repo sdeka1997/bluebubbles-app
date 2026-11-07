@@ -54,6 +54,11 @@ enum IsolateEvent {
   /// Emitted when the isolate saves settings, so main and the other isolates can update their copies.
   /// Payload: `Map<String, dynamic>` of the changed settings keys (same shape as `Settings.toMap()`).
   settingsChanged,
+
+  /// Emitted after each committed SQLite write (`Db.write`) on the isolate, so
+  /// the main isolate re-reads the rows it shows. Payload: `DbChanges.toMap()`,
+  /// `{'tables': Map<String, List<int>>}` table name → changed row ids.
+  dbChanged,
 }
 
 /// A standard event message format for isolate-to-main communication
