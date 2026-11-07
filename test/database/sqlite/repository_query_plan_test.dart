@@ -10,6 +10,7 @@ import 'package:bluebubbles/database/sqlite/custom_group_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:bluebubbles/database/sqlite/handle_repo.dart';
 import 'package:bluebubbles/database/sqlite/message_repo.dart';
+import 'package:bluebubbles/database/sqlite/sync_batch_writer.dart';
 import 'package:drift/drift.dart' show Variable;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -312,6 +313,38 @@ void main() {
             if (sql.startsWith('UPDATE messages')) expect(lines.join(), contains('messages_chat_time (chat_id=?)'));
           }
         });
+        test('SqliteSyncBatch.write: messages and attachments always keyed; only the fold reads chats (and their participants) whole', () async {
+          final prepared = await SqliteSyncBatch.prepare({
+            'messagesData': [
+              for (final i in [5, 6, 7000])
+                {
+                  'guid': 'm$i',
+                  'dateCreated': baseMs + i * 1000,
+                  'isFromMe': false,
+                  'handleId': 9,
+                  'handle': {'address': '+1000005', 'service': 'iMessage', 'originalROWID': 9},
+                  'associatedMessageGuid': 'p:0/m1',
+                  'associatedMessageType': 'love',
+                  'chats': [
+                    {'guid': 'chat-5', 'chatIdentifier': '+1000005', 'participants': [{'address': '+1000005', 'service': 'iMessage'}]},
+                  ],
+                  'attachments': [{'guid': 'a$i', 'mimeType': 'image/jpeg'}],
+                },
+            ],
+          });
+          final plans = await plansOf(db, () => SqliteSyncBatch.write(db, prepared));
+          for (final (sql, lines) in plans) {
+            for (final line in lines) {
+              final scanned = RegExp(r'^SCAN (\w+)$').firstMatch(line)?.group(1);
+              if (scanned != null) {
+                expect(['chats', 'chat_handles', 'handles', 'contact_handles'], contains(scanned), reason: '$sql\n$lines');
+                if (scanned == 'chats') expect(sql, startsWith('SELECT * FROM chats'), reason: 'only foldServiceTwins\n$lines');
+              }
+            }
+          }
+          expect(plans.where((p) => p.$1.startsWith('SELECT * FROM chats') && p.$2.contains('SCAN chats')), hasLength(1));
+        });
+
         test('HandleRepo.upsert / insertMissing -> unique address+service index', () async {
           expectIndexed(
               await plansOf(db, () => db.write((tx) => handles.upsert(tx, [Handle(address: '+1000001'), Handle(address: 'x@y.z')]))),
