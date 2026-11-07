@@ -90,21 +90,49 @@ int _fileSize(File file) {
   return size;
 }
 
-/// Copies [store] into the SQLite [file] (resuming or topping up an earlier copy),
-/// verifies it and records the result in storage_meta. Logs counts, timings, file
-/// size and RSS through [log]; never message content. Returns whether it verified.
+/// Bump when the copy or its check changes: a file checked by an older version
+/// is copied and checked again from scratch on the next launch.
+const copyCheckVersion = 2;
+
+/// Copies [store] into the SQLite [file] (resuming an earlier copy), verifies it
+/// and records the result in storage_meta. Logs counts, timings, file size and
+/// RSS through [log]; never message content. Returns whether it verified.
+///
+/// Once the copy is verified, or has given up, later launches only log the
+/// stored result and touch nothing in ObjectBox: even a count walks the whole
+/// message table, and on the phone that kept ~700 MB of ObjectBox resident.
 Future<bool> runSqliteCopyCheck({
   required Store store,
   required File file,
   required void Function(String line) log,
   int batchSize = 1000,
+  int checkVersion = copyCheckVersion,
 }) async {
   final clock = Stopwatch()..start();
   AppDatabase? database;
   try {
     database = AppDatabase(NativeDatabase(file));
-    final state = (await readStorageMeta(database))['copy_state'];
-    final mode = state == null ? 'new' : (state == 'verified' ? 'incremental' : 'resume:$state');
+    final meta = await readStorageMeta(database);
+    final state = meta['copy_state'];
+    final version = int.tryParse(meta['check_version'] ?? '') ?? (state == null ? checkVersion : 1);
+    final failures = int.tryParse(meta['verify_failures'] ?? '') ?? 0;
+    if (version == checkVersion && state == 'verified') {
+      log('BBSQL skip: copy verified at ${meta['verified_at']} (check v$checkVersion)');
+      return true;
+    }
+    if (version == checkVersion && state == 'verify_failed' && failures >= ObjectBoxSqliteCopy.maxVerifyFailures) {
+      log('BBSQL skip: verification failed $failures times, not retrying');
+      log('BBSQL last verify ${meta['verify_result']}');
+      return false;
+    }
+    if (version != checkVersion) {
+      // Diagnostics from the older check before its result is replaced.
+      if (meta['verify_result'] != null) log('BBSQL previous verify (check v$version) ${meta['verify_result']}');
+      await ObjectBoxSqliteCopy.resetTarget(database);
+    }
+    await database.customStatement(
+        'INSERT OR REPLACE INTO storage_meta (key, value) VALUES (?, ?)', ['check_version', '$checkVersion']);
+    final mode = version != checkVersion ? 'recheck' : (state == null ? 'new' : 'resume:$state');
     log('BBSQL start mode=$mode messages=${store.box<Message>().count()} rssMb=${_mb(ProcessInfo.currentRss)}');
 
     final copy = ObjectBoxSqliteCopy(source: store, target: database, batchSize: batchSize, log: log);

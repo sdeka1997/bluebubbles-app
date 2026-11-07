@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/app_database.dart';
+import 'package:bluebubbles/database/sqlite/objectbox_sqlite_copy.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_copy_check.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -64,15 +65,71 @@ void main() {
     expect(store.box<Message>().count(), 25);
   });
 
-  test('a later launch copies only the new rows', () async {
+  test('a later launch after a verified copy does not read ObjectBox at all', () async {
     final file = File('${directory.path}/bluebubbles.db');
-    await runSqliteCopyCheck(store: store, file: file, log: (_) {});
-    store.box<Message>().put(Message(guid: 'new', dateCreated: DateTime.now()));
+    expect(await runSqliteCopyCheck(store: store, file: file, log: (_) {}), isTrue);
+    // Reading the whole message box on every launch kept ~700 MB of ObjectBox
+    // resident on the phone. A closed store throws on any read.
+    store.close();
+    final lines = <String>[];
+    expect(await runSqliteCopyCheck(store: store, file: file, log: lines.add), isTrue);
+    expect(lines, hasLength(1));
+    expect(lines.single, startsWith('BBSQL skip: copy verified'));
+    store = Store(getObjectBoxModel(), directory: '${directory.path}/objectbox');
+  });
+
+  test('after giving up, a launch logs the stored check result and does not read ObjectBox', () async {
+    final file = File('${directory.path}/bluebubbles.db');
+    final database = AppDatabase.file(file);
+    await database.customStatement(
+        "INSERT INTO storage_meta (key, value) VALUES ('check_version', '$copyCheckVersion'), ('copy_state', 'verify_failed'), "
+        "('verify_failures', '2'), ('verify_result', '{\"ok\":false,\"mismatches\":[\"messages 7 date_edited_us\"]}')");
+    await database.close();
+    store.close();
+
+    final lines = <String>[];
+    expect(await runSqliteCopyCheck(store: store, file: file, log: lines.add), isFalse);
+    expect(lines, contains('BBSQL skip: verification failed 2 times, not retrying'));
+    expect(lines, contains('BBSQL last verify {"ok":false,"mismatches":["messages 7 date_edited_us"]}'));
+    expect(lines.where((l) => l.startsWith('BBSQL error')), isEmpty);
+    store = Store(getObjectBoxModel(), directory: '${directory.path}/objectbox');
+  });
+
+  test('a file from before check versions existed is checked again from scratch', () async {
+    final file = File('${directory.path}/bluebubbles.db');
+    final database = AppDatabase.file(file);
+    await database.customStatement(
+        "INSERT INTO storage_meta (key, value) VALUES ('copy_state', 'verify_failed'), ('verify_failures', '2')");
+    await database.close();
 
     final lines = <String>[];
     expect(await runSqliteCopyCheck(store: store, file: file, log: lines.add), isTrue);
-    expect(lines.first, contains('mode=incremental'));
-    expect(lines.singleWhere((l) => l.startsWith('BBSQL copied')), contains('messages=1'));
+    expect(lines.singleWhere((l) => l.startsWith('BBSQL start')), contains('mode=recheck'));
+    expect(lines.singleWhere((l) => l.startsWith('BBSQL verify')), contains('ok=true'));
+  });
+
+  test('a newer check version copies and checks again, even after an earlier version gave up', () async {
+    final file = File('${directory.path}/bluebubbles.db');
+    expect(await runSqliteCopyCheck(store: store, file: file, log: (_) {}, checkVersion: 1), isTrue);
+    final database = AppDatabase.file(file);
+    await database.customStatement(
+        "INSERT OR REPLACE INTO storage_meta (key, value) VALUES ('copy_state', 'verify_failed'), ('verify_failures', '2')");
+    await database.close();
+
+    final lines = <String>[];
+    expect(await runSqliteCopyCheck(store: store, file: file, log: lines.add, checkVersion: 2), isTrue);
+    expect(lines.first, startsWith('BBSQL previous verify (check v1) {"ok":true'));
+    expect(lines.singleWhere((l) => l.startsWith('BBSQL start')), contains('mode=recheck'));
+    expect(lines.singleWhere((l) => l.startsWith('BBSQL copied')), contains('messages=25'));
+    expect(lines.singleWhere((l) => l.startsWith('BBSQL verify')), contains('ok=true'));
+
+    final reopened = AppDatabase.file(file);
+    addTearDown(reopened.close);
+    expect((await readStorageMeta(reopened))['check_version'], '2');
+
+    final again = <String>[];
+    expect(await runSqliteCopyCheck(store: store, file: file, log: again.add, checkVersion: 2), isTrue);
+    expect(again.single, startsWith('BBSQL skip: copy verified'));
   });
 
   test('an error is logged as one line without statement parameters and reported as not ok', () async {

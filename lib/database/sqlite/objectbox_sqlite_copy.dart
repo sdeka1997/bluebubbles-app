@@ -171,12 +171,19 @@ class ObjectBoxSqliteCopy {
 
   bool get _shouldStop => stopAfterBatches != null && _batches >= stopAfterBatches!;
 
-  Future<void> _reset() async {
+  Future<void> _reset() => resetTarget(target);
+
+  /// Empties every copied table, the checkpoints and the copy's own state, so the
+  /// next run is a fresh full copy.
+  static Future<void> resetTarget(AppDatabase target) async {
     await target.transaction(() async {
       for (final table in copiedTables.reversed) {
         await target.customStatement('DELETE FROM $table');
       }
       await target.customStatement('DELETE FROM copy_checkpoints');
+      await target.customStatement(
+          "DELETE FROM storage_meta WHERE key IN ('copy_state', 'verify_failures', 'verify_result', "
+          "'verify_rows_complete', 'verify_mismatch_ids', 'verified_at', 'copied_at')");
     });
   }
 
