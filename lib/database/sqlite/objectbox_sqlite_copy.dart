@@ -204,8 +204,18 @@ class ObjectBoxSqliteCopy {
     return row?.read<int>('last_source_id') ?? 0;
   }
 
-  Future<List<int>> _sqliteIds(String table) async =>
-      (await target.customSelect('SELECT id FROM $table ORDER BY id').get()).map((r) => r.read<int>('id')).toList();
+  /// Read in pages: a row object per message at once would be tens of MB on the phone.
+  Future<List<int>> _sqliteIds(String table) async {
+    final ids = <int>[];
+    while (true) {
+      final page = await target
+          .customSelect('SELECT id FROM $table WHERE id > ? ORDER BY id LIMIT 20000',
+              variables: [drift.Variable(ids.isEmpty ? 0 : ids.last)])
+          .get();
+      ids.addAll(page.map((r) => r.read<int>('id')));
+      if (page.length < 20000) return ids;
+    }
+  }
 
   /// Deletes rows whose ObjectBox row is gone. [childFk] rows pointing at them
   /// are detached first, as ObjectBox leaves them dangling rather than deleting them.
