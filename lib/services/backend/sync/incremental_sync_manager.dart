@@ -1,9 +1,7 @@
 import 'package:async_task/async_task_extension.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
-import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
@@ -514,7 +512,8 @@ class IncrementalSyncManager extends SyncManager {
       final chat = chatCache[entry.key];
       // Messages in iCloud can deliver old renames after newer ones are stored;
       // those leave the current name the server sent with the chat in place.
-      if (chat != null && shouldApplyNameChange(entry.value.dateCreated, _newestStoredNameChange(entry.key))) {
+      if (chat != null &&
+          shouldApplyNameChange(entry.value.dateCreated, await _newestStoredNameChange(entry.key))) {
         chat.displayName = entry.value.groupTitle;
       }
     }
@@ -579,18 +578,8 @@ class IncrementalSyncManager extends SyncManager {
 
   /// When the newest group-name change stored for [chatGuid] (or the thread it
   /// is folded into) happened, or null when none is stored.
-  DateTime? _newestStoredNameChange(String chatGuid) {
-    final local = Chat.findOne(guid: chatGuid);
-    if (local == null) return null;
-    final chatIds = {local.id!, findCanonicalTwin(local)?.id ?? local.id!}.toList();
-    final query = (Database.messages.query(Message_.itemType.equals(2))
-          ..link(Message_.chat, Chat_.id.oneOf(chatIds))
-          ..order(Message_.dateCreated, flags: Order.descending))
-        .build();
-    query.limit = 1;
-    final newest = query.findFirst();
-    query.close();
-    return newest?.dateCreated;
+  Future<DateTime?> _newestStoredNameChange(String chatGuid) {
+    return MessagingStore.current.newestStoredNameChange(chatGuid);
   }
 
   List<Map<String, dynamic>> buildRowIdWhereArgs(int startRowId, int? endRowId) {

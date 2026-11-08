@@ -2,13 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:bluebubbles/utils/memory_trace.dart';
-import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
-import 'package:bluebubbles/helpers/ui/async_task.dart';
-import 'package:bluebubbles/helpers/types/helpers/chat_metadata_helpers.dart';
-import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/helpers/ui/ui_helpers.dart';
 import 'package:bluebubbles/services/backend/interfaces/sync_interface.dart';
 import 'package:bluebubbles/services/backend/sync/sync_marker.dart';
@@ -105,19 +100,11 @@ class SyncService {
         if (page.isEmpty || (total != null && offset >= total.toInt()) || page.length < pageSize) break;
       }
 
-      final localChats = Database.chats.getAll();
-      late Map<String, Chat> folded;
-      late List<Chat> changed;
-      late List<Chat> relisted;
-      Database.runInTransaction(TxMode.write, () {
-        changed = {
-          ...updateGroupIdsFromRemote(localChats, remoteChats),
-          ...updateSpamFlagsFromRemote(localChats, remoteChats),
-        }.toList();
-        if (changed.isNotEmpty) Database.chats.putMany(changed);
-        folded = foldServiceTwins(localChats);
-        relisted = relistChatsShownByEvents(Database.chats.getAll());
-      });
+      final refresh = await MessagingStore.current.refreshChatMetadata(remoteChats);
+      final localChats = await MessagingStore.current.allChats();
+      final changed = refresh.changedChats;
+      final folded = refresh.foldedChats;
+      final relisted = refresh.relistedChats;
 
       // Apply spam changes to the live list immediately. addChat also refuses
       // folded twins, so restored non-spam chats return without exposing twins.
@@ -207,7 +194,7 @@ class SyncService {
 
       // repositionImmediate: false so a page touching many chats rebuilds the list once.
       for (final entry in latestPerChat.entries) {
-        final msg = await runAsync(() => Database.messages.get(entry.value));
+        final msg = await MessagingStore.current.messageById(entry.value);
         if (msg == null) continue;
         // If this chat was created for the first time during this sync,
         // ChatState doesn't exist yet — register it so updateChatLatestMessage
@@ -229,7 +216,7 @@ class SyncService {
           final service = maybeFindMessagesSvc(entry.key);
           if (service == null) break;
           final chunk = entry.value.sublist(i, math.min(i + _dispatchChunkSize, entry.value.length));
-          final messages = await runAsync(() => Database.messages.getMany(chunk).whereType<Message>().toList());
+          final messages = await MessagingStore.current.messagesByIds(chunk);
           for (final message in messages) {
             if (message.guid == null) continue;
             await service.addNewMessage(message);

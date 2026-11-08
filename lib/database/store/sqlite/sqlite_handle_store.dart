@@ -98,6 +98,12 @@ mixin SqliteHandleStore implements HandleStore, SqliteStorePart {
       [for (final row in await db.select('SELECT id FROM handles ORDER BY id')) row['id'] as int];
 
   @override
+  Future<List<Handle>> allHandles() => HandleRepo(db).all();
+
+  @override
+  Future<void> clearHandles() => db.write((tx) => HandleRepo(tx).clear(tx));
+
+  @override
   Future<Handle?> handleById(int id) => HandleRepo(db).byId(id);
 
   @override

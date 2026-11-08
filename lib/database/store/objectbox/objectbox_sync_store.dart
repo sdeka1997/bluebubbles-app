@@ -3,6 +3,7 @@ import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
+import 'package:bluebubbles/helpers/types/helpers/chat_metadata_helpers.dart';
 import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/services/backend/actions/sync_actions.dart' show payloadSenderKey;
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -438,4 +439,54 @@ mixin ObjectBoxSyncStore implements SyncStore {
 
   @override
   Future<List<Chat>> chatsByIds(List<int> ids) async => Database.chats.getMany(ids).whereType<Chat>().toList();
+
+  @override
+  Future<List<Chat>> allChats() async => Database.chats.getAll();
+
+  @override
+  Future<void> setChatHandleIds(Map<int, List<int>> handleIdsByChat) async {
+    for (final entry in handleIdsByChat.entries) {
+      final chat = Database.chats.get(entry.key);
+      if (chat == null) continue;
+      chat.handles.addAll(Database.handles.getMany(entry.value).whereType<Handle>());
+      chat.handles.applyToDb();
+    }
+  }
+
+  @override
+  Future<ChatMetadataRefreshResult> refreshChatMetadata(List<Map<String, dynamic>> remoteChats) async {
+    final localChats = Database.chats.getAll();
+    late List<Chat> changed;
+    late Map<String, Chat> folded;
+    late List<Chat> relisted;
+    Database.runInTransaction(TxMode.write, () {
+      changed = {
+        ...updateGroupIdsFromRemote(localChats, remoteChats),
+        ...updateSpamFlagsFromRemote(localChats, remoteChats),
+      }.toList();
+      if (changed.isNotEmpty) Database.chats.putMany(changed);
+      folded = foldServiceTwins(localChats);
+      relisted = relistChatsShownByEvents(Database.chats.getAll());
+    });
+    return ChatMetadataRefreshResult(
+      changedChats: changed,
+      foldedChats: folded,
+      relistedChats: relisted,
+    );
+  }
+
+  @override
+  Future<DateTime?> newestStoredNameChange(String chatGuid) async {
+    final local = Chat.findOne(guid: chatGuid);
+    if (local == null) return null;
+    final chatIds = {local.id!, findCanonicalTwin(local)?.id ?? local.id!}.toList();
+    final query = (Database.messages.query(Message_.itemType.equals(2))
+          ..link(Message_.chat, Chat_.id.oneOf(chatIds))
+          ..order(Message_.dateCreated, flags: Order.descending))
+        .build();
+    query.limit = 1;
+    final newest = query.findFirst();
+    query.close();
+    return newest?.dateCreated;
+  }
 }

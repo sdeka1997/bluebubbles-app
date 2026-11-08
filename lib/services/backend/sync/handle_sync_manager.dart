@@ -1,5 +1,5 @@
 import 'package:async_task/async_task_extension.dart';
-import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/backend/sync/sync_manager_impl.dart';
@@ -71,7 +71,7 @@ class HandleSyncManager extends SyncManager {
       }
 
       // First, backup the handles so we can restore them if required later.
-      backupHandles();
+      await backupHandles();
 
       // Second, fetch all the chats and cache the chat <-> handle relationships.
       // This is so we can re-apply them later during the resync or a restore.
@@ -80,7 +80,7 @@ class HandleSyncManager extends SyncManager {
 
       // Clearing handle database
       addToOutput("Clearing handle database...");
-      Database.handles.removeAll();
+      await MessagingStore.current.clearHandles();
 
       // This flag can be used to test the restore functionality
       if (simulateError) {
@@ -134,7 +134,7 @@ class HandleSyncManager extends SyncManager {
           // Also treat it as if there was an error and restore the original handles.
           // This is to prevent any incomplete work from being committed.
           if (completer != null && !completer!.isCompleted) {
-            restoreOriginalHandles();
+            await restoreOriginalHandles();
             completer!.complete();
           }
 
@@ -167,9 +167,9 @@ class HandleSyncManager extends SyncManager {
     return null;
   }
 
-  void backupHandles() {
+  Future<void> backupHandles() async {
     addToOutput("Backing up handles...");
-    List<Handle> existingHandles = Handle.find();
+    final existingHandles = await MessagingStore.current.allHandles();
     for (Handle h in existingHandles) {
       if (h.originalROWID != null) {
         handleBackup[h.originalROWID!] = Handle.fromMap(h.toMap());
@@ -179,8 +179,7 @@ class HandleSyncManager extends SyncManager {
 
   Future<List<Chat>> getChatsFromDb() async {
     addToOutput("Loading chats from database...");
-    final chatQuery = Database.chats.query().build();
-    List<Chat> chats = chatQuery.find();
+    final chats = await MessagingStore.current.allChats();
     addToOutput("Loaded ${chats.length} from the database...");
     return chats;
   }
@@ -194,31 +193,34 @@ class HandleSyncManager extends SyncManager {
     }
   }
 
-  void restoreOriginalHandles() {
+  Future<void> restoreOriginalHandles() async {
     // Don't try and restore if there is nothing backed up to re-create.
     // Or no relationships to recreate.
     if (handleBackup.isEmpty || chatHandleCache.isEmpty) return;
 
     addToOutput('Restoring original handles...');
-    Database.handles.removeAll();
+    await MessagingStore.current.clearHandles();
 
-    List<Handle> newHandles = Handle.bulkSave(handleBackup.values.toList());
-    for (Handle h in newHandles) {
-      if (h.originalROWID != null) {
-        handleBackup[h.originalROWID!] = h;
+    final restored = handleBackup.values.toList();
+    await MessagingStore.current.saveHandles(restored, matchOnOriginalROWID: false);
+    for (final handle in restored) {
+      if (handle.originalROWID != null) {
+        handleBackup[handle.originalROWID!] = handle;
       }
     }
 
-    rebuildRelationships(handleBackup);
+    await rebuildRelationships(handleBackup);
   }
 
-  void rebuildRelationships(Map<int, Handle> handleMap) {
+  Future<void> rebuildRelationships(Map<int, Handle> handleMap) async {
     addToOutput("Re-creating chat <-> handle relationships");
-    chatHandleCache.forEach((key, value) {
-      List<Handle> relations = value.map((e) => handleMap[e]).nonNulls.toList();
-      key.handles.addAll(relations);
-      key.handles.applyToDb();
-    });
+    final idsByChat = <int, List<int>>{};
+    for (final entry in chatHandleCache.entries) {
+      final chatId = entry.key.id;
+      if (chatId == null) continue;
+      idsByChat[chatId] = entry.value.map((rowId) => handleMap[rowId]?.id).nonNulls.toList();
+    }
+    await MessagingStore.current.setChatHandleIds(idsByChat);
   }
 
   Stream<HandleSyncPage> streamHandlePages(int? count, {int batchSize = 200}) async* {
@@ -252,13 +254,12 @@ class HandleSyncManager extends SyncManager {
 
   @override
   completeWithError(String errorMessage) {
-    restoreOriginalHandles();
-    super.completeWithError(errorMessage);
+    restoreOriginalHandles().whenComplete(() => super.completeWithError(errorMessage));
   }
 
   @override
   Future<void> complete() async {
-    rebuildRelationships(newHandles);
+    await rebuildRelationships(newHandles);
     addToOutput("Successfully synced $handlesSynced handle(s)!");
     addToOutput("Reloading your chats...");
 

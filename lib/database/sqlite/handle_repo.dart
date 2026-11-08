@@ -15,6 +15,15 @@ class HandleRepo {
 
   Future<Handle?> byId(int id) async => (await byIds([id]))[id];
 
+  Future<List<Handle>> all() async {
+    final rows = await db.select('SELECT * FROM handles ORDER BY id');
+    final handles = rows.map(handleFromRow).toList();
+    await _fillContacts(handles);
+    return handles;
+  }
+
+  Future<void> clear(WriteTx tx) => tx.execute('DELETE FROM handles');
+
   /// The handle for [address] on [service], as `Handle.findOne(addressAndService:)` finds it.
   Future<Handle?> byUniqueKey(String address, String service) async {
     final rows = await db.select('SELECT * FROM handles WHERE address = ? AND service = ? LIMIT 1', [address, service]);
