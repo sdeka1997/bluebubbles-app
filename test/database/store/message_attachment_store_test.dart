@@ -38,6 +38,24 @@ void main() {
 
   forEachStore((fixture) {
     group('MessageActions', () {
+      test('getMessages returns recent messages from the active store', () async {
+        final chat = await fixture().chat('c1');
+        await fixture().message(
+          'recent',
+          chat,
+          DateTime.now().subtract(const Duration(hours: 1)).millisecondsSinceEpoch,
+        );
+        await fixture().message(
+          'old',
+          chat,
+          DateTime.now().subtract(const Duration(days: 2)).millisecondsSinceEpoch,
+        );
+
+        final messages = await MessageActions.getMessages();
+
+        expect(messages?.map((message) => message.guid), ['recent']);
+      });
+
       test('saveMessageAsync inserts, links the sender by ROWID and the chat; a re-save keeps id, text and bookmark',
           () async {
         final ana = await fixture().handle('ana@x.com', rowId: 7);

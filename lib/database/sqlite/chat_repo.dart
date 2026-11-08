@@ -47,6 +47,32 @@ class ChatRepo {
     });
   }
 
+  /// The live copies of [threadKey], with relations filled.
+  Future<List<Chat>> threadCopies(String threadKey) async {
+    final rows = await db.select(
+      'SELECT id FROM chats WHERE thread_key = ? AND date_deleted_us IS NULL ORDER BY id',
+      [threadKey],
+    );
+    final ids = rows.map((row) => row['id'] as int).toList();
+    final found = await byIds(ids);
+    return [for (final id in ids) if (found[id] != null) found[id]!];
+  }
+
+  /// Links [handleId] to empty one-to-one chats whose GUID names [address],
+  /// matching the legacy contact sync fallback.
+  Future<void> linkEmptyOneToOneByAddress(WriteTx tx, String address, int handleId) async {
+    final rows = await tx.select(
+      'SELECT c.id FROM chats c WHERE instr(c.guid, ?) > 0 '
+      'AND NOT EXISTS (SELECT 1 FROM chat_handles ch WHERE ch.chat_id = c.id)',
+      [';-;$address'],
+    );
+    for (final row in rows) {
+      final chatId = row['id'] as int;
+      await tx.execute('INSERT INTO chat_handles (chat_id, handle_id) VALUES (?, ?)', [chatId, handleId]);
+      tx.markChanged('chat_handles', [chatId]);
+    }
+  }
+
   /// One page of the chat list in the order today's list query loads it
   /// (ChatActions.getChatsAsync): not deleted, newest latest message first.
   /// [after] is the last chat of the previous page. Pins and folded twins are

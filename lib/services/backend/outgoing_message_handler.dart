@@ -2,6 +2,7 @@ import 'package:bluebubbles/models/models.dart' show AttachmentUploadProgress;
 import 'dart:async';
 import 'dart:collection';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/backend/interfaces/send_message_interface.dart';
 import 'package:bluebubbles/services/backend/send_target_resolver.dart';
@@ -278,9 +279,19 @@ class OutgoingMessageHandler {
         lastStack = st;
         // Only retry while at least one unit of work (the single message, the
         // attachment, or one of the up-to-2 split messages) is still unsaved.
-        final stillUnsaved = isAttachment
-            ? Message.findOne(guid: item.message.guid) == null
-            : built!.any((m) => Message.findOne(guid: m.guid) == null);
+        final bool stillUnsaved;
+        if (isAttachment) {
+          stillUnsaved = await MessagingStore.current.messageByGuid(item.message.guid!) == null;
+        } else {
+          var missing = false;
+          for (final message in built!) {
+            if (await MessagingStore.current.messageByGuid(message.guid!) == null) {
+              missing = true;
+              break;
+            }
+          }
+          stillUnsaved = missing;
+        }
         if (!stillUnsaved || attempt >= _maxPrepAttempts) break;
         Logger.warn('Outgoing prep attempt $attempt failed; retrying', error: ex, trace: st, tag: _tag);
         await Future.delayed(Duration(milliseconds: _retryBackoffMs * attempt));
@@ -595,7 +606,7 @@ class OutgoingMessageHandler {
   }) async {
     final List<Message> saved = [];
     for (final message in messages) {
-      final existing = Message.findOne(guid: message.guid);
+      final existing = await MessagingStore.current.messageByGuid(message.guid!);
       final Message hydrated =
           existing ?? (await c.addMessage(message, clearNotificationsIfFromMe: clearNotificationsIfFromMe)).message;
       saved.add(hydrated);
@@ -692,10 +703,9 @@ class OutgoingMessageHandler {
     }
 
     // ChatInterface.addMessageToChat returns a DB-hydrated Message loaded from
-    // the main isolate's Store (Database.messages.get(id)) after the
-    // GlobalIsolate transaction commits.  This object has its id set and its
-    // dbAttachments ToMany linked to the main Store, so _handleNewMessage can
-    // reload attachments from DB without racing against cross-isolate write timing.
+    // the main isolate's MessagingStore after its write commits. This object
+    // has its id set and its attachments linked to the main store, so
+    // _handleNewMessage can reload attachments without racing the cross-isolate write.
     final savedMessage = (await c.addMessage(m, attachments: [attachment])).message;
 
     // The DB write goes through the GlobalIsolate, so the main-isolate OB watch
@@ -1049,7 +1059,7 @@ class OutgoingMessageHandler {
     String existingGuid,
     Message replacement,
   ) async {
-    final alreadyPresent = Message.findOne(guid: replacement.guid);
+    final alreadyPresent = await MessagingStore.current.messageByGuid(replacement.guid!);
 
     // Track the DB-hydrated confirmed message so we can update ChatState after the swap.
     late Message _confirmedMessage;
@@ -1073,9 +1083,9 @@ class OutgoingMessageHandler {
 
       // Clean up the stale temp record if it's distinct from the real one.
       if (existingGuid != replacement.guid) {
-        final stale = Message.findOne(guid: existingGuid);
+        final stale = await MessagingStore.current.messageByGuid(existingGuid);
         if (stale != null) {
-          Message.delete(stale.guid!);
+          await MessagingStore.current.deleteMessage(stale.guid!);
           if (Get.isRegistered<MessagesService>(tag: chat.guid)) {
             MessagesSvc(chat.guid).updateMessage(replacement, oldGuid: existingGuid);
           }
@@ -1103,7 +1113,11 @@ class OutgoingMessageHandler {
 
         // Instead of trying to replace, just save the replacement and update the UI to use it.
         // This handles the case where the temp message was never saved to the main thread's store.
-        replacement.save(); // sets replacement.id via Database.messages.put()
+        replacement.id = await MessagingStore.current.saveMessage(
+          replacement,
+          chat: chat,
+          updateIsBookmarked: false,
+        );
         _confirmedMessage = replacement;
         if (Get.isRegistered<MessagesService>(tag: chat.guid)) {
           // Update the UI, treating this as transitioning from temp to real GUID

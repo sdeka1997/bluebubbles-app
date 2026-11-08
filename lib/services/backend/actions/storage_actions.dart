@@ -1,8 +1,6 @@
 import 'dart:io';
 
-import 'package:bluebubbles/database/database.dart';
-import 'package:bluebubbles/database/models.dart';
-import 'package:bluebubbles/generated/objectbox.g.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/models/models.dart';
 import 'package:bluebubbles/services/isolates/global_isolate.dart';
 import 'package:bluebubbles/services/isolates/isolate_event.dart';
@@ -23,7 +21,7 @@ class StorageActions {
     final filtered = chatGuid != null || ageFilter != StorageAgeFilter.all;
 
     _emit(runId, StorageAnalysisStage.indexing, 0, 0, 0);
-    final guids = _indexAttachments(chatGuid: chatGuid, ageFilter: ageFilter);
+    final guids = await _indexAttachments(chatGuid: chatGuid, ageFilter: ageFilter);
     _emit(runId, StorageAnalysisStage.indexing, 1, 1, 0);
 
     // Preview images are content-addressed and shared by every message linking
@@ -85,25 +83,14 @@ class StorageActions {
   /// of the "everything shows up as Videos" bug. Mime classification instead
   /// happens per-file, by extension, during the stage-2 walk (see
   /// `_segmentForFile`) — exactly the fallback the plan called for.
-  static Set<String> _indexAttachments({
+  static Future<Set<String>> _indexAttachments({
     required String? chatGuid,
     required StorageAgeFilter ageFilter,
   }) {
-    final cutoff = ageFilter.cutoffMillis();
-    final qb = Database.attachments.query();
-    final mq = qb.link(
-      Attachment_.message,
-      cutoff != null ? Message_.dateCreated.lessThan(cutoff) : null,
+    return MessagingStore.current.storageAttachmentGuids(
+      chatGuid: chatGuid,
+      beforeMillis: ageFilter.cutoffMillis(),
     );
-    if (chatGuid != null) {
-      mq.link(Message_.chat, Chat_.guid.equals(chatGuid));
-    }
-    final q = qb.build();
-    try {
-      return q.property(Attachment_.guid).find(replaceNullWith: '').toSet();
-    } finally {
-      q.close();
-    }
   }
 
   /// Stage 2 — walk `attachments/<guid>/` folders and classify every file.
@@ -288,7 +275,7 @@ class StorageActions {
     final attachmentsPath = data['attachmentsPath'] as String;
     final urlPreviewsPath = data['urlPreviewsPath'] as String?;
 
-    final guids = _indexAttachments(chatGuid: chatGuid, ageFilter: ageFilter);
+    final guids = await _indexAttachments(chatGuid: chatGuid, ageFilter: ageFilter);
 
     var bytesFreed = 0;
     var filesDeleted = 0;
@@ -369,26 +356,7 @@ class StorageActions {
       }
     }
 
-    if (resetGuids.isNotEmpty) {
-      Database.runInTransaction(TxMode.write, () {
-        for (final guid in resetGuids) {
-          final row = Database.attachments.query(Attachment_.guid.equals(guid)).build().findFirst();
-          if (row == null) continue;
-          row.isDownloaded = false;
-          // Must match the keys loadImageProperties actually writes, or the
-          // reset silently fails to force reprocessing on next view.
-          row.metadata
-            ?..remove('_orientation_processed')
-            ..remove('_orientation')
-            ..remove('_raw_width')
-            ..remove('_raw_height');
-          row.height = null;
-          row.width = null;
-          row.exif = null;
-          Database.attachments.put(row);
-        }
-      });
-    }
+    await MessagingStore.current.resetStorageAttachments(resetGuids);
 
     return {
       'bytesFreed': bytesFreed,

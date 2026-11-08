@@ -246,6 +246,12 @@ mixin ObjectBoxMessageStore implements MessageStore {
   }
 
   @override
+  Future<List<Message>> messagesCreatedAfter(int millisecondsSinceEpoch) {
+    final query = Database.messages.query(Message_.dateCreated.greaterThan(millisecondsSinceEpoch)).build();
+    return query.findAsync().whenComplete(query.close);
+  }
+
+  @override
   Future<int> relinkMessagesToHandle(int serverHandleId, int localHandleId) async {
     return Database.runInTransaction(TxMode.write, () {
       final messageBox = Database.messages;

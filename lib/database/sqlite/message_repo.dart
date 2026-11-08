@@ -140,6 +140,30 @@ class MessageRepo {
   /// participants, sender with contacts.
   Future<void> attachmentsFor(List<Message> page) => RelationFill(db).messages(page);
 
+  /// Every message created after [millisecondsSinceEpoch], matching the
+  /// unbounded legacy MessageActions query.
+  Future<List<Message>> createdAfter(int millisecondsSinceEpoch) async {
+    final rows = await db.select(
+      'SELECT * FROM messages WHERE date_created_us > ? ORDER BY id',
+      [millisecondsSinceEpoch * 1000],
+    );
+    final messages = rows.map(messageFromRow).toList();
+    await RelationFill(db).messages(messages);
+    return messages;
+  }
+
+  /// The most recent raw rows for one chat, including associated and deleted
+  /// messages, matching SendTargetResolver's former ObjectBox query.
+  Future<List<Message>> recentForChat(int chatId, {int limit = 50}) async {
+    final rows = await db.select(
+      'SELECT * FROM messages WHERE chat_id = ? ORDER BY date_created_us DESC, id DESC LIMIT ?',
+      [chatId, limit],
+    );
+    final messages = rows.map(messageFromRow).toList();
+    await RelationFill(db).messages(messages);
+    return messages;
+  }
+
   Future<Message?> byGuid(String guid) async {
     final rows = await db.select('SELECT * FROM messages WHERE guid = ?', [guid]);
     return _single(rows);

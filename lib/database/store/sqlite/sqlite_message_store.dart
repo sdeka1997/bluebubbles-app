@@ -135,6 +135,10 @@ mixin SqliteMessageStore implements MessageStore, SqliteStorePart {
   Future<Message?> messageById(int id) => MessageRepo(db).byId(id);
 
   @override
+  Future<List<Message>> messagesCreatedAfter(int millisecondsSinceEpoch) =>
+      MessageRepo(db).createdAfter(millisecondsSinceEpoch);
+
+  @override
   Future<List<Message>> messagesByIds(List<int> ids) async => inIdOrder(ids, await MessageRepo(db).byIds(ids));
 }
 

@@ -40,6 +40,8 @@ abstract class StoreFixture {
     int? handleId,
     String? reactsTo,
     String? threadOriginator,
+    String? appleChatGuid,
+    String? service,
     bool deleted = false,
     int? itemType,
     String? text,
@@ -60,8 +62,20 @@ DateTime ms(int value) => DateTime.fromMillisecondsSinceEpoch(value);
 
 const t0 = 1600000000000;
 
-Message _message(String guid, int msValue, Handle? from, int? handleId, String? reactsTo, String? threadOriginator,
-        bool deleted, int? itemType, String? text, int? rowId) =>
+Message _message(
+  String guid,
+  int msValue,
+  Handle? from,
+  int? handleId,
+  String? reactsTo,
+  String? threadOriginator,
+  String? appleChatGuid,
+  String? service,
+  bool deleted,
+  int? itemType,
+  String? text,
+  int? rowId,
+) =>
     Message(
       guid: guid,
       text: text ?? 'text of $guid',
@@ -71,6 +85,8 @@ Message _message(String guid, int msValue, Handle? from, int? handleId, String? 
       associatedMessageGuid: reactsTo,
       associatedMessageType: reactsTo == null ? null : 'love',
       threadOriginatorGuid: threadOriginator,
+      appleChatGuid: appleChatGuid,
+      service: service,
       dateDeleted: deleted ? ms(msValue + 1) : null,
       itemType: itemType ?? 0,
       originalROWID: rowId,
@@ -114,11 +130,26 @@ class ObjectBoxFixture extends StoreFixture {
       int? handleId,
       String? reactsTo,
       String? threadOriginator,
+      String? appleChatGuid,
+      String? service,
       bool deleted = false,
       int? itemType,
       String? text,
       int? rowId}) async {
-    final m = _message(guid, ms, from, handleId, reactsTo, threadOriginator, deleted, itemType, text, rowId);
+    final m = _message(
+      guid,
+      ms,
+      from,
+      handleId,
+      reactsTo,
+      threadOriginator,
+      appleChatGuid,
+      service,
+      deleted,
+      itemType,
+      text,
+      rowId,
+    );
     if (chat != null) m.chat.target = chat;
     if (from != null) m.handleRelation.target = from;
     obx.box<Message>().put(m);
@@ -203,11 +234,26 @@ class SqliteFixture extends StoreFixture {
       int? handleId,
       String? reactsTo,
       String? threadOriginator,
+      String? appleChatGuid,
+      String? service,
       bool deleted = false,
       int? itemType,
       String? text,
       int? rowId}) async {
-    final m = _message(guid, ms, from, handleId, reactsTo, threadOriginator, deleted, itemType, text, rowId);
+    final m = _message(
+      guid,
+      ms,
+      from,
+      handleId,
+      reactsTo,
+      threadOriginator,
+      appleChatGuid,
+      service,
+      deleted,
+      itemType,
+      text,
+      rowId,
+    );
     m.chat.targetId = chat?.id;
     m.handleRelation.targetId = from?.id;
     m.id = await _insert('messages', messageToRow(m));

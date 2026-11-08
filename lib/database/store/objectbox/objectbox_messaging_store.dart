@@ -1,15 +1,21 @@
 import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/store/objectbox/objectbox_attachment_store.dart';
 import 'package:bluebubbles/database/store/objectbox/objectbox_chat_store.dart';
+import 'package:bluebubbles/database/store/objectbox/objectbox_contact_store.dart';
 import 'package:bluebubbles/database/store/objectbox/objectbox_custom_group_store.dart';
 import 'package:bluebubbles/database/store/objectbox/objectbox_handle_store.dart';
 import 'package:bluebubbles/database/store/objectbox/objectbox_message_store.dart';
+import 'package:bluebubbles/database/store/objectbox/objectbox_send_target_store.dart';
+import 'package:bluebubbles/database/store/objectbox/objectbox_storage_store.dart';
 import 'package:bluebubbles/database/store/objectbox/objectbox_sync_store.dart';
 
 /// [MessagingStore] on ObjectBox: the Actions' own code, moved here unchanged
 /// (it reads and writes `Database.*` as it did inside the Actions).
 class ObjectBoxMessagingStore extends MessagingStore
     with
+        ObjectBoxContactStore,
+        ObjectBoxStorageStore,
+        ObjectBoxSendTargetStore,
         ObjectBoxHandleStore,
         ObjectBoxCustomGroupStore,
         ObjectBoxMessageStore,

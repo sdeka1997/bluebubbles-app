@@ -1,16 +1,12 @@
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/helpers/types/helpers/message_helper.dart';
 
 class MessageActions {
   static Future<List<Message>?> getMessages() async {
-    // Fetch a message with a limit of 1 using ObjectBox
+    // Fetch messages from the last day from the active store.
     final oneDayAgo = DateTime.now().subtract(const Duration(days: 1));
-    final messages = (await Database.messages
-        .query(Message_.dateCreated.greaterThan(oneDayAgo.millisecondsSinceEpoch))
-        .build()
-        .findAsync());
+    final messages = await MessagingStore.current.messagesCreatedAfter(oneDayAgo.millisecondsSinceEpoch);
     if (messages.isNotEmpty) {
       return messages;
     }
