@@ -1,5 +1,5 @@
 import 'package:bluebubbles/database/models.dart';
-import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/services/backend/actions/handle_actions.dart';
 import 'package:get_it/get_it.dart';
@@ -25,7 +25,7 @@ class HandleInterface {
     }
 
     // Fetch handle by ID using get
-    final handle = Database.handles.get(handleId);
+    final handle = await MessagingStore.current.handleById(handleId);
     if (handle == null) {
       throw Exception('Failed to fetch handle with ID $handleId after save');
     }
@@ -50,7 +50,7 @@ class HandleInterface {
     }
 
     // Fetch handles by ID using getMany for efficiency
-    return Database.handles.getMany(handleIds).whereType<Handle>().toList();
+    return MessagingStore.current.handlesByIds(handleIds);
   }
 
   static Future<Handle?> findOneHandleAsync({
@@ -76,7 +76,7 @@ class HandleInterface {
     if (handleId == null) return null;
 
     // Fetch handle by ID using get
-    return Database.handles.get(handleId);
+    return MessagingStore.current.handleById(handleId);
   }
 
   static Future<List<Handle>> findHandlesAsync() async {
@@ -88,6 +88,6 @@ class HandleInterface {
     }
 
     // Fetch handles by ID using getMany for efficiency
-    return Database.handles.getMany(handleIds).whereType<Handle>().toList();
+    return MessagingStore.current.handlesByIds(handleIds);
   }
 }

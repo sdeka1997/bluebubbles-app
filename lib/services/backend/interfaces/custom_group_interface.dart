@@ -1,5 +1,5 @@
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/services/backend/actions/custom_group_actions.dart';
 import 'package:bluebubbles/services/isolates/global_isolate.dart';
@@ -11,7 +11,7 @@ class CustomGroupInterface {
     final ids = isIsolate
         ? await CustomGroupActions.getAllIds({})
         : await GetIt.I<GlobalIsolate>().send<List<int>>(IsolateRequestType.getAllCustomGroups, input: {});
-    return ids.map((id) => Database.customGroups.get(id)).whereType<CustomGroup>().toList();
+    return MessagingStore.current.customGroupsByIds(ids);
   }
 
   static Future<CustomGroup> create({required String name, required List<String> chatGuids}) async {
@@ -20,7 +20,7 @@ class CustomGroupInterface {
         ? await CustomGroupActions.create(data)
         : await GetIt.I<GlobalIsolate>().send<int>(IsolateRequestType.createCustomGroup, input: data);
     EventDispatcherSvc.emit('custom-groups-updated', null);
-    return Database.customGroups.get(id)!;
+    return (await MessagingStore.current.customGroupById(id))!;
   }
 
   static Future<CustomGroup> rename({required int id, required String name}) async {
@@ -29,7 +29,7 @@ class CustomGroupInterface {
         ? await CustomGroupActions.rename(data)
         : await GetIt.I<GlobalIsolate>().send<int>(IsolateRequestType.renameCustomGroup, input: data);
     EventDispatcherSvc.emit('custom-groups-updated', null);
-    return Database.customGroups.get(resultId)!;
+    return (await MessagingStore.current.customGroupById(resultId))!;
   }
 
   static Future<CustomGroup> updateChats({required int id, required List<String> chatGuids}) async {
@@ -38,7 +38,7 @@ class CustomGroupInterface {
         ? await CustomGroupActions.updateChats(data)
         : await GetIt.I<GlobalIsolate>().send<int>(IsolateRequestType.updateCustomGroupChats, input: data);
     EventDispatcherSvc.emit('custom-groups-updated', null);
-    return Database.customGroups.get(resultId)!;
+    return (await MessagingStore.current.customGroupById(resultId))!;
   }
 
   static Future<CustomGroup> setShowUnreadBadge({required int id, required bool value}) async {
@@ -47,7 +47,7 @@ class CustomGroupInterface {
         ? await CustomGroupActions.setShowUnreadBadge(data)
         : await GetIt.I<GlobalIsolate>().send<int>(IsolateRequestType.setCustomGroupShowUnreadBadge, input: data);
     EventDispatcherSvc.emit('custom-groups-updated', null);
-    return Database.customGroups.get(resultId)!;
+    return (await MessagingStore.current.customGroupById(resultId))!;
   }
 
   static Future<void> reorder({required List<int> ids}) async {
