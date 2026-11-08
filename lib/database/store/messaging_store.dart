@@ -151,7 +151,68 @@ abstract interface class SyncStore {
   Future<List<Chat>> chatsByIds(List<int> ids);
 }
 
-abstract class MessagingStore implements HandleStore, CustomGroupStore, MessageStore, AttachmentStore, SyncStore {
+/// Chat action reads and writes (ChatActions, ChatInterface).
+abstract interface class ChatStore {
+  Future<List<Chat>> markChatsRead(List<int> chatIds);
+
+  Future<int?> saveChat(
+    String guid,
+    Chat inputChat,
+    Map<String, bool> updateFlags, {
+    int? latestMessageId,
+    DateTime? latestMessageDate,
+  });
+
+  Future<void> deleteChat(int chatId, List<int> messageIds, List<int> handleIds);
+
+  Future<void> softDeleteChat(String guid);
+
+  Future<void> unDeleteChat(String guid);
+
+  Future<Map<String, dynamic>> addMessageToChat(
+    Message inputMessage,
+    List<Attachment> inputAttachments,
+    Chat inputChat,
+    Message inputLatest, {
+    required bool checkForMessageText,
+  });
+
+  Future<List<int>> supplementalMessageIds(List<String> messageGuids);
+
+  Future<List<int>> syncLatestMessages(List<String> chatGuids, {required bool toggleUnread});
+
+  /// Address-only lookup used by the legacy one-to-one GUID fallback before
+  /// formatted-address work. The first stored handle is returned.
+  Future<Handle?> handleByAddress(String address);
+
+  /// Saves the prepared chats and handles in the former bulkSyncChats write.
+  /// Address formatting has already happened outside this method.
+  Future<({List<int> chatIds, List<int> brandNewHandleIds})> bulkSyncChats(
+    List<Chat> inputChats,
+    Map<String, Handle> inputHandles,
+  );
+
+  /// The former one-write contact match after bulkSyncChats.
+  Future<void> linkContactToHandle(ContactV2 contact, int handleId);
+
+  Future<List<int>> messagePageIds(
+    int chatId,
+    List<Handle> participants, {
+    required int offset,
+    required int limit,
+    required bool includeDeleted,
+    int? searchAround,
+  });
+
+  Future<List<int>> participantIds(int chatId);
+
+  Future<void> clearTranscript(int chatId);
+
+  Future<List<int>> chatPageIds({required int limit, required int offset, required List<int> ids});
+}
+
+abstract class MessagingStore
+    implements HandleStore, CustomGroupStore, MessageStore, AttachmentStore, SyncStore, ChatStore {
   /// Which store this is; picks the sync markers (SyncMarker.of).
   ActiveStore get kind;
 

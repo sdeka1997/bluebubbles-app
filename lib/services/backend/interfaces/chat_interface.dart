@@ -1,5 +1,5 @@
 import 'package:bluebubbles/database/models.dart';
-import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/services/backend/actions/chat_actions.dart';
 import 'package:bluebubbles/models/models.dart' show MessageSaveResult;
@@ -169,16 +169,16 @@ class ChatInterface {
 
     Message? message;
     if (messageId != null) {
-      message = Database.messages.get(messageId);
+      message = await MessagingStore.current.messageById(messageId);
     }
 
-    // Fallback: resolve by GUID when ObjectBox put collided / retried and ID
-    // is absent or stale by the time we hydrate on this isolate.
+    // Fallback: resolve by GUID when a put collided / retried and ID is absent
+    // or stale by the time we hydrate on this isolate.
     if (message == null) {
       Logger.warn('[addMessageToChat] Message ID was null or not found, attempting to resolve by GUID');
       final guid = messageData['guid'] as String?;
       if (guid != null) {
-        message = Message.findOne(guid: guid);
+        message = await MessagingStore.current.messageByGuid(guid);
         if (message != null) {
           Logger.info('[addMessageToChat] Successfully resolved message by GUID');
         } else {
@@ -212,10 +212,7 @@ class ChatInterface {
       return <Message>[];
     }
 
-    // Use getMany to load messages with their relationships
-    // This automatically loads ToMany relationships like dbAttachments and ToOne like handleRelation
-    final reactions = Database.messages.getMany(reactionIds);
-    return reactions.whereType<Message>().toList();
+    return MessagingStore.current.messagesByIds(reactionIds);
   }
 
   static Future<({List<Chat> chats, List<int> affectedHandleIds})> bulkSyncChats(
@@ -237,7 +234,7 @@ class ChatInterface {
       affectedHandleIds = (result['affectedHandleIds'] as List).cast<int>();
     }
 
-    final chats = Database.chats.getMany(chatIds).whereType<Chat>().toList();
+    final chats = await MessagingStore.current.chatsByIds(chatIds);
     return (chats: chats, affectedHandleIds: affectedHandleIds);
   }
 
@@ -268,8 +265,7 @@ class ChatInterface {
       messageIds = await GetIt.I<GlobalIsolate>().send<List<int>>(IsolateRequestType.getMessagesAsync, input: data);
     }
 
-    // Fetch messages by ID using getMany for efficiency
-    return Database.messages.getMany(messageIds).whereType<Message>().toList();
+    return MessagingStore.current.messagesByIds(messageIds);
   }
 
   static Future<List<Handle>> getParticipantsAsync({
@@ -288,8 +284,7 @@ class ChatInterface {
       handleIds = await GetIt.I<GlobalIsolate>().send<List<int>>(IsolateRequestType.getParticipantsAsync, input: data);
     }
 
-    // Fetch handles by ID using getMany for efficiency
-    return Database.handles.getMany(handleIds).whereType<Handle>().toList();
+    return MessagingStore.current.handlesByIds(handleIds);
   }
 
   static Future<void> clearTranscriptAsync({
@@ -326,7 +321,6 @@ class ChatInterface {
       chatIds = await GetIt.I<GlobalIsolate>().send<List<int>>(IsolateRequestType.getChatsAsync, input: data);
     }
 
-    // Fetch chats by ID using getMany for efficiency
-    return Database.chats.getMany(chatIds).whereType<Chat>().toList();
+    return MessagingStore.current.chatsByIds(chatIds);
   }
 }

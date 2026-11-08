@@ -24,7 +24,13 @@ abstract class StoreFixture {
 
   Future<Handle> handle(String address, {String service = 'iMessage', int? rowId, String? color});
 
-  Future<Chat> chat(String guid, {List<Handle> handles = const [], String? threadKey, DateTime? deleted});
+  Future<Chat> chat(
+    String guid, {
+    List<Handle> handles = const [],
+    String? threadKey,
+    DateTime? deleted,
+    bool unread = false,
+  });
 
   Future<Message> message(
     String guid,
@@ -89,8 +95,15 @@ class ObjectBoxFixture extends StoreFixture {
   }
 
   @override
-  Future<Chat> chat(String guid, {List<Handle> handles = const [], String? threadKey, DateTime? deleted}) async {
-    final c = Chat(guid: guid, threadKey: threadKey, dateDeleted: deleted)..handles.addAll(handles);
+  Future<Chat> chat(
+    String guid, {
+    List<Handle> handles = const [],
+    String? threadKey,
+    DateTime? deleted,
+    bool unread = false,
+  }) async {
+    final c = Chat(guid: guid, threadKey: threadKey, dateDeleted: deleted, hasUnreadMessage: unread)
+      ..handles.addAll(handles);
     obx.box<Chat>().put(c);
     return c;
   }
@@ -166,8 +179,14 @@ class SqliteFixture extends StoreFixture {
   }
 
   @override
-  Future<Chat> chat(String guid, {List<Handle> handles = const [], String? threadKey, DateTime? deleted}) async {
-    final c = Chat(guid: guid, threadKey: threadKey, dateDeleted: deleted);
+  Future<Chat> chat(
+    String guid, {
+    List<Handle> handles = const [],
+    String? threadKey,
+    DateTime? deleted,
+    bool unread = false,
+  }) async {
+    final c = Chat(guid: guid, threadKey: threadKey, dateDeleted: deleted, hasUnreadMessage: unread);
     c.id = await _insert('chats', chatToRow(c));
     await db.write((tx) async {
       for (final h in handles) {
