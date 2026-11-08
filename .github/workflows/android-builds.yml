@@ -1,0 +1,204 @@
+name: Android Builds
+
+# Builds both Android release artifacts from one tag:
+#
+#   * prod      -> universal APK for the GitHub release. Keeps Android Auto, which
+#                  sideloaders can then turn on themselves.
+#   * prodNoAa  -> app bundle for the Play Store. The prodNoAa source set strips the
+#                  com.google.android.gms.car.application meta-data through the manifest
+#                  merger, so the store build ships without Android Auto.
+#
+# The bundle is only ever a workflow artifact, never a release asset - Play submission
+# stays manual, same as the store msix in desktop-builds.yml.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Matches the pin in windows/build.ps1, linux/build.sh and the other workflows.
+  FLUTTER_VERSION: "3.47.4"
+  FVM_VERSION: "4.3.1"
+  # Pinned by android/app/build.gradle; the runner image does not always carry it.
+  ANDROID_NDK_VERSION: "28.2.13676358"
+  # android/app/build.gradle compileSdk.
+  ANDROID_COMPILE_SDK: "36"
+  # android/app/build.gradle compileOptions / kotlinOptions.
+  JAVA_VERSION: "21"
+
+jobs:
+  build:
+    # A v* tag with desktop in it (-desktop, +desktop.N) is a Windows/Linux-only release,
+    # so skip Android.
+    # android tags and plain ones build here. desktop-builds.yml has the mirror of this.
+    # Checking the tag ref and not just the name, otherwise a manual run from a branch
+    # like joel/fix-desktop-notifs would skip too.
+    if: ${{ !(startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, 'desktop')) }}
+    # Needed by the release attach step on the apk leg.
+    permissions:
+      contents: write
+    # Keeps the keystore secrets out of reach of workflows on other branches. Add a
+    # required reviewer under Settings > Environments if you want runs that touch the
+    # signing key to need approval.
+    environment: android-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flavor: prod
+            target: apk
+            ext: apk
+            # Ignoring gradle's own outputs/apk/ copy; flutter mirrors the APK here.
+            outdir: build/app/outputs/flutter-apk
+            artifact: bluebubbles-android-apk
+            filename: bluebubbles-app-prod-release.apk
+          - flavor: prodNoAa
+            target: appbundle
+            ext: aab
+            outdir: build/app/outputs/bundle
+            artifact: bluebubbles-android-aab-store
+            filename: bluebubbles-app-prodNoAa-release.aab
+    steps:
+      # Nothing here pushes, and the default leaves the GITHUB_TOKEN in .git/config
+      # where a gradle plugin or pub build hook could read it back out.
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Setup Java
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      # AGP will auto-download these, but the NDK is a 2GB fetch and when it goes wrong
+      # it fails somewhere deep in a gradle task. Doing it here keeps the failure obvious.
+      - name: Install Android SDK components
+        run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --licenses > /dev/null
+          "$sdkmanager" --install \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "ndk;${ANDROID_NDK_VERSION}"
+
+      # Also resolves dependencies, so there's no separate pub get below.
+      - name: Setup Flutter
+        uses: ./.github/actions/setup-flutter
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          fvm-version: ${{ env.FVM_VERSION }}
+
+      # Restore-only: this runs on tags, whose cache scope no other run can read. pr-check keeps master's warm.
+      - name: Restore Gradle cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ matrix.flavor }}-${{ hashFiles('android/**/*.gradle', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties', 'pubspec.lock') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-${{ matrix.flavor }}-
+            gradle-${{ runner.os }}-
+
+      # pubspec.yaml declares .env as an asset, so the build fails without it. The key
+      # itself is desktop-only - dotenv.load() is behind `if (kIsDesktop)` in main.dart
+      # and the GIF button that reads it is marked unsupported on android - so this only
+      # needs to exist, not have a value.
+      - name: Write .env
+        run: 'echo "KLIPY_API_KEY=" > .env'
+
+      # build.gradle reads android/key.properties for the release signing config, which
+      # every shipping flavor uses. storeFile has to be absolute - gradle resolves a
+      # relative path against android/app/, not the repo root.
+      - name: Write signing config
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not set. This workflow needs the release keystore in repository secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD."
+            exit 1
+          fi
+          keystore="$RUNNER_TEMP/release-keystore.jks"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$keystore"
+
+          # java.util.Properties treats a backslash as an escape character.
+          esc() { printf '%s' "$1" | sed 's/\\/\\\\/g'; }
+          {
+            echo "storeFile=$(esc "$keystore")"
+            echo "storePassword=$(esc "$KEYSTORE_PASSWORD")"
+            echo "keyAlias=$(esc "$KEY_ALIAS")"
+            echo "keyPassword=$(esc "$KEY_PASSWORD")"
+          } > android/key.properties
+
+      # --no-pub: reuse the lockfile-enforced resolution from the Setup Flutter step.
+      # Has to go through the flutter tool rather than gradlew directly - flutter build
+      # is what refreshes android/local.properties with flutter.versionCode from
+      # pubspec.yaml, and build.gradle folds that into the final versionCode.
+      - name: Build ${{ matrix.target }} (${{ matrix.flavor }})
+        # build.gradle falls back to debug signing when key.properties is missing so
+        # contributors and PR checks can build. This one gets published, so turn that
+        # fallback into a hard error.
+        env:
+          BB_REQUIRE_RELEASE_SIGNING: "true"
+        run: fvm flutter build ${{ matrix.target }} --release --flavor ${{ matrix.flavor }} --no-pub
+
+      # Only the gradle build needs the keystore, so drop it before anything else runs.
+      - name: Remove signing material
+        if: always()
+        run: |
+          rm -f android/key.properties "$RUNNER_TEMP/release-keystore.jks"
+
+      # Flutter lower-cases the flavor for APK filenames but not for bundle paths, and
+      # that has moved around between versions, so find the file rather than hardcoding
+      # the name. One variant per job means exactly one match.
+      - name: Collect artifact
+        run: |
+          mapfile -t found < <(find "${{ matrix.outdir }}" -type f -name "*.${{ matrix.ext }}")
+          if [ "${#found[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one .${{ matrix.ext }} under ${{ matrix.outdir }}, found ${#found[@]}: ${found[*]}"
+            echo "Everything flutter actually produced:"
+            find build/app/outputs -type f \( -name '*.apk' -o -name '*.aab' \) || true
+            exit 1
+          fi
+          mkdir -p out
+          cp "${found[0]}" "out/${{ matrix.filename }}"
+
+          {
+            echo "### ${{ matrix.filename }}"
+            echo ""
+            echo "- flavor: \`${{ matrix.flavor }}\`"
+            echo "- version: \`$(grep '^flutter.versionName=' android/local.properties | cut -d= -f2-)\`"
+            echo "- size: $(du -h "out/${{ matrix.filename }}" | cut -f1)"
+            echo "- sha256: \`$(sha256sum "out/${{ matrix.filename }}" | cut -d' ' -f1)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ matrix.artifact }}
+          path: out/${{ matrix.filename }}
+
+      # APK only - the bundle is for Play and stays an artifact. Fires on any tag ref,
+      # which includes picking a tag in the Run workflow dropdown, not just a tag push.
+      #
+      # Keep draft: true. Without it the action publishes the release the moment this
+      # upload finishes, and android finishes well before the SignPath round trip in
+      # desktop-builds.yml, so the release would go live with the desktop artifacts
+      # still missing. It also means a mistaken run only adds an asset to a draft.
+      - name: Attach APK to release
+        if: ${{ matrix.target == 'apk' && startsWith(github.ref, 'refs/tags/') }}
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
+        with:
+          files: out/${{ matrix.filename }}
+          draft: true
