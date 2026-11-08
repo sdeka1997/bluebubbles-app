@@ -2,6 +2,7 @@ import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:bluebubbles/database/store/objectbox/objectbox_messaging_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_messaging_store.dart';
+import 'package:bluebubbles/services/backend/descriptors/attachment_query_descriptor.dart';
 import 'package:bluebubbles/services/backend/sync/sync_marker.dart';
 import 'package:flutter/foundation.dart';
 
@@ -62,7 +63,77 @@ abstract interface class CustomGroupStore {
   Future<List<CustomGroup>> customGroupsByIds(List<int> ids);
 }
 
-abstract class MessagingStore implements HandleStore, CustomGroupStore {
+/// Messages (MessageActions, MessageInterface).
+abstract interface class MessageStore {
+  /// Updates the stored message [oldGuid] from [incoming] as a send receipt or
+  /// edit does (MessageActions.replaceMessage); throws when there is none.
+  Future<int> replaceMessage(String? oldGuid, Message incoming);
+
+  Future<void> deleteMessage(String guid);
+
+  /// Sets dateDeleted to now.
+  Future<void> softDeleteMessage(String guid);
+
+  /// Clears dateDeleted.
+  Future<void> restoreMessage(String guid);
+
+  /// Saves [message] by guid as MessageActions.saveMessageAsync does: keeps a
+  /// stored message's id, text, service, sender and (unless
+  /// [updateIsBookmarked]) bookmark; links the sender by server ROWID; flags
+  /// reactions both ways; links [chat] when given. Returns its id.
+  Future<int> saveMessage(Message message, {Chat? chat, required bool updateIsBookmarked});
+
+  /// The id of the message [guid], else of a message associated with [associatedMessageGuid].
+  Future<int?> findMessageId({String? guid, String? associatedMessageGuid});
+
+  /// Every message id (MessageActions.findAsync ignores its condition).
+  Future<List<int>> allMessageIds();
+
+  /// The messages whose associatedMessageGuid is [guid] (reactions, stickers, ...).
+  Future<List<Message>> messagesAssociatedWith(String guid);
+
+  Future<Message?> messageByGuid(String guid);
+
+  /// Links every message from server handle [serverHandleId] (not from me) to
+  /// local handle [localHandleId]; returns how many changed.
+  Future<int> relinkMessagesToHandle(int serverHandleId, int localHandleId);
+
+  Future<Message?> messageById(int id);
+
+  /// The stored messages of [ids], in that order; missing ones are skipped.
+  Future<List<Message>> messagesByIds(List<int> ids);
+}
+
+/// Attachments (AttachmentActions, AttachmentInterface).
+abstract interface class AttachmentStore {
+  /// Saves [attachment] by guid, keeping a stored attachment's id and message
+  /// unless [message] (with an id) is given. Returns its id.
+  Future<int> saveAttachment(Attachment attachment, {Message? message});
+
+  /// Saves [attachments] by guid in one transaction, keeping stored ids and
+  /// message links when the new copy has none.
+  Future<void> saveAttachments(List<Attachment> attachments);
+
+  /// Moves the stored attachment [oldGuid] to [incoming]'s guid and server
+  /// fields (merging into a stored attachment that already has that guid);
+  /// sets [incoming]'s id, size and metadata from the stored one. Throws when
+  /// [oldGuid] is not stored.
+  Future<int> replaceAttachment(String oldGuid, Attachment incoming);
+
+  Future<int?> findAttachmentId(String guid);
+
+  /// Ids of the attachments matching [query] (every attachment when null).
+  Future<List<int>> findAttachmentIds(AttachmentQueryDescriptor? query);
+
+  Future<void> deleteAttachment(String guid);
+
+  Future<Attachment?> attachmentById(int id);
+
+  /// The stored attachments of [ids], in that order; missing ones are skipped.
+  Future<List<Attachment>> attachmentsByIds(List<int> ids);
+}
+
+abstract class MessagingStore implements HandleStore, CustomGroupStore, MessageStore, AttachmentStore {
   /// Which store this is; picks the sync markers (SyncMarker.of).
   ActiveStore get kind;
 

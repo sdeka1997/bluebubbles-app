@@ -1,5 +1,5 @@
 import 'package:bluebubbles/database/models.dart';
-import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/services/backend/actions/attachment_actions.dart';
 import 'package:bluebubbles/services/backend/descriptors/attachment_query_descriptor.dart';
@@ -25,7 +25,7 @@ class AttachmentInterface {
     }
 
     // Fetch attachment by ID using get
-    final attachment = Database.attachments.get(attachmentId);
+    final attachment = await MessagingStore.current.attachmentById(attachmentId);
     if (attachment == null) {
       throw Exception('Failed to fetch attachment with ID $attachmentId after save');
     }
@@ -65,7 +65,7 @@ class AttachmentInterface {
     }
 
     // Fetch attachment by ID using get
-    final attachment = Database.attachments.get(attachmentId);
+    final attachment = await MessagingStore.current.attachmentById(attachmentId);
     if (attachment == null) {
       throw Exception('Failed to fetch attachment with ID $attachmentId after replace');
     }
@@ -91,7 +91,7 @@ class AttachmentInterface {
     if (attachmentId == null) return null;
 
     // Fetch attachment by ID using get
-    final attachment = Database.attachments.get(attachmentId);
+    final attachment = await MessagingStore.current.attachmentById(attachmentId);
     return attachment;
   }
 
@@ -112,7 +112,7 @@ class AttachmentInterface {
     }
 
     // Fetch attachments by ID using getMany for efficiency
-    final attachments = Database.attachments.getMany(attachmentIds).whereType<Attachment>().toList();
+    final attachments = await MessagingStore.current.attachmentsByIds(attachmentIds);
     return attachments;
   }
 

@@ -1,4 +1,4 @@
-import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/services/backend/actions/message_actions.dart';
@@ -36,7 +36,7 @@ class MessageInterface {
     }
 
     // Fetch message by ID using get
-    final message = Database.messages.get(messageId);
+    final message = await MessagingStore.current.messageById(messageId);
     if (message == null) {
       throw Exception('Failed to fetch message with ID $messageId after replace');
     }
@@ -124,7 +124,7 @@ class MessageInterface {
     }
 
     // Fetch message by ID using get
-    final message = Database.messages.get(messageId);
+    final message = await MessagingStore.current.messageById(messageId);
     return message;
   }
 
@@ -144,7 +144,7 @@ class MessageInterface {
     if (messageId == null) return null;
 
     // Fetch message by ID using get
-    final message = Database.messages.get(messageId);
+    final message = await MessagingStore.current.messageById(messageId);
     return message;
   }
 
@@ -161,7 +161,7 @@ class MessageInterface {
     }
 
     // Fetch messages by ID using getMany for efficiency
-    final messages = Database.messages.getMany(messageIds).whereType<Message>().toList();
+    final messages = await MessagingStore.current.messagesByIds(messageIds);
     return messages;
   }
 

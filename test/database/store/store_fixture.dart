@@ -111,7 +111,7 @@ class ObjectBoxFixture extends StoreFixture {
 
   @override
   Future<Attachment> attachment(String guid, Message? message, {String? mimeType}) async {
-    final a = Attachment(guid: guid, mimeType: mimeType ?? 'image/jpeg', transferName: '$guid.jpg');
+    final a = Attachment(guid: guid, mimeType: mimeType ?? 'image/jpeg', transferName: '$guid.jpg', isOutgoing: false);
     if (message != null) a.message.target = message;
     obx.box<Attachment>().put(a);
     return a;
@@ -185,7 +185,7 @@ class SqliteFixture extends StoreFixture {
 
   @override
   Future<Attachment> attachment(String guid, Message? message, {String? mimeType}) async {
-    final a = Attachment(guid: guid, mimeType: mimeType ?? 'image/jpeg', transferName: '$guid.jpg');
+    final a = Attachment(guid: guid, mimeType: mimeType ?? 'image/jpeg', transferName: '$guid.jpg', isOutgoing: false);
     a.message.targetId = message?.id;
     a.id = await _insert('attachments', attachmentToRow(a));
     return a;
