@@ -1,7 +1,7 @@
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
-import 'package:bluebubbles/database/sqlite/handle_repo.dart';
+import 'package:bluebubbles/database/sqlite/relation_fill.dart';
 import 'package:bluebubbles/database/sqlite/row_writes.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:collection/collection.dart';
@@ -108,20 +108,7 @@ class ContactRepo {
   }
 
   Future<List<ContactV2>> _fillHandles(List<ContactV2> contacts) async {
-    final byId = {for (final c in contacts) c.id: c};
-    final links = <int, List<int>>{};
-    for (final chunk in byId.keys.toList().slices(500)) {
-      final rows = await db.select(
-          'SELECT contact_id, handle_id FROM contact_handles WHERE contact_id IN (${sqlPlaceholders(chunk.length)})', chunk);
-      for (final row in rows) {
-        links.putIfAbsent(row['contact_id'] as int, () => []).add(row['handle_id'] as int);
-      }
-    }
-    final handles = await HandleRepo(db).byIds(links.values.flattened);
-    for (final contact in contacts) {
-      final ids = (links[contact.id] ?? const <int>[]).toList()..sort();
-      contact.handles.addAll(ids.map((id) => handles[id]).whereType<Handle>());
-    }
+    await RelationFill(db).contacts(contacts);
     return contacts;
   }
 }

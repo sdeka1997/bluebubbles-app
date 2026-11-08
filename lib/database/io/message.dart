@@ -16,6 +16,7 @@ import 'package:get/get.dart' hide Condition;
 // (needed when generating objectbox model code)
 // ignore: unnecessary_import
 import 'package:objectbox/objectbox.dart';
+import 'package:bluebubbles/database/io/relations.dart' show Rel, RelList;
 
 /// Whether a saved message's sender should be set to [resolved].
 ///
@@ -73,7 +74,7 @@ class Message {
 
   // Phase 1: Add ToOne relationship for Handle
   // This will eventually replace the embedded Handle object above
-  final handleRelation = ToOne<Handle>();
+  final handleRelation = Rel<Handle>();
   DateTime? dateDeleted;
   Map<String, dynamic>? metadata;
   String? threadOriginatorGuid;
@@ -123,9 +124,9 @@ class Message {
   bool get hasUnsentParts => dateEdited != null && retractedParts.isNotEmpty;
 
   @Backlink('message')
-  final dbAttachments = ToMany<Attachment>();
+  final dbAttachments = RelList<Attachment>();
 
-  final chat = ToOne<Chat>();
+  final chat = Rel<Chat>();
 
   String? get dbAttributedBody => jsonEncode(attributedBody.map((e) => e.toMap()).toList());
   set dbAttributedBody(String? json) => attributedBody =

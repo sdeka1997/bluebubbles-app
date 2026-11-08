@@ -136,8 +136,9 @@ Message messageFromRow(Map<String, Object?> r) {
     ..dbMessageSummaryInfo = r['message_summary_info_json'] as String?
     ..dbPayloadData = r['payload_data_json'] as String?
     ..dbMetadata = r['metadata_json'] as String?;
-  m.chat.targetId = r['chat_id'] as int?;
-  m.handleRelation.targetId = r['handle_relation_id'] as int?;
+  m.chat.loadedFromSqlite(r['chat_id'] as int?, label: 'Message.chat');
+  m.handleRelation.loadedFromSqlite(r['handle_relation_id'] as int?, label: 'Message.handleRelation');
+  m.dbAttachments.loadedFromSqlite(label: 'Message.dbAttachments');
   return m;
 }
 
@@ -215,7 +216,11 @@ Chat chatFromRow(Map<String, Object?> r) {
     customBackground: r['custom_background_path'] as String?,
     pinnedIndex: r['pin_index'] as int?,
   )..dbOnlyLatestMessageDate = _date(r['latest_message_date_us']);
-  c.dbLatestMessage.targetId = r['latest_message_id'] as int?;
+  c.dbLatestMessage.loadedFromSqlite(r['latest_message_id'] as int?, label: 'Chat.dbLatestMessage');
+  c.handles.loadedFromSqlite(label: 'Chat.handles');
+  // Never filled: callers use MessageRepo and CustomGroupRepo.idsForChat.
+  c.messages.loadedFromSqlite(label: 'Chat.messages');
+  c.customGroups.loadedFromSqlite(label: 'Chat.customGroups');
   return c;
 }
 
@@ -232,7 +237,9 @@ Map<String, Object?> handleToRow(Handle h) => {
   'service': h.service,
 };
 
-Handle handleFromRow(Map<String, Object?> r) => Handle(
+Handle handleFromRow(Map<String, Object?> r) => _handleFromRow(r)..contactsV2.loadedFromSqlite(label: 'Handle.contactsV2');
+
+Handle _handleFromRow(Map<String, Object?> r) => Handle(
   id: r['id'] as int,
   originalROWID: r['original_rowid'] as int?,
   address: r['address'] as String,
@@ -282,7 +289,7 @@ Attachment attachmentFromRow(Map<String, Object?> r) {
     metadata: _map(r['metadata_json']),
     exif: _map(r['exif_json']),
   );
-  a.message.targetId = r['message_id'] as int?;
+  a.message.loadedFromSqlite(r['message_id'] as int?, label: 'Attachment.message');
   return a;
 }
 
@@ -304,7 +311,9 @@ Map<String, Object?> contactToRow(ContactV2 c) => {
   'is_native': _bool(c.isNative),
 };
 
-ContactV2 contactFromRow(Map<String, Object?> r) => ContactV2(
+ContactV2 contactFromRow(Map<String, Object?> r) => _contactFromRow(r)..handles.loadedFromSqlite(label: 'ContactV2.handles');
+
+ContactV2 _contactFromRow(Map<String, Object?> r) => ContactV2(
   id: r['id'] as int,
   displayName: r['display_name'] as String,
   nativeContactId: r['native_contact_id'] as String,
@@ -334,4 +343,4 @@ CustomGroup customGroupFromRow(Map<String, Object?> r) => CustomGroup(
   name: r['name'] as String,
   sortOrder: r['sort_order'] as int,
   showUnreadBadge: _boolOr(r['show_unread_badge'], true),
-);
+)..chats.loadedFromSqlite(label: 'CustomGroup.chats');

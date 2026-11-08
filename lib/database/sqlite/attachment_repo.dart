@@ -1,5 +1,6 @@
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
+import 'package:bluebubbles/database/sqlite/relation_fill.dart';
 import 'package:bluebubbles/database/sqlite/row_writes.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:collection/collection.dart';
@@ -7,8 +8,8 @@ import 'package:collection/collection.dart';
 /// `?, ?, ?` for an `IN (...)` of [n] values.
 String sqlPlaceholders(int n) => List.filled(n, '?').join(', ');
 
-/// Attachments in SQLite. Results are the app's [Attachment] objects; their
-/// `message` ToOne carries only the id (`message.targetId`).
+/// Attachments in SQLite. [byGuid] fills `message` (RelationFill); [forMessages]
+/// is the building block of MessageRepo's fill and leaves it to the caller.
 class AttachmentRepo {
   AttachmentRepo(this.db);
 
@@ -16,7 +17,10 @@ class AttachmentRepo {
 
   Future<Attachment?> byGuid(String guid) async {
     final rows = await db.select('SELECT * FROM attachments WHERE guid = ?', [guid]);
-    return rows.isEmpty ? null : attachmentFromRow(rows.single);
+    if (rows.isEmpty) return null;
+    final attachment = attachmentFromRow(rows.single);
+    await RelationFill(db).attachments([attachment]);
+    return attachment;
   }
 
   /// The attachments of each message id, in id order. One `IN` query per 500 ids

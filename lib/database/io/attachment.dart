@@ -12,6 +12,7 @@ import 'package:mime_type/mime_type.dart';
 // (needed when generating objectbox model code)
 // ignore: unnecessary_import
 import 'package:objectbox/objectbox.dart';
+import 'package:bluebubbles/database/io/relations.dart' show Rel;
 import 'package:passkit/passkit.dart';
 import 'package:universal_io/io.dart';
 
@@ -37,7 +38,7 @@ class Attachment {
   bool hasLivePhoto;
   bool isDownloaded;
 
-  final message = ToOne<Message>();
+  final message = Rel<Message>();
 
   Map<String, dynamic>? metadata;
 

@@ -18,6 +18,7 @@ import 'package:get_it/get_it.dart';
 // (needed when generating objectbox model code)
 // ignore: unnecessary_import
 import 'package:objectbox/objectbox.dart';
+import 'package:bluebubbles/database/io/relations.dart' show Rel, RelList;
 import 'package:universal_io/io.dart';
 
 /// The unread state an incoming message should leave on its chat, or null to
@@ -72,7 +73,7 @@ class Chat {
 
   /// ObjectBox ToOne relation to the latest message for O(1) lookup.
   /// Keep [dbOnlyLatestMessageDate] in sync via [setLatestMessage].
-  final dbLatestMessage = ToOne<Message>();
+  final dbLatestMessage = Rel<Message>();
 
   /// The latest message as the SQLite ChatRepo loads it with the chat (its id is
   /// `dbLatestMessage.targetId`). Not stored; null for chats read from ObjectBox.
@@ -146,7 +147,7 @@ class Chat {
   @Transient()
   RxDouble sendProgress = 0.0.obs;
 
-  final handles = ToMany<Handle>();
+  final handles = RelList<Handle>();
 
   // Do not use this field directly, use the handles ToMany relation instead.
   // This should only really be used for serialization/deserialization purposes.
@@ -154,10 +155,10 @@ class Chat {
   List<Handle> participants = [];
 
   @Backlink('chat')
-  final messages = ToMany<Message>();
+  final messages = RelList<Message>();
 
   @Backlink('chats')
-  final customGroups = ToMany<CustomGroup>();
+  final customGroups = RelList<CustomGroup>();
 
   @Transient()
   String? _fakeName;

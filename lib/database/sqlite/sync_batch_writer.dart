@@ -4,6 +4,7 @@ import 'package:bluebubbles/database/sqlite/chat_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:bluebubbles/database/sqlite/handle_repo.dart';
 import 'package:bluebubbles/database/sqlite/message_repo.dart';
+import 'package:bluebubbles/database/sqlite/relation_fill.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:bluebubbles/helpers/types/extensions/extensions.dart' show serverErrorMessage;
 import 'package:bluebubbles/services/backend/actions/sync_actions.dart' show payloadSenderKey;
@@ -147,6 +148,7 @@ class SqliteSyncBatch {
       return msg;
     }).toList();
     final stored = await _byKey(tx, 'messages', 'guid', inputs.map((m) => m.guid!), messageFromRow, (m) => m.guid!);
+    await RelationFill.attachmentsOnly(tx, stored.values);
     final handles = HandleRepo(tx);
     final linked = await handles.byIds({for (final m in stored.values) if (m.handleRelation.targetId != 0) m.handleRelation.targetId});
     final byRowId = await handles.byRowIds({for (final m in inputs) if ((m.handleId ?? 0) > 0) m.handleId!});

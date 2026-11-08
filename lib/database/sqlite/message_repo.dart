@@ -1,6 +1,7 @@
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
+import 'package:bluebubbles/database/sqlite/relation_fill.dart';
 import 'package:bluebubbles/database/sqlite/row_writes.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:collection/collection.dart';
@@ -126,6 +127,7 @@ class MessageRepo {
           'SELECT * FROM messages WHERE associated_message_guid IN (${sqlPlaceholders(chunk.length)})', chunk);
       result.addAll(rows.map(messageFromRow));
     }
+    await attachmentsFor(result);
     // In Dart: an ORDER BY here would sort in a temporary B-tree.
     return result
       ..sort((a, b) {
@@ -134,14 +136,9 @@ class MessageRepo {
       });
   }
 
-  /// Fills `dbAttachments` of [page] with one query on attachments_message.
-  Future<Map<int, List<Attachment>>> attachmentsFor(List<Message> page) async {
-    final byMessage = await attachments.forMessages(page.map((m) => m.id!));
-    for (final m in page) {
-      m.dbAttachments.addAll(byMessage[m.id] ?? const []);
-    }
-    return byMessage;
-  }
+  /// Fills every relation of [page] (RelationFill): attachments, chat with
+  /// participants, sender with contacts.
+  Future<void> attachmentsFor(List<Message> page) => RelationFill(db).messages(page);
 
   Future<Message?> byGuid(String guid) async {
     final rows = await db.select('SELECT * FROM messages WHERE guid = ?', [guid]);
@@ -251,7 +248,7 @@ class MessageRepo {
     });
   }
 
-  /// The stored message [id] without its attachments (latest-pointer checks).
+  /// The stored message [id], relations unfilled (latest-pointer checks).
   Future<Message?> row(int id) async {
     final rows = await db.select('SELECT * FROM messages WHERE id = ?', [id]);
     return rows.isEmpty ? null : messageFromRow(rows.single);

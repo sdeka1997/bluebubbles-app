@@ -2,6 +2,7 @@ import 'package:bluebubbles/database/models.dart';
 // (needed when generating objectbox model code)
 // ignore: unnecessary_import
 import 'package:objectbox/objectbox.dart';
+import 'package:bluebubbles/database/io/relations.dart' show RelList;
 
 @Entity()
 class CustomGroup {
@@ -21,7 +22,7 @@ class CustomGroup {
 
   /// Owning side of the N:M relation — a group has many chats, a chat can
   /// belong to many groups (see `Chat.customGroups` backlink).
-  final chats = ToMany<Chat>();
+  final chats = RelList<Chat>();
 
   CustomGroup({
     this.id,

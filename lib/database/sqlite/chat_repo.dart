@@ -4,8 +4,8 @@ import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart'
     show assignThreadKeys, canonicalTwinFor, carryOverThreadSettings;
 import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
-import 'package:bluebubbles/database/sqlite/handle_repo.dart';
 import 'package:bluebubbles/database/sqlite/message_repo.dart';
+import 'package:bluebubbles/database/sqlite/relation_fill.dart';
 import 'package:bluebubbles/database/sqlite/row_writes.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:collection/collection.dart';
@@ -89,30 +89,9 @@ class ChatRepo {
     });
   }
 
-  /// Participants (one join per 500 chats) and, with [latest], latest
-  /// messages (one id lookup).
-  Future<void> _fill(List<Chat> chats, {bool latest = true}) async {
-    if (chats.isEmpty) return;
-    final byId = {for (final c in chats) c.id!: c};
-    final participantIds = <int, List<int>>{};
-    for (final chunk in byId.keys.toList().slices(500)) {
-      final rows = await db.select(
-          'SELECT chat_id, handle_id FROM chat_handles WHERE chat_id IN (${sqlPlaceholders(chunk.length)})', chunk);
-      for (final row in rows) {
-        participantIds.putIfAbsent(row['chat_id'] as int, () => []).add(row['handle_id'] as int);
-      }
-    }
-    final handles = await HandleRepo(db).byIds(participantIds.values.flattened);
-    final latestIds = {if (latest) for (final c in chats) if (c.dbLatestMessage.targetId != 0) c.dbLatestMessage.targetId};
-    final latestMessages = await MessageRepo(db).byIds(latestIds);
-    for (final chat in chats) {
-      final participants = (participantIds[chat.id] ?? const <int>[]).map((id) => handles[id]).whereType<Handle>().toList()
-        ..sort((a, b) => a.id!.compareTo(b.id!));
-      chat.handles.addAll(participants);
-      chat.participants = participants;
-      if (latest) chat.latestMessage = latestMessages[chat.dbLatestMessage.targetId];
-    }
-  }
+  /// Every relation (RelationFill): participants with their contacts and,
+  /// with [latest], the latest message with its attachments and sender.
+  Future<void> _fill(List<Chat> chats, {bool latest = true}) => RelationFill(db, latest: latest).chats(chats);
 
   // Writes. Each takes the open [WriteTx] of the caller's Db.write.
 

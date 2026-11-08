@@ -9,6 +9,7 @@ import 'package:flutter/widgets.dart';
 // (needed when generating objectbox model code)
 // ignore: unnecessary_import
 import 'package:objectbox/objectbox.dart';
+import 'package:bluebubbles/database/io/relations.dart' show RelList;
 import 'package:bluebubbles/models/models.dart' show HandleLookupKey;
 
 /// The Apple ROWID a handle carries, if it came straight from the server.
@@ -74,7 +75,7 @@ class Handle {
   // N:M Relationship to ContactV2 (new contact service)
   // This is a backlink - ContactV2 owns the relationship
   @Backlink('handles')
-  final contactsV2 = ToMany<ContactV2>();
+  final contactsV2 = RelList<ContactV2>();
 
   @Transient()
   Widget? _fakeAvatar;

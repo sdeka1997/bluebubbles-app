@@ -2,6 +2,7 @@ import 'package:bluebubbles/database/io/handle.dart' as io show adoptServerRowId
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
+import 'package:bluebubbles/database/sqlite/relation_fill.dart';
 import 'package:bluebubbles/database/sqlite/row_writes.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:collection/collection.dart';
@@ -35,18 +36,7 @@ class HandleRepo {
     return handles;
   }
 
-  Future<void> _fillContacts(Iterable<Handle> handles) async {
-    final byId = {for (final h in handles) h.id!: h};
-    for (final chunk in byId.keys.toList().slices(500)) {
-      final rows = await db.select(
-          'SELECT ch.handle_id AS linked_handle_id, c.* FROM contact_handles ch JOIN contacts c ON c.id = ch.contact_id '
-          'WHERE ch.handle_id IN (${sqlPlaceholders(chunk.length)})',
-          chunk);
-      for (final row in rows) {
-        byId[row['linked_handle_id'] as int]!.contactsV2.add(contactFromRow(row));
-      }
-    }
-  }
+  Future<void> _fillContacts(Iterable<Handle> handles) => RelationFill(db).handles(handles);
 
   /// Handles holding each of the server [rowIds], by ROWID (the sender
   /// lookup of a synced message). Should two hold one ROWID, the newer wins,
@@ -59,6 +49,7 @@ class HandleRepo {
       found.addAll(rows.map(handleFromRow));
     }
     found.sort((a, b) => a.id!.compareTo(b.id!));
+    await _fillContacts(found);
     return {for (final h in found) h.originalROWID!: h};
   }
 

@@ -1,7 +1,7 @@
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
-import 'package:bluebubbles/database/sqlite/chat_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
+import 'package:bluebubbles/database/sqlite/relation_fill.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:collection/collection.dart';
 
@@ -72,20 +72,7 @@ class CustomGroupRepo {
   }
 
   Future<List<CustomGroup>> _fillChats(List<CustomGroup> groups) async {
-    final byId = {for (final g in groups) g.id!: g};
-    final links = <int, List<int>>{};
-    for (final chunk in byId.keys.toList().slices(500)) {
-      final rows = await db.select(
-          'SELECT group_id, chat_id FROM custom_group_chats WHERE group_id IN (${sqlPlaceholders(chunk.length)})', chunk);
-      for (final row in rows) {
-        links.putIfAbsent(row['group_id'] as int, () => []).add(row['chat_id'] as int);
-      }
-    }
-    final chats = await ChatRepo(db).byIds(links.values.flattened);
-    for (final group in groups) {
-      final ids = (links[group.id] ?? const <int>[]).toList()..sort();
-      group.chats.addAll(ids.map((id) => chats[id]).whereType<Chat>());
-    }
+    await RelationFill(db).groups(groups);
     return groups;
   }
 }

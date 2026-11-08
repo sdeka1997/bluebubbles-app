@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 // Necessary for ObjectBox annotations
 // ignore: unnecessary_import
 import 'package:objectbox/objectbox.dart';
+import 'package:bluebubbles/database/io/relations.dart' show RelList;
 
 /// A phone number with an associated label (e.g., "mobile", "work", "home").
 class ContactPhone {
@@ -135,7 +136,7 @@ class ContactV2 {
 
   /// N:M Relationship to Handles
   /// This establishes the many-to-many relationship between contacts and handles
-  final handles = ToMany<Handle>();
+  final handles = RelList<Handle>();
 
   @Transient()
   Widget? _fakeAvatar;
