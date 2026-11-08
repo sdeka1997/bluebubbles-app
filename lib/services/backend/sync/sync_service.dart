@@ -5,11 +5,13 @@ import 'package:bluebubbles/utils/memory_trace.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/helpers/ui/async_task.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_metadata_helpers.dart';
 import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/helpers/ui/ui_helpers.dart';
 import 'package:bluebubbles/services/backend/interfaces/sync_interface.dart';
+import 'package:bluebubbles/services/backend/sync/sync_marker.dart';
 import 'package:bluebubbles/services/backend/sync/sync_retry.dart';
 import 'package:bluebubbles/services/backend/sync/sync_windows.dart';
 import 'package:bluebubbles/services/isolates/global_isolate.dart';
@@ -76,8 +78,9 @@ class SyncService {
 
     // Set the last sync date (for incremental, even though this isn't incremental)
     // We won't try an incremental sync until the last (full) sync date is set
-    SettingsSvc.settings.lastIncrementalSync.value = DateTime.now().millisecondsSinceEpoch;
-    await SettingsSvc.settings.saveOneAsync('lastIncrementalSync');
+    final marker = SyncMarker.of(SettingsSvc.settings, MessagingStore.current.kind);
+    marker.timestamp = DateTime.now().millisecondsSinceEpoch;
+    await SettingsSvc.settings.saveOneAsync(marker.keys.timestamp);
     await _manager!.start();
   }
 

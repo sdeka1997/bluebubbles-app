@@ -250,18 +250,25 @@ void _emptyObjectBox(Store store) {
   });
 }
 
+/// An empty ObjectBox store for a test that needs both stores at once (the
+/// rollback drill); `Database.*` points at it.
+ObjectBoxFixture objectBoxFixture() => ObjectBoxFixture(_openObjectBox()..let(_emptyObjectBox));
+
+/// Closes what [objectBoxFixture] opened; for tearDownAll.
+void closeObjectBox() {
+  _obx?.close();
+  _obx = null;
+  _obxDir?.deleteSync(recursive: true);
+  _obxDir = null;
+}
+
 /// Defines [body]'s tests twice, in a group per store; each test gets an empty
 /// store in `fixture()`, which is also `MessagingStore.current` while it runs.
 void forEachStore(void Function(StoreFixture Function() fixture) body, {Set<ActiveStore> only = const {}}) {
   setUpAll(() {
     if (!GetIt.I.isRegistered<BaseLogger>()) GetIt.I.registerSingleton<BaseLogger>(BaseLogger());
   });
-  tearDownAll(() {
-    _obx?.close();
-    _obx = null;
-    _obxDir?.deleteSync(recursive: true);
-    _obxDir = null;
-  });
+  tearDownAll(closeObjectBox);
 
   for (final kind in ActiveStore.values) {
     if (only.isNotEmpty && !only.contains(kind)) continue;

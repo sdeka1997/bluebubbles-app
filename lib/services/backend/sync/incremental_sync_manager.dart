@@ -6,7 +6,9 @@ import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/services/backend/sync/sync_manager_impl.dart';
+import 'package:bluebubbles/services/backend/sync/sync_marker.dart';
 import 'package:bluebubbles/services/backend/sync/sync_retry.dart';
 import 'package:bluebubbles/services/backend/sync/sync_windows.dart';
 import 'package:bluebubbles/services/services.dart';
@@ -103,6 +105,11 @@ class IncrementalSyncManager extends SyncManager {
     }
   }
 
+  /// The background incremental sync: starts where [marker] says the last one
+  /// stopped and saves the markers as it goes.
+  IncrementalSyncManager.resumingFrom(SyncMarker marker)
+      : this(startTimestamp: marker.timestamp, startRowId: marker.rowId, saveMarker: true);
+
   @override
   Future<void> start() async {
     if (completer != null && !completer!.isCompleted) {
@@ -196,7 +203,7 @@ class IncrementalSyncManager extends SyncManager {
     // A single page holds everything: no need to walk windows.
     if (total <= batchSize) {
       await syncMessages(messagesRes.data['data'], total);
-      if (saveMarker && SettingsSvc.settings.incrementalCatchUpTotal.value != 0) await saveCatchUpTotal(0);
+      if (saveMarker && marker.catchUpTotal != 0) await saveCatchUpTotal(0);
       return;
     }
 
@@ -214,7 +221,7 @@ class IncrementalSyncManager extends SyncManager {
     int emptyRun = 0;
 
     // Carry the bar across pauses: measure against the size the catch-up began with.
-    final savedTotal = SettingsSvc.settings.incrementalCatchUpTotal.value;
+    final savedTotal = marker.catchUpTotal;
     final overall = catchUpProgress(saved: savedTotal > 0 ? savedTotal : null, seenThisRun: 0, remainingThisRun: total);
     if (saveMarker && overall.total != savedTotal) await saveCatchUpTotal(overall.total);
     while (!syncWindowsDone(
@@ -263,18 +270,52 @@ class IncrementalSyncManager extends SyncManager {
     }
   }
 
+  /// The incremental-sync markers of the active store: the ObjectBox keys on
+  /// ObjectBox, the `sqlite*` keys on SQLite (so a rollback to an ObjectBox
+  /// build re-syncs from where that build stopped).
+  SyncMarker get marker => SyncMarker.of(SettingsSvc.settings, MessagingStore.current.kind);
+
+  /// Persists the settings [keys] (and syncs them to the other isolates).
+  Future<void> saveSettings(List<String> keys) => SettingsSvc.settings.saveManyAsync(keys);
+
   Future<void> saveCatchUpTotal(int total) async {
-    SettingsSvc.settings.incrementalCatchUpTotal.value = total;
-    await SettingsSvc.settings.saveManyAsync(['incrementalCatchUpTotal']);
+    final m = marker;
+    m.catchUpTotal = total;
+    await saveSettings([m.keys.catchUpTotal]);
   }
 
   /// Saves [rowId] as the bookmark once every message up to it is synced.
   Future<void> saveCheckpoint(int rowId) async {
     checkpointRowId = rowId;
     if (!saveMarker) return;
-    if (rowId <= SettingsSvc.settings.lastIncrementalSyncRowId.value) return;
-    SettingsSvc.settings.lastIncrementalSyncRowId.value = rowId;
-    await SettingsSvc.settings.saveManyAsync(['lastIncrementalSyncRowId']);
+    final m = marker;
+    if (rowId <= m.rowId) return;
+    m.rowId = rowId;
+    await saveSettings([m.keys.rowId]);
+  }
+
+  /// Saves where the next sync starts: the time this one started (or the
+  /// newest message it saw) and the ROWID bookmark.
+  Future<void> saveMarkers() async {
+    final m = marker;
+    // If we have a start timestamp, use the time that our sync started.
+    // Otherwise, use the last timestamp we got from the API
+    final toSave = [m.keys.timestamp];
+    if (startTimestamp != null) {
+      m.timestamp = syncStartedAt;
+    } else if (lastSyncedTimestamp != null) {
+      m.timestamp = lastSyncedTimestamp!;
+    }
+
+    // The lastRowId should always get set, even when sycing using timestamps,
+    // but never behind a window already checkpointed.
+    final bookmark = syncBookmark(checkpoint: checkpointRowId, lastSyncedRowId: lastSyncedRowId);
+    if (bookmark != null) {
+      m.rowId = bookmark;
+      toSave.add(m.keys.rowId);
+    }
+
+    await saveSettings(toSave);
   }
 
   Future<void> startMin_1_2_0() async {
@@ -575,25 +616,7 @@ class IncrementalSyncManager extends SyncManager {
     // Once we have added everything, save the last sync date
     if (saveMarker) {
       addToOutput("Saving last sync markers...");
-
-      // If we have a start timestamp, use the time that our sync started.
-      // Otherwise, use the last timestamp we got from the API
-      final toSave = ['lastIncrementalSync'];
-      if (startTimestamp != null) {
-        SettingsSvc.settings.lastIncrementalSync.value = syncStartedAt;
-      } else if (lastSyncedTimestamp != null) {
-        SettingsSvc.settings.lastIncrementalSync.value = lastSyncedTimestamp!;
-      }
-
-      // The lastRowId should always get set, even when sycing using timestamps,
-      // but never behind a window already checkpointed.
-      final bookmark = syncBookmark(checkpoint: checkpointRowId, lastSyncedRowId: lastSyncedRowId);
-      if (bookmark != null) {
-        SettingsSvc.settings.lastIncrementalSyncRowId.value = bookmark;
-        toSave.add('lastIncrementalSyncRowId');
-      }
-
-      await SettingsSvc.settings.saveManyAsync(toSave);
+      await saveMarkers();
     }
 
     // Update the chat service with the latest chats.
