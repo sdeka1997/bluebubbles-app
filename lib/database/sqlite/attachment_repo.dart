@@ -40,6 +40,48 @@ class AttachmentRepo {
     return result;
   }
 
+  /// Attachment GUIDs considered by storage analysis/deletion after applying
+  /// the optional chat and age filters.
+  Future<Set<String>> storageGuids({String? chatGuid, int? beforeMillis}) async {
+    final where = <String>['a.message_id IS NOT NULL'];
+    final args = <Object?>[];
+    if (beforeMillis != null) {
+      where.add('m.date_created_us < ?');
+      args.add(beforeMillis * 1000);
+    }
+    if (chatGuid != null) {
+      where.add('c.guid = ?');
+      args.add(chatGuid);
+    }
+    final rows = await db.select(
+      'SELECT a.guid FROM attachments a JOIN messages m ON m.id = a.message_id '
+      'JOIN chats c ON c.id = m.chat_id WHERE ${where.join(' AND ')}',
+      args,
+    );
+    return rows.map((row) => row['guid'] as String? ?? '').toSet();
+  }
+
+  /// Clears downloaded/image metadata for [guids]. The caller owns the one
+  /// [Db.write] corresponding to StorageActions' former ObjectBox transaction.
+  Future<void> resetDownloadMetadata(WriteTx tx, Iterable<String> guids) async {
+    for (final guid in guids) {
+      final rows = await tx.select('SELECT * FROM attachments WHERE guid = ?', [guid]);
+      if (rows.isEmpty) continue;
+      final attachment = attachmentFromRow(rows.single)
+        ..isDownloaded = false
+        ..height = null
+        ..width = null
+        ..exif = null;
+      attachment.metadata?.removeWhere((key, _) => const {
+            '_orientation_processed',
+            '_orientation',
+            '_raw_width',
+            '_raw_height',
+          }.contains(key));
+      await tx.update('attachments', attachmentToRow(attachment));
+    }
+  }
+
   /// Inserts or updates [attachments] by guid, keeping a stored attachment's
   /// id; the owner is `message.targetId`. Sets each attachment's id.
   Future<List<Attachment>> upsert(WriteTx tx, List<Attachment> attachments) async {

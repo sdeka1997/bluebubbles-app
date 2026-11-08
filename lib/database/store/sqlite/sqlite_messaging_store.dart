@@ -1,9 +1,12 @@
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_attachment_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_contact_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_custom_group_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_handle_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_message_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_send_target_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_storage_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_sync_store.dart';
 import 'package:drift/native.dart' show SqliteException;
 
@@ -11,7 +14,15 @@ import 'package:drift/native.dart' show SqliteException;
 /// write is one [Db.write] holding exactly what one ObjectBox write
 /// transaction held, with nothing but database calls inside it.
 class SqliteMessagingStore extends MessagingStore
-    with SqliteHandleStore, SqliteCustomGroupStore, SqliteMessageStore, SqliteAttachmentStore, SqliteSyncStore {
+    with
+        SqliteContactStore,
+        SqliteStorageStore,
+        SqliteSendTargetStore,
+        SqliteHandleStore,
+        SqliteCustomGroupStore,
+        SqliteMessageStore,
+        SqliteAttachmentStore,
+        SqliteSyncStore {
   SqliteMessagingStore(this.db);
 
   @override

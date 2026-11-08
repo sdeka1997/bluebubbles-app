@@ -16,6 +16,53 @@ export 'package:bluebubbles/services/backend/sync/sync_marker.dart' show ActiveS
 // Reads return entities with their relations usable (ObjectBox lazy-loads
 // them, SQLite fills them). Writes return ids, as the Actions always have.
 
+/// Contacts (ContactV2Actions, ContactV2Interface).
+class ContactSyncResult {
+  const ContactSyncResult({required this.affectedHandleIds, required this.matchedContactCount});
+
+  final List<int> affectedHandleIds;
+  final int matchedContactCount;
+}
+
+abstract interface class ContactStore {
+  /// Reconciles the fetched server contacts and their already-written avatar paths,
+  /// including contact-handle and empty-chat-handle links, in one write.
+  Future<ContactSyncResult> syncContacts(
+    List<ContactV2> contacts,
+    Map<String, String?> avatarPaths, {
+    required bool fetched,
+  });
+
+  Future<List<String>> contactNativeIds();
+  Future<int?> findContactId(String nativeContactId);
+  Future<List<int>> contactIdsForHandles(List<int> handleIds);
+  Future<int?> contactIdByAddress(String address);
+  Future<List<int>> allContactIds();
+  Future<ContactV2?> contactById(int id);
+  Future<List<ContactV2>> contactsByIds(List<int> ids);
+}
+
+/// Storage analysis/reset (StorageActions).
+abstract interface class StorageStore {
+  Future<Set<String>> storageAttachmentGuids({String? chatGuid, int? beforeMillis});
+
+  /// Resets download/image metadata for the stored attachments in [guids] in one write.
+  Future<void> resetStorageAttachments(List<String> guids);
+}
+
+class SendTargetContext {
+  const SendTargetContext({required this.copies, required this.recent, this.anchorChatGuid});
+
+  final List<Chat> copies;
+  final List<Message> recent;
+  final String? anchorChatGuid;
+}
+
+/// Store reads needed to resolve the Apple chat used for an outgoing send.
+abstract interface class SendTargetStore {
+  Future<SendTargetContext> sendTargetContext(Chat thread, {String? anchorGuid, int recentLimit = 50});
+}
+
 /// Handles (HandleActions, HandleInterface).
 abstract interface class HandleStore {
   /// Saves [handle] matched by ROWID or by address and service; keeps the stored
@@ -94,6 +141,10 @@ abstract interface class MessageStore {
 
   Future<Message?> messageByGuid(String guid);
 
+  /// Messages created after [millisecondsSinceEpoch], matching
+  /// MessageActions.getMessages' legacy ObjectBox query.
+  Future<List<Message>> messagesCreatedAfter(int millisecondsSinceEpoch);
+
   /// Links every message from server handle [serverHandleId] (not from me) to
   /// local handle [localHandleId]; returns how many changed.
   Future<int> relinkMessagesToHandle(int serverHandleId, int localHandleId);
@@ -151,7 +202,16 @@ abstract interface class SyncStore {
   Future<List<Chat>> chatsByIds(List<int> ids);
 }
 
-abstract class MessagingStore implements HandleStore, CustomGroupStore, MessageStore, AttachmentStore, SyncStore {
+abstract class MessagingStore
+    implements
+        ContactStore,
+        StorageStore,
+        SendTargetStore,
+        HandleStore,
+        CustomGroupStore,
+        MessageStore,
+        AttachmentStore,
+        SyncStore {
   /// Which store this is; picks the sync markers (SyncMarker.of).
   ActiveStore get kind;
 

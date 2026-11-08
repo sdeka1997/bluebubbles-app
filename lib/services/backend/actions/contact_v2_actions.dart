@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/helpers/types/helpers/server_contacts.dart';
@@ -19,56 +19,6 @@ import 'package:path/path.dart' as p;
 class ContactV2Actions {
   /// Completer to ensure syncContactsToHandles only runs once at a time
   static Completer<_ContactSyncStats>? _syncCompleter;
-
-  /// Generate multiple normalized variants of a phone number to handle country code mismatches
-  ///
-  /// Returns a set of normalized phone numbers including:
-  /// - The original normalized number (digits + plus sign only)
-  /// - Variant without country code (if one exists)
-  /// - Variant with country code removed but assuming it started with +
-  ///
-  /// This handles cases where:
-  /// - Contact has "1234567890" but Handle has "+11234567890"
-  /// - Contact has "+11234567890" but Handle has "1234567890"
-  /// - Works with any country code, not just +1
-  static Set<String> _getPhoneNumberVariants(String phone) {
-    final variants = <String>{};
-    final normalized = ContactV2.normalizePhoneNumber(phone);
-
-    if (normalized.isEmpty) return variants;
-
-    // Always include the base normalized version
-    variants.add(normalized);
-
-    // If it starts with +, add variant without the +
-    if (normalized.startsWith('+')) {
-      variants.add(normalized.substring(1));
-
-      // Also try removing common country codes (1-3 digits after +)
-      // Country codes can be 1-3 digits (e.g., +1, +44, +852, +1246)
-      for (int i = 1; i <= 3 && i < normalized.length; i++) {
-        final withoutCountryCode = normalized.substring(i + 1);
-        if (withoutCountryCode.isNotEmpty) {
-          variants.add(withoutCountryCode);
-        }
-      }
-    } else {
-      // If no +, try adding + and common country code lengths
-      // This handles cases where the stored number doesn't have + but the contact does
-      variants.add('+$normalized');
-
-      // Try removing 1-3 digit prefixes as potential country codes
-      for (int i = 1; i <= 3 && i < normalized.length; i++) {
-        final withoutPrefix = normalized.substring(i);
-        if (withoutPrefix.isNotEmpty) {
-          variants.add(withoutPrefix);
-          variants.add('+$withoutPrefix');
-        }
-      }
-    }
-
-    return variants;
-  }
 
   /// Fetch all contacts from device and match them to existing handles
   /// This is the main operation described in Section II.A of FR-1.md
@@ -135,232 +85,13 @@ class ContactV2Actions {
         Logger.warn('[ContactV2] Server contacts unavailable (status ${response.statusCode})');
       }
 
-      // Step 2: Process and normalize contacts within a transaction (synchronous only!)
-      Database.runInTransaction(TxMode.write, () {
-        final contactsBox = Database.contactsV2;
-        final handlesBox = Database.handles;
-
-        if (fetched) {
-          // Drop cards deleted in iCloud, and any left from the phone's contacts.
-          final stale = contactIdsToRemove(
-              contactsBox.getAll().map((c) => c.nativeContactId), networkContacts.map((c) => c.nativeContactId));
-          if (stale.isNotEmpty) {
-            final query = contactsBox.query(ContactV2_.nativeContactId.oneOf(stale.toList())).build();
-            final removed = query.find();
-            query.close();
-            for (final contact in removed) {
-              affectedHandleIds.addAll(contact.handles.map((h) => h.id).whereType<int>());
-            }
-            contactsBox.removeMany(removed.map((c) => c.id).toList());
-            Logger.info('[ContactV2] Removed ${removed.length} contacts no longer on the server');
-          }
-        }
-        final allHandles = handlesBox.getAll();
-
-        final emailHandleMap = <String, List<Handle>>{};
-        final phoneHandleMap = <String, List<Handle>>{};
-
-        for (final handle in allHandles) {
-          final isEmail = handle.address.contains('@');
-
-          if (isEmail) {
-            final normalized = ContactV2.normalizeEmail(handle.address);
-            emailHandleMap.putIfAbsent(normalized, () => []).add(handle);
-
-            if (handle.formattedAddress != null) {
-              final formattedNormalized = ContactV2.normalizeEmail(handle.formattedAddress!);
-              if (formattedNormalized != normalized) {
-                emailHandleMap.putIfAbsent(formattedNormalized, () => []).add(handle);
-              }
-            }
-          } else {
-            // For phones, generate all variants and map them
-            final variants = _getPhoneNumberVariants(handle.address);
-            for (final variant in variants) {
-              phoneHandleMap.putIfAbsent(variant, () => []).add(handle);
-            }
-
-            if (handle.formattedAddress != null) {
-              final formattedVariants = _getPhoneNumberVariants(handle.formattedAddress!);
-              for (final variant in formattedVariants) {
-                phoneHandleMap.putIfAbsent(variant, () => []).add(handle);
-              }
-            }
-          }
-        }
-
-        Logger.info(
-            '[ContactV2] Built lookup maps: ${emailHandleMap.length} email keys, ${phoneHandleMap.length} phone variant keys');
-
-        for (final rawContact in networkContacts) {
-          // Normalize addresses
-          final normalizedAddresses = <String>{};
-
-          // Add normalized phone numbers
-          for (final phone in rawContact.phoneNumbers) {
-            final normalized = ContactV2.normalizePhoneNumber(phone.number);
-            if (normalized.isNotEmpty) {
-              normalizedAddresses.add(normalized);
-            }
-          }
-
-          // Add normalized emails
-          for (final email in rawContact.emailAddresses) {
-            final normalized = ContactV2.normalizeEmail(email.address);
-            if (normalized.isNotEmpty) {
-              normalizedAddresses.add(normalized);
-            }
-          }
-
-          if (normalizedAddresses.isEmpty) continue;
-
-          String contactId = "";
-          String displayName = "";
-          String? firstName, lastName, middleName, namePrefix, nameSuffix, nickname, company;
-          List<ContactPhone> contactPhones = [];
-          List<ContactEmail> contactEmails = [];
-
-          contactId = rawContact.nativeContactId;
-          displayName = rawContact.displayName;
-          firstName = rawContact.firstName;
-          lastName = rawContact.lastName;
-          contactPhones = rawContact.phoneNumbers;
-          contactEmails = rawContact.emailAddresses;
-
-          // Get pre-fetched avatar path
-          final avatarPath = avatarPaths[contactId];
-
-          // Check if contact already exists
-          final existingQuery = contactsBox.query(ContactV2_.nativeContactId.equals(contactId)).build();
-          final existingContact = existingQuery.findFirst();
-          existingQuery.close();
-
-          ContactV2 contact;
-          Set<int> existingHandleIds = {};
-
-          if (existingContact != null) {
-            // Update existing contact
-            contact = existingContact;
-            final oldComputedName = contact.computedDisplayName;
-            final oldAvatarPath = contact.avatarPath;
-            contact.displayName = displayName;
-            contact.addresses = normalizedAddresses.toList();
-            // Only touch avatarPath when the prefetch step produced a definitive
-            // answer (photo saved, or confirmed no photo). An absent key means the
-            // photo fetch failed — keep the existing path instead of wiping it.
-            if (avatarPaths.containsKey(contactId)) {
-              contact.avatarPath = avatarPath;
-            }
-            contact.firstName = firstName;
-            contact.lastName = lastName;
-            contact.middleName = middleName;
-            contact.namePrefix = namePrefix;
-            contact.nameSuffix = nameSuffix;
-            contact.nickname = nickname;
-            contact.company = company;
-            contact.phoneNumbers = contactPhones;
-            contact.emailAddresses = contactEmails;
-
-            // Track existing handles to detect changes
-            existingHandleIds = contact.handles.map((h) => h.id).whereType<int>().toSet();
-
-            if (oldComputedName != contact.computedDisplayName || oldAvatarPath != contact.avatarPath) {
-              // Mark all existing handles for this contact as affected (computed name or avatar changed)
-              affectedHandleIds.addAll(existingHandleIds);
-            }
-          } else {
-            // Create new contact
-            contact = ContactV2(
-              displayName: displayName,
-              nativeContactId: contactId,
-              avatarPath: avatarPath,
-              addresses: normalizedAddresses.toList(),
-              firstName: firstName,
-              lastName: lastName,
-              middleName: middleName,
-              namePrefix: namePrefix,
-              nameSuffix: nameSuffix,
-              nickname: nickname,
-              company: company,
-            );
-            contact.phoneNumbers = contactPhones;
-            contact.emailAddresses = contactEmails;
-          }
-
-          // Mark contact as native only when it originates from flutter_contacts
-          contact.isNative = false;
-
-          // Step 3: Match contact to handles using lookup maps (O(addresses) instead of O(addresses × handles))
-          final matchedHandles = <Handle>{};
-
-          for (final address in normalizedAddresses) {
-            final isEmail = address.contains('@');
-
-            if (isEmail) {
-              // Direct lookup for emails
-              final handles = emailHandleMap[address];
-              if (handles != null) {
-                matchedHandles.addAll(handles);
-              }
-            } else {
-              // For phones, check all variants
-              final variants = _getPhoneNumberVariants(address);
-              for (final variant in variants) {
-                final handles = phoneHandleMap[variant];
-                if (handles != null) {
-                  matchedHandles.addAll(handles);
-                }
-              }
-            }
-          }
-
-          if (matchedHandles.isNotEmpty) matchedContactCount++;
-
-          // Compare new handles with existing handles to detect changes
-          final newHandleIds = matchedHandles.map((h) => h.id).whereType<int>().toSet();
-          final handlesChanged = existingContact == null ||
-              existingHandleIds.length != newHandleIds.length ||
-              !existingHandleIds.containsAll(newHandleIds);
-
-          // Always update handles on the in-memory object so the put below persists them.
-          contact.handles.clear();
-          contact.handles.addAll(matchedHandles);
-
-          // Always persist the contact — this ensures phone/email JSON columns are
-          // written to the DB regardless of whether handle assignments changed.
-          try {
-            contactsBox.put(contact);
-          } on UniqueViolationException catch (e) {
-            Logger.warn('[ContactV2] Unique violation for contact ${contact.nativeContactId}: $e');
-          }
-
-          if (handlesChanged) {
-            // Mark all affected handles (both old and new) for UI refresh
-            affectedHandleIds.addAll(existingHandleIds);
-            affectedHandleIds.addAll(newHandleIds);
-
-            // Link handles to chats without handles
-            final chatsToUpdate = <Chat>{};
-            for (final handle in matchedHandles) {
-              final chatQuery = Database.chats.query(Chat_.guid.contains(';-;${handle.address}')).build();
-              final chats = chatQuery.find();
-              chatQuery.close();
-
-              for (final chat in chats) {
-                if (chat.handles.isEmpty) {
-                  chat.handles.add(handle);
-                  chatsToUpdate.add(chat);
-                }
-              }
-            }
-
-            if (chatsToUpdate.isNotEmpty) {
-              Logger.info('[ContactV2] Updating ${chatsToUpdate.length} chats to link matched handles');
-              Database.chats.putMany(chatsToUpdate.toList());
-            }
-          }
-        }
-      });
+      final storeResult = await MessagingStore.current.syncContacts(
+        networkContacts,
+        avatarPaths,
+        fetched: fetched,
+      );
+      affectedHandleIds.addAll(storeResult.affectedHandleIds);
+      matchedContactCount = storeResult.matchedContactCount;
 
       final endTime = DateTime.now().millisecondsSinceEpoch;
       // De-duplicate — a handle can be marked affected by both a name/avatar
@@ -409,11 +140,7 @@ class ContactV2Actions {
 
   /// Get all stored ContactV2 IDs for comparison
   static Future<List<String>> getStoredContactIds(dynamic data) async {
-    return await Database.runInTransaction(TxMode.read, () {
-      final contactsBox = Database.contactsV2;
-      final allContacts = contactsBox.getAll();
-      return allContacts.map((c) => c.nativeContactId).toList();
-    });
+    return MessagingStore.current.contactNativeIds();
   }
 
   /// Find a single ContactV2 by native contact ID
@@ -422,15 +149,7 @@ class ContactV2Actions {
     final dataMap = data as Map<dynamic, dynamic>;
     final nativeContactId = dataMap['nativeContactId'] as String;
 
-    return await Database.runInTransaction(TxMode.read, () {
-      final contactsBox = Database.contactsV2;
-      final query = contactsBox.query(ContactV2_.nativeContactId.equals(nativeContactId)).build();
-      query.limit = 1;
-      final contact = query.findFirst();
-      query.close();
-
-      return contact?.id;
-    });
+    return MessagingStore.current.findContactId(nativeContactId);
   }
 
   /// Get ContactV2 IDs for a list of Handle IDs.
@@ -439,21 +158,7 @@ class ContactV2Actions {
     final dataMap = data as Map<dynamic, dynamic>;
     final handleIds = (dataMap['handleIds'] as List).cast<int>();
 
-    return await Database.runInTransaction(TxMode.read, () {
-      final handlesBox = Database.handles;
-      final uniqueIds = <int>{};
-
-      for (final handleId in handleIds) {
-        final handle = handlesBox.get(handleId);
-        if (handle != null) {
-          for (final contact in handle.contactsV2) {
-            if (contact.id != 0) uniqueIds.add(contact.id);
-          }
-        }
-      }
-
-      return uniqueIds.toList();
-    });
+    return MessagingStore.current.contactIdsForHandles(handleIds);
   }
 
   /// Manually trigger a contact refresh
@@ -515,35 +220,13 @@ class ContactV2Actions {
     final dataMap = data as Map<dynamic, dynamic>;
     final address = dataMap['address'] as String;
 
-    return await Database.runInTransaction(TxMode.read, () {
-      final contactsBox = Database.contactsV2;
-
-      // Normalize the search address
-      final normalized =
-          address.contains('@') ? ContactV2.normalizeEmail(address) : ContactV2.normalizePhoneNumber(address);
-
-      // Search through all contacts for a match
-      final allContacts = contactsBox.getAll();
-
-      for (final contact in allContacts) {
-        if (contact.hasMatchingAddress(normalized)) {
-          return contact.id;
-        }
-      }
-
-      return null;
-    });
+    return MessagingStore.current.contactIdByAddress(address);
   }
 
   /// Get all contacts from the database.
   /// Returns a list of ObjectBox IDs so the interface can hydrate full objects.
   static Future<List<int>> getAllContacts(dynamic data) async {
-    return await Database.runInTransaction(TxMode.read, () {
-      final contactsBox = Database.contactsV2;
-      final query = (contactsBox.query()..order(ContactV2_.displayName)).build();
-      final allContacts = query.find();
-      return allContacts.map((c) => c.id).toList();
-    });
+    return MessagingStore.current.allContactIds();
   }
 
   /// Get avatar data for a contact by native contact ID

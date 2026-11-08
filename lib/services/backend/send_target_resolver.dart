@@ -1,9 +1,8 @@
 import 'dart:async';
 
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/helpers/types/helpers/send_routing.dart';
-import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:collection/collection.dart';
@@ -21,23 +20,20 @@ class SendTargetResolver {
   static Future<Chat> resolve(Chat thread, {String? anchorGuid}) async {
     if (kIsWeb) return thread;
     try {
-      final copies = findThreadChats(thread);
+      final context = await MessagingStore.current.sendTargetContext(
+        thread,
+        anchorGuid: anchorGuid,
+        recentLimit: _recentMessages,
+      );
+      final copies = context.copies;
       if (anchorGuid != null) {
-        final anchorChat = Message.findOne(guid: anchorGuid)?.appleChatGuid;
-        return copies.firstWhereOrNull((c) => c.guid == anchorChat) ?? thread;
+        return copies.firstWhereOrNull((c) => c.guid == context.anchorChatGuid) ?? thread;
       }
       final hasIMessage = copies.any((c) => c.service.isIMessageService);
       // One chat and nothing to make: nothing to choose between.
       if (copies.length <= 1 && (thread.isGroup || hasIMessage)) return thread;
 
-      final query =
-          (Database.messages.query()
-                ..link(Message_.chat, Chat_.id.equals(thread.id!))
-                ..order(Message_.dateCreated, flags: Order.descending))
-              .build()
-            ..limit = _recentMessages;
-      final recent = query.find();
-      query.close();
+      final recent = context.recent;
 
       final described = describeThread(threadGuid: thread.guid, copies: copies, recent: recent);
       // Ask the Mac only when the answer can change the pick: the thread has

@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/services/backend/actions/contact_v2_actions.dart';
 import 'package:bluebubbles/services/isolates/global_isolate.dart';
@@ -92,7 +92,7 @@ class ContactV2Interface {
     }
 
     if (id == null) return null;
-    return Database.contactsV2.get(id);
+    return MessagingStore.current.contactById(id);
   }
 
   /// Get ContactV2 entities for a list of Handle IDs
@@ -110,7 +110,7 @@ class ContactV2Interface {
       ids = await GetIt.I<GlobalIsolate>().send<List<int>>(IsolateRequestType.getContactsForHandles, input: data);
     }
 
-    return Database.contactsV2.getMany(ids).whereType<ContactV2>().toList();
+    return MessagingStore.current.contactsByIds(ids);
   }
 
   /// Get a contact by address (email or phone number)
@@ -129,7 +129,7 @@ class ContactV2Interface {
     }
 
     if (id == null) return null;
-    return Database.contactsV2.get(id);
+    return MessagingStore.current.contactById(id);
   }
 
   /// Get all contacts from the database
@@ -142,7 +142,7 @@ class ContactV2Interface {
           await GetIt.I<GlobalIsolate>().send<List<int>>(IsolateRequestType.getAllContacts, input: <String, dynamic>{});
     }
 
-    return Database.contactsV2.getMany(ids).whereType<ContactV2>().toList();
+    return MessagingStore.current.contactsByIds(ids);
   }
 
   /// Returns live flutter_contacts Contact objects so the chat creator can
