@@ -91,8 +91,9 @@ int _fileSize(File file) {
 }
 
 /// Bump when the copy or its check changes: a file checked by an older version
-/// is copied and checked again from scratch on the next launch.
-const copyCheckVersion = 3;
+/// is copied and checked again from scratch on the next launch. v4: schema v2
+/// (real foreign keys, messages_fts filled after the bulk insert).
+const copyCheckVersion = 4;
 
 /// Copies [store] into the SQLite [file] (resuming an earlier copy), verifies it
 /// and records the result in storage_meta. Logs counts, timings, file size and

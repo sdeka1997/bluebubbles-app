@@ -4,6 +4,7 @@
 // (the phone's copied file has none today).
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
+import 'package:bluebubbles/database/sqlite/chat_stats_repo.dart';
 import 'package:bluebubbles/database/sqlite/chat_repo.dart';
 import 'package:bluebubbles/database/sqlite/contact_repo.dart';
 import 'package:bluebubbles/database/sqlite/custom_group_repo.dart';
@@ -157,6 +158,75 @@ void main() {
 
       test('MessageRepo.thread -> messages_thread', () async {
         expectIndexed(await plansOf(db, () => messages.thread('m1')), {'messages_thread (thread_originator_guid=?)'});
+      });
+
+      test('MessageRepo.search (3+ characters) -> messages_fts trigram LIKE, rows by primary key', () async {
+        for (final chatIds in [null, [1, 2]]) {
+          final plans = await plansOf(db, () => messages.search('text 15', chatIds: chatIds, isFromMe: true, since: at(baseMs)));
+          final search = plans.first;
+          expect(search.$1, contains('messages_fts'));
+          // The matches are sorted by date after the index finds them (as ObjectBox
+          // sorts its scan): a temporary B-tree over the matching rows only.
+          expect(search.$2.first, matches(r'^SCAN f VIRTUAL TABLE INDEX 0:L'), reason: search.$2.join('\n'));
+          expect(search.$2, contains('SEARCH m USING INTEGER PRIMARY KEY (rowid=?)'), reason: search.$2.join('\n'));
+          expect(search.$2.where((l) => RegExp(r'^SCAN m\b|^SCAN messages\b').hasMatch(l)), isEmpty, reason: search.$2.join('\n'));
+          expectIndexed(plans.skip(1).toList(), {'attachments_message (message_id=?)'});
+        }
+      });
+
+      test('MessageRepo.search under 3 characters or with LIKE wildcards scans messages, as ObjectBox does for every search', () async {
+        for (final term in ['te', 'x', '1_5', '5%']) {
+          final plans = await plansOf(db, () => messages.search(term));
+          expect(plans.first.$1, isNot(contains('messages_fts')), reason: term);
+          // Every not-deleted, non-reaction row (the partial timeline index holds exactly those).
+          expect(plans.first.$2, contains(matches(r'^SCAN m( USING INDEX messages_timeline)?$')), reason: term);
+        }
+      });
+
+      test('MessageRepo.byServerHandleId -> messages_handle_id', () async {
+        expectIndexed(await plansOf(db, () => messages.byServerHandleId(9)), {'messages_handle_id (handle_id=?)'});
+      });
+
+      test('MessageRepo.newestRename -> messages_renames, walked backwards per chat', () async {
+        expectIndexed(await plansOf(db, () => messages.newestRename([1, 2])), {'messages_renames (chat_id=?)'});
+      });
+
+      test('ChatStatsRepo: every query on one chat via messages_timeline / messages_chat_time; attachments by message', () async {
+        final stats = ChatStatsRepo(db);
+        final plans = await plansOf(db, () async {
+          await stats.totalMessages(1);
+          await stats.sentCount(1);
+          await stats.receivedCount(1, participantId: 5);
+          await stats.unattributedCount(1, sinceMillis: baseMs);
+          await stats.timestampsByParticipant(1, sinceMillis: baseMs);
+          await stats.readTimestamps(1);
+          await stats.attachmentMessageCount(1);
+          await stats.editedCount(1, fromMe: false, participantId: 5);
+          await stats.unsentCount(1, fromMe: true);
+          await stats.recentTexts(1, fromMe: false, limit: 5, participantId: 5);
+          await stats.textLengthsByParticipant(1, limitPerParticipant: 3);
+          await stats.textCoverage(1);
+          await stats.reactions(1);
+          await stats.attachmentMimeTypes(1);
+          await stats.expressiveSendStyleIds(1);
+          await stats.audioStats(1);
+          await stats.groupEvents(1);
+          await stats.reactionMatrixData(1, sinceMillis: baseMs);
+          await stats.firstMessageMillis(1);
+          await stats.cacheKey(1);
+        });
+        expect(plans.length, greaterThanOrEqualTo(20));
+        for (final (sql, lines) in plans) {
+          final detail = lines.join('\n');
+          expect(detail, anyOf(contains('messages_timeline (chat_id=?)'), contains('messages_chat_time (chat_id=?)')), reason: '$sql\n$detail');
+          for (final line in lines) {
+            expect(RegExp(r'^SCAN \w+$').hasMatch(line), isFalse, reason: '$sql\n$detail');
+            // One chat's rows sorted by date (newest texts, oldest first message):
+            // only statements that ORDER BY may sort, and only that chat's rows.
+            if (line.contains('TEMP B-TREE')) expect(sql, contains('ORDER BY'), reason: '$sql\n$detail');
+          }
+          if (sql.contains('JOIN attachments')) expect(detail, contains('attachments_message (message_id=?)'), reason: '$sql\n$detail');
+        }
       });
 
       test('ChatRepo.byId / byGuid -> primary key / unique guid, participants by chat_handles key', () async {

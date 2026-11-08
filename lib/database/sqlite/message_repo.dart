@@ -177,6 +177,80 @@ class MessageRepo {
     });
   }
 
+  /// Messages whose text contains [term], newest first, as the search screen
+  /// shows them (SearchQueryHelper.findLocal on ObjectBox): ASCII letters match
+  /// either case, other characters only themselves (`Message_.text.contains(
+  /// caseSensitive: false)` and SQLite's LIKE fold the same way). No reactions,
+  /// nothing deleted, only dated rows. Optional filters: [chatIds], [isFromMe],
+  /// [senderHandleId] (the sender's server ROWID, `handle_id`) and [since].
+  ///
+  /// Terms of 3+ characters are found through messages_fts (trigram), which
+  /// picks candidate rows that LIKE then checks; shorter terms, and terms with
+  /// LIKE's own `%`, `_` or `\`, can't use it and scan messages as ObjectBox
+  /// does for every search today.
+  Future<List<Message>> search(String term,
+      {List<int>? chatIds, bool? isFromMe, int? senderHandleId, DateTime? since, int limit = 50}) {
+    return db.snapshot((reader) async {
+      final useIndex = term.runes.length >= 3 && !term.contains(RegExp(r'[%_\\]'));
+      final where = <String>[
+        'm.associated_message_guid IS NULL',
+        'm.date_deleted_us IS NULL',
+        'm.date_created_us IS NOT NULL',
+        if (chatIds != null) 'm.chat_id IN (${sqlPlaceholders(chatIds.length)})',
+        if (isFromMe != null) 'm.is_from_me = ?',
+        if (senderHandleId != null) 'm.handle_id = ?',
+        if (since != null) 'm.date_created_us >= ?',
+      ];
+      final args = <Object?>[
+        ...?chatIds,
+        if (isFromMe != null) isFromMe ? 1 : 0,
+        ?senderHandleId,
+        if (since != null) since.millisecondsSinceEpoch * 1000,
+        limit,
+      ];
+      // CROSS JOIN keeps the index as the outer loop: each candidate is then
+      // one primary-key lookup, never a walk over a chat's whole history.
+      final sql = useIndex
+          ? 'SELECT m.* FROM messages_fts f CROSS JOIN messages m ON m.id = f.rowid WHERE f.text LIKE ? AND '
+          : r"SELECT m.* FROM messages m WHERE m.text LIKE ? ESCAPE '\' AND ";
+      final pattern = useIndex ? '%$term%' : '%${term.replaceAllMapped(RegExp(r'[%_\\]'), (c) => '\\${c[0]}')}%';
+      final rows = await reader.select(
+          '$sql${where.join(' AND ')} ORDER BY m.date_created_us DESC, m.id DESC LIMIT ?', [pattern, ...args]);
+      final messages = rows.map(messageFromRow).toList();
+      await MessageRepo(reader).attachmentsFor(messages);
+      return messages;
+    });
+  }
+
+  /// Every message whose sender has the server ROWID [serverHandleId]
+  /// (`Message.handleId`), e.g. to link them to a repaired handle.
+  Future<List<Message>> byServerHandleId(int serverHandleId) async {
+    final messages = (await db.select('SELECT * FROM messages WHERE handle_id = ?', [serverHandleId])).map(messageFromRow).toList();
+    await attachmentsFor(messages);
+    return messages;
+  }
+
+  /// The newest group rename (`item_type` 2) stored in any of [chatIds], by
+  /// creation date, deleted or not; null when there is none.
+  Future<Message?> newestRename(List<int> chatIds) {
+    return db.snapshot((reader) async {
+      Message? newest;
+      for (final chatId in chatIds.toSet()) {
+        final rows = await reader.select(
+            'SELECT * FROM messages INDEXED BY messages_renames WHERE chat_id = ? AND item_type = 2 '
+            'ORDER BY date_created_us DESC, id DESC LIMIT 1',
+            [chatId]);
+        if (rows.isEmpty) continue;
+        final m = messageFromRow(rows.single);
+        final created = m.dateCreated?.microsecondsSinceEpoch ?? 0;
+        final best = newest?.dateCreated?.microsecondsSinceEpoch ?? 0;
+        if (newest == null || created > best || (created == best && m.id! > newest.id!)) newest = m;
+      }
+      if (newest != null) await MessageRepo(reader).attachmentsFor([newest]);
+      return newest;
+    });
+  }
+
   /// The stored message [id] without its attachments (latest-pointer checks).
   Future<Message?> row(int id) async {
     final rows = await db.select('SELECT * FROM messages WHERE id = ?', [id]);

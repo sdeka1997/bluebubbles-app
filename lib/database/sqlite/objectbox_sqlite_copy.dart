@@ -127,6 +127,9 @@ class ObjectBoxSqliteCopy {
     final repair = state == 'verify_failed' && meta['verify_rows_complete'] == 'true';
     final mode = state == 'verified' || repair ? CopyMode.incremental : CopyMode.full;
     if (state == 'verify_failed' && !repair) await _reset();
+    // A full copy inserts every message: the search index is filled once at the
+    // end instead of row by row (SQLITE-PLAN-2 section 6, step 6).
+    if (mode == CopyMode.full) await target.transaction(() => suspendFts(target.customStatement));
     await _setMeta({'copy_state': 'copying', 'schema_version': '${target.schemaVersion}'});
 
     final rows = <String, int>{};
@@ -148,6 +151,11 @@ class ObjectBoxSqliteCopy {
     // chat's latest message, read and delivery state) are taken fresh last.
     await _copySmallTables();
     await _refreshLatestMessages();
+    if ((await readStorageMeta(target))['fts_state'] != 'ready') {
+      final ftsClock = Stopwatch()..start();
+      await target.transaction(() => rebuildFts(target.customStatement));
+      log?.call('BBSQL fts rebuilt ms=${ftsClock.elapsedMilliseconds}');
+    }
     await _setMeta({'copy_state': 'copied', 'copied_at': DateTime.now().toUtc().toIso8601String()});
     return CopyReport(mode: mode, completed: true, rows: rows, elapsed: clock.elapsed);
   }
@@ -177,6 +185,8 @@ class ObjectBoxSqliteCopy {
   /// next run is a fresh full copy.
   static Future<void> resetTarget(AppDatabase target) async {
     await target.transaction(() async {
+      // No per-row index deletes: the next full copy fills the index anew.
+      await suspendFts(target.customStatement);
       for (final table in copiedTables.reversed) {
         await target.customStatement('DELETE FROM $table');
       }

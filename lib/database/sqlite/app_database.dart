@@ -5,10 +5,16 @@ import 'package:drift/native.dart';
 
 part 'app_database.g.dart';
 
-// Schema v1: one table per ObjectBox entity of the linked messaging set, same
-// columns in snake_case (SQLITE-PLAN-2 Appendix D). ObjectBox ids are kept as
-// the primary key. Dates are microseconds since epoch (`*_us`), booleans 0/1,
-// string vectors and FlexBuffer maps JSON text.
+// One table per ObjectBox entity of the linked messaging set, same columns in
+// snake_case (SQLITE-PLAN-2 Appendix D). ObjectBox ids are kept as the primary
+// key. Dates are microseconds since epoch (`*_us`), booleans 0/1, string
+// vectors and FlexBuffer maps JSON text.
+//
+// Schema v2 adds the foreign keys v1 never had (drift_dev 2.31 drops every
+// `references(Table, #id)`, so they are raw constraints here) and the
+// messages_fts search index. A parent's delete unlinks its messages and
+// attachments (SET NULL, as ObjectBox leaves a dangling relation) and removes
+// its join rows (CASCADE).
 
 @DataClassName('SqliteChatRow')
 class Chats extends Table {
@@ -86,7 +92,7 @@ class Messages extends Table {
   TextColumn get threadOriginatorPart => text().nullable()();
   BoolColumn get bigEmoji => boolean().nullable()();
   IntColumn get error => integer()();
-  IntColumn get chatId => integer().nullable().references(Chats, #id, onDelete: KeyAction.cascade)();
+  IntColumn get chatId => integer().nullable().customConstraint('NULL REFERENCES chats (id) ON DELETE SET NULL')();
   TextColumn get attributedBodyJson => text().nullable()();
   TextColumn get messageSummaryInfoJson => text().nullable()();
   TextColumn get payloadDataJson => text().nullable()();
@@ -98,7 +104,7 @@ class Messages extends Table {
   BoolColumn get isBookmarked => boolean()();
   BoolColumn get isDelivered => boolean()();
   IntColumn get handleRelationId =>
-      integer().nullable().references(Handles, #id, onDelete: KeyAction.setNull)();
+      integer().nullable().customConstraint('NULL REFERENCES handles (id) ON DELETE SET NULL')();
   TextColumn get errorMessage => text().nullable()();
   BoolColumn get hasEffectPlayed => boolean()();
   TextColumn get appleChatGuid => text().nullable()();
@@ -120,8 +126,8 @@ class Handles extends Table {
 
 @DataClassName('SqliteChatHandleRow')
 class ChatHandles extends Table {
-  IntColumn get chatId => integer().references(Chats, #id, onDelete: KeyAction.cascade)();
-  IntColumn get handleId => integer().references(Handles, #id, onDelete: KeyAction.cascade)();
+  IntColumn get chatId => integer().customConstraint('NOT NULL REFERENCES chats (id) ON DELETE CASCADE')();
+  IntColumn get handleId => integer().customConstraint('NOT NULL REFERENCES handles (id) ON DELETE CASCADE')();
 
   @override
   Set<Column> get primaryKey => {chatId, handleId};
@@ -143,7 +149,7 @@ class Attachments extends Table {
   IntColumn get height => integer().nullable()();
   IntColumn get width => integer().nullable()();
   TextColumn get webUrl => text().nullable()();
-  IntColumn get messageId => integer().nullable().references(Messages, #id, onDelete: KeyAction.cascade)();
+  IntColumn get messageId => integer().nullable().customConstraint('NULL REFERENCES messages (id) ON DELETE SET NULL')();
   BoolColumn get hasLivePhoto => boolean()();
   BoolColumn get isDownloaded => boolean()();
   TextColumn get metadataJson => text().nullable()();
@@ -171,8 +177,8 @@ class Contacts extends Table {
 
 @DataClassName('SqliteContactHandleRow')
 class ContactHandles extends Table {
-  IntColumn get contactId => integer().references(Contacts, #id, onDelete: KeyAction.cascade)();
-  IntColumn get handleId => integer().references(Handles, #id, onDelete: KeyAction.cascade)();
+  IntColumn get contactId => integer().customConstraint('NOT NULL REFERENCES contacts (id) ON DELETE CASCADE')();
+  IntColumn get handleId => integer().customConstraint('NOT NULL REFERENCES handles (id) ON DELETE CASCADE')();
 
   @override
   Set<Column> get primaryKey => {contactId, handleId};
@@ -191,8 +197,8 @@ class CustomGroups extends Table {
 
 @DataClassName('SqliteCustomGroupChatRow')
 class CustomGroupChats extends Table {
-  IntColumn get groupId => integer().references(CustomGroups, #id, onDelete: KeyAction.cascade)();
-  IntColumn get chatId => integer().references(Chats, #id, onDelete: KeyAction.cascade)();
+  IntColumn get groupId => integer().customConstraint('NOT NULL REFERENCES custom_groups (id) ON DELETE CASCADE')();
+  IntColumn get chatId => integer().customConstraint('NOT NULL REFERENCES chats (id) ON DELETE CASCADE')();
 
   @override
   Set<Column> get primaryKey => {groupId, chatId};
@@ -234,6 +240,9 @@ const schemaIndexes = <String>[
   'CREATE INDEX IF NOT EXISTS messages_handle_id ON messages (handle_id)',
   'CREATE INDEX IF NOT EXISTS messages_handle_rel ON messages (handle_relation_id)',
   'CREATE INDEX IF NOT EXISTS messages_bookmarked ON messages (chat_id, sort_at_us) WHERE is_bookmarked = 1',
+  // Group renames of a chat by creation date (MessageRepo.newestRename): a few
+  // rows per group chat, so no walk back through a history that has none.
+  'CREATE INDEX IF NOT EXISTS messages_renames ON messages (chat_id, date_created_us, id) WHERE item_type = 2',
   'CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id)',
   'CREATE INDEX IF NOT EXISTS chats_list ON chats (latest_message_date_us DESC, id DESC) '
       'WHERE date_deleted_us IS NULL',
@@ -244,6 +253,63 @@ const schemaIndexes = <String>[
   'CREATE INDEX IF NOT EXISTS chat_handles_handle ON chat_handles (handle_id)',
   'CREATE INDEX IF NOT EXISTS contact_handles_handle ON contact_handles (handle_id)',
   'CREATE INDEX IF NOT EXISTS custom_group_chats_chat ON custom_group_chats (chat_id)',
+];
+
+/// Search over message text and subject. Trigram: `LIKE '%term%'` on it finds
+/// the same rows as a substring scan, for terms of 3+ characters (shorter ones
+/// can't use it; MessageRepo.search falls back to LIKE on messages). The
+/// trigrams only pick candidates; SQLite's LIKE then checks each row, so case
+/// is folded for ASCII letters only, exactly as ObjectBox's
+/// `contains(caseSensitive: false)`. `detail='none'`: LIKE needs no positions,
+/// and the index is half the size of the default.
+const ftsTable = "CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(text, subject, content='messages', "
+    "content_rowid='id', tokenize='trigram', detail='none')";
+
+/// Keep messages_fts in step with messages. The bulk copy drops these, fills
+/// the index once at the end ([rebuildFts]) and creates them again.
+const ftsTriggers = <String>[
+  'CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN '
+      'INSERT INTO messages_fts (rowid, text, subject) VALUES (new.id, new.text, new.subject); END',
+  'CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN '
+      "INSERT INTO messages_fts (messages_fts, rowid, text, subject) VALUES ('delete', old.id, old.text, old.subject); END",
+  'CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE OF text, subject ON messages BEGIN '
+      "INSERT INTO messages_fts (messages_fts, rowid, text, subject) VALUES ('delete', old.id, old.text, old.subject); "
+      'INSERT INTO messages_fts (rowid, text, subject) VALUES (new.id, new.text, new.subject); END',
+];
+
+const _ftsTriggerNames = ['messages_fts_ai', 'messages_fts_ad', 'messages_fts_au'];
+
+/// Stops maintaining messages_fts and empties it (`storage_meta.fts_state =
+/// building`), so a bulk insert costs no index work per row.
+/// Run it in one transaction with the caller's other changes.
+Future<void> suspendFts(Future<void> Function(String sql) run) async {
+  await run("INSERT OR REPLACE INTO storage_meta (key, value) VALUES ('fts_state', 'building')");
+  for (final name in _ftsTriggerNames) {
+    await run('DROP TRIGGER IF EXISTS $name');
+  }
+  await run("INSERT INTO messages_fts (messages_fts) VALUES ('delete-all')");
+}
+
+/// Fills messages_fts from every stored message in one pass and maintains it
+/// from then on (`fts_state = ready`).
+Future<void> rebuildFts(Future<void> Function(String sql) run) async {
+  await run("INSERT INTO messages_fts (messages_fts) VALUES ('rebuild')");
+  for (final statement in ftsTriggers) {
+    await run(statement);
+  }
+  await run("INSERT OR REPLACE INTO storage_meta (key, value) VALUES ('fts_state', 'ready')");
+}
+
+/// v1 rows the v2 keys would refuse (v1 had none): pointers at rows that don't
+/// exist are cleared, join rows to them dropped.
+const _danglingCleanup = <String>[
+  'UPDATE messages SET chat_id = NULL WHERE chat_id IS NOT NULL AND chat_id NOT IN (SELECT id FROM chats)',
+  'UPDATE messages SET handle_relation_id = NULL '
+      'WHERE handle_relation_id IS NOT NULL AND handle_relation_id NOT IN (SELECT id FROM handles)',
+  'UPDATE attachments SET message_id = NULL WHERE message_id IS NOT NULL AND message_id NOT IN (SELECT id FROM messages)',
+  'DELETE FROM chat_handles WHERE chat_id NOT IN (SELECT id FROM chats) OR handle_id NOT IN (SELECT id FROM handles)',
+  'DELETE FROM contact_handles WHERE contact_id NOT IN (SELECT id FROM contacts) OR handle_id NOT IN (SELECT id FROM handles)',
+  'DELETE FROM custom_group_chats WHERE group_id NOT IN (SELECT id FROM custom_groups) OR chat_id NOT IN (SELECT id FROM chats)',
 ];
 
 @DriftDatabase(
@@ -269,14 +335,35 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.file(File file) : this(NativeDatabase.createInBackground(file));
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
       await m.createAll();
-      for (final statement in schemaIndexes) {
+      for (final statement in [...schemaIndexes, ftsTable]) {
         await customStatement(statement);
+      }
+      await rebuildFts(customStatement);
+    },
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        // v1 -> v2 (the S1 copy-check file): clear what the keys would refuse,
+        // rebuild each table that holds a key (drift's alterTable: new table,
+        // copy, drop, rename, indexes again, with keys off), then add the new
+        // index and fill the search index.
+        for (final statement in _danglingCleanup) {
+          await customStatement(statement);
+        }
+        for (final TableInfo table in [messages, attachments, chatHandles, contactHandles, customGroupChats]) {
+          // Drift's documented way to add constraints to an existing table.
+          // ignore: experimental_member_use
+          await m.alterTable(TableMigration(table));
+        }
+        for (final statement in [...schemaIndexes, ftsTable]) {
+          await customStatement(statement);
+        }
+        await rebuildFts(customStatement);
       }
     },
     beforeOpen: (_) async {

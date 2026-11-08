@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:bluebubbles/database/sqlite/app_database.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Schema v1: the whole linked messaging set plus copy bookkeeping.
+/// The whole linked messaging set plus copy bookkeeping (schema v1, kept in v2).
 const requiredStageOneTables = <String>{
   'chats',
   'messages',
@@ -41,11 +41,11 @@ Future<List<String>> columnNames(AppDatabase database, String table) async {
 }
 
 void main() {
-  test('in-memory database opens at schema v1 with foreign keys and required tables', () async {
+  test('in-memory database opens at schema v2 with foreign keys and required tables', () async {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
 
-    expect(database.schemaVersion, 1);
+    expect(database.schemaVersion, 2);
     expect(await pragmaInt(database, 'foreign_keys'), 1);
     expect(await tableNames(database), containsAll(requiredStageOneTables));
   });

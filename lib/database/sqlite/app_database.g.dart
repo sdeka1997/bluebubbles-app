@@ -2065,6 +2065,649 @@ class ChatsCompanion extends UpdateCompanion<SqliteChatRow> {
   }
 }
 
+class $HandlesTable extends Handles
+    with TableInfo<$HandlesTable, SqliteHandleRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $HandlesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _originalRowidMeta = const VerificationMeta(
+    'originalRowid',
+  );
+  @override
+  late final GeneratedColumn<int> originalRowid = GeneratedColumn<int>(
+    'original_rowid',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _addressMeta = const VerificationMeta(
+    'address',
+  );
+  @override
+  late final GeneratedColumn<String> address = GeneratedColumn<String>(
+    'address',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _countryMeta = const VerificationMeta(
+    'country',
+  );
+  @override
+  late final GeneratedColumn<String> country = GeneratedColumn<String>(
+    'country',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _colorMeta = const VerificationMeta('color');
+  @override
+  late final GeneratedColumn<String> color = GeneratedColumn<String>(
+    'color',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _defaultPhoneMeta = const VerificationMeta(
+    'defaultPhone',
+  );
+  @override
+  late final GeneratedColumn<String> defaultPhone = GeneratedColumn<String>(
+    'default_phone',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _defaultEmailMeta = const VerificationMeta(
+    'defaultEmail',
+  );
+  @override
+  late final GeneratedColumn<String> defaultEmail = GeneratedColumn<String>(
+    'default_email',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _formattedAddressMeta = const VerificationMeta(
+    'formattedAddress',
+  );
+  @override
+  late final GeneratedColumn<String> formattedAddress = GeneratedColumn<String>(
+    'formatted_address',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _uniqueAddressAndServiceMeta =
+      const VerificationMeta('uniqueAddressAndService');
+  @override
+  late final GeneratedColumn<String> uniqueAddressAndService =
+      GeneratedColumn<String>(
+        'unique_address_and_service',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+        defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
+      );
+  static const VerificationMeta _serviceMeta = const VerificationMeta(
+    'service',
+  );
+  @override
+  late final GeneratedColumn<String> service = GeneratedColumn<String>(
+    'service',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    originalRowid,
+    address,
+    country,
+    color,
+    defaultPhone,
+    defaultEmail,
+    formattedAddress,
+    uniqueAddressAndService,
+    service,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'handles';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SqliteHandleRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('original_rowid')) {
+      context.handle(
+        _originalRowidMeta,
+        originalRowid.isAcceptableOrUnknown(
+          data['original_rowid']!,
+          _originalRowidMeta,
+        ),
+      );
+    }
+    if (data.containsKey('address')) {
+      context.handle(
+        _addressMeta,
+        address.isAcceptableOrUnknown(data['address']!, _addressMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_addressMeta);
+    }
+    if (data.containsKey('country')) {
+      context.handle(
+        _countryMeta,
+        country.isAcceptableOrUnknown(data['country']!, _countryMeta),
+      );
+    }
+    if (data.containsKey('color')) {
+      context.handle(
+        _colorMeta,
+        color.isAcceptableOrUnknown(data['color']!, _colorMeta),
+      );
+    }
+    if (data.containsKey('default_phone')) {
+      context.handle(
+        _defaultPhoneMeta,
+        defaultPhone.isAcceptableOrUnknown(
+          data['default_phone']!,
+          _defaultPhoneMeta,
+        ),
+      );
+    }
+    if (data.containsKey('default_email')) {
+      context.handle(
+        _defaultEmailMeta,
+        defaultEmail.isAcceptableOrUnknown(
+          data['default_email']!,
+          _defaultEmailMeta,
+        ),
+      );
+    }
+    if (data.containsKey('formatted_address')) {
+      context.handle(
+        _formattedAddressMeta,
+        formattedAddress.isAcceptableOrUnknown(
+          data['formatted_address']!,
+          _formattedAddressMeta,
+        ),
+      );
+    }
+    if (data.containsKey('unique_address_and_service')) {
+      context.handle(
+        _uniqueAddressAndServiceMeta,
+        uniqueAddressAndService.isAcceptableOrUnknown(
+          data['unique_address_and_service']!,
+          _uniqueAddressAndServiceMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_uniqueAddressAndServiceMeta);
+    }
+    if (data.containsKey('service')) {
+      context.handle(
+        _serviceMeta,
+        service.isAcceptableOrUnknown(data['service']!, _serviceMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_serviceMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SqliteHandleRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SqliteHandleRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      originalRowid: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}original_rowid'],
+      ),
+      address: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}address'],
+      )!,
+      country: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}country'],
+      ),
+      color: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}color'],
+      ),
+      defaultPhone: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}default_phone'],
+      ),
+      defaultEmail: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}default_email'],
+      ),
+      formattedAddress: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}formatted_address'],
+      ),
+      uniqueAddressAndService: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}unique_address_and_service'],
+      )!,
+      service: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}service'],
+      )!,
+    );
+  }
+
+  @override
+  $HandlesTable createAlias(String alias) {
+    return $HandlesTable(attachedDatabase, alias);
+  }
+}
+
+class SqliteHandleRow extends DataClass implements Insertable<SqliteHandleRow> {
+  final int id;
+  final int? originalRowid;
+  final String address;
+  final String? country;
+  final String? color;
+  final String? defaultPhone;
+  final String? defaultEmail;
+  final String? formattedAddress;
+  final String uniqueAddressAndService;
+  final String service;
+  const SqliteHandleRow({
+    required this.id,
+    this.originalRowid,
+    required this.address,
+    this.country,
+    this.color,
+    this.defaultPhone,
+    this.defaultEmail,
+    this.formattedAddress,
+    required this.uniqueAddressAndService,
+    required this.service,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    if (!nullToAbsent || originalRowid != null) {
+      map['original_rowid'] = Variable<int>(originalRowid);
+    }
+    map['address'] = Variable<String>(address);
+    if (!nullToAbsent || country != null) {
+      map['country'] = Variable<String>(country);
+    }
+    if (!nullToAbsent || color != null) {
+      map['color'] = Variable<String>(color);
+    }
+    if (!nullToAbsent || defaultPhone != null) {
+      map['default_phone'] = Variable<String>(defaultPhone);
+    }
+    if (!nullToAbsent || defaultEmail != null) {
+      map['default_email'] = Variable<String>(defaultEmail);
+    }
+    if (!nullToAbsent || formattedAddress != null) {
+      map['formatted_address'] = Variable<String>(formattedAddress);
+    }
+    map['unique_address_and_service'] = Variable<String>(
+      uniqueAddressAndService,
+    );
+    map['service'] = Variable<String>(service);
+    return map;
+  }
+
+  HandlesCompanion toCompanion(bool nullToAbsent) {
+    return HandlesCompanion(
+      id: Value(id),
+      originalRowid: originalRowid == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originalRowid),
+      address: Value(address),
+      country: country == null && nullToAbsent
+          ? const Value.absent()
+          : Value(country),
+      color: color == null && nullToAbsent
+          ? const Value.absent()
+          : Value(color),
+      defaultPhone: defaultPhone == null && nullToAbsent
+          ? const Value.absent()
+          : Value(defaultPhone),
+      defaultEmail: defaultEmail == null && nullToAbsent
+          ? const Value.absent()
+          : Value(defaultEmail),
+      formattedAddress: formattedAddress == null && nullToAbsent
+          ? const Value.absent()
+          : Value(formattedAddress),
+      uniqueAddressAndService: Value(uniqueAddressAndService),
+      service: Value(service),
+    );
+  }
+
+  factory SqliteHandleRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SqliteHandleRow(
+      id: serializer.fromJson<int>(json['id']),
+      originalRowid: serializer.fromJson<int?>(json['originalRowid']),
+      address: serializer.fromJson<String>(json['address']),
+      country: serializer.fromJson<String?>(json['country']),
+      color: serializer.fromJson<String?>(json['color']),
+      defaultPhone: serializer.fromJson<String?>(json['defaultPhone']),
+      defaultEmail: serializer.fromJson<String?>(json['defaultEmail']),
+      formattedAddress: serializer.fromJson<String?>(json['formattedAddress']),
+      uniqueAddressAndService: serializer.fromJson<String>(
+        json['uniqueAddressAndService'],
+      ),
+      service: serializer.fromJson<String>(json['service']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'originalRowid': serializer.toJson<int?>(originalRowid),
+      'address': serializer.toJson<String>(address),
+      'country': serializer.toJson<String?>(country),
+      'color': serializer.toJson<String?>(color),
+      'defaultPhone': serializer.toJson<String?>(defaultPhone),
+      'defaultEmail': serializer.toJson<String?>(defaultEmail),
+      'formattedAddress': serializer.toJson<String?>(formattedAddress),
+      'uniqueAddressAndService': serializer.toJson<String>(
+        uniqueAddressAndService,
+      ),
+      'service': serializer.toJson<String>(service),
+    };
+  }
+
+  SqliteHandleRow copyWith({
+    int? id,
+    Value<int?> originalRowid = const Value.absent(),
+    String? address,
+    Value<String?> country = const Value.absent(),
+    Value<String?> color = const Value.absent(),
+    Value<String?> defaultPhone = const Value.absent(),
+    Value<String?> defaultEmail = const Value.absent(),
+    Value<String?> formattedAddress = const Value.absent(),
+    String? uniqueAddressAndService,
+    String? service,
+  }) => SqliteHandleRow(
+    id: id ?? this.id,
+    originalRowid: originalRowid.present
+        ? originalRowid.value
+        : this.originalRowid,
+    address: address ?? this.address,
+    country: country.present ? country.value : this.country,
+    color: color.present ? color.value : this.color,
+    defaultPhone: defaultPhone.present ? defaultPhone.value : this.defaultPhone,
+    defaultEmail: defaultEmail.present ? defaultEmail.value : this.defaultEmail,
+    formattedAddress: formattedAddress.present
+        ? formattedAddress.value
+        : this.formattedAddress,
+    uniqueAddressAndService:
+        uniqueAddressAndService ?? this.uniqueAddressAndService,
+    service: service ?? this.service,
+  );
+  SqliteHandleRow copyWithCompanion(HandlesCompanion data) {
+    return SqliteHandleRow(
+      id: data.id.present ? data.id.value : this.id,
+      originalRowid: data.originalRowid.present
+          ? data.originalRowid.value
+          : this.originalRowid,
+      address: data.address.present ? data.address.value : this.address,
+      country: data.country.present ? data.country.value : this.country,
+      color: data.color.present ? data.color.value : this.color,
+      defaultPhone: data.defaultPhone.present
+          ? data.defaultPhone.value
+          : this.defaultPhone,
+      defaultEmail: data.defaultEmail.present
+          ? data.defaultEmail.value
+          : this.defaultEmail,
+      formattedAddress: data.formattedAddress.present
+          ? data.formattedAddress.value
+          : this.formattedAddress,
+      uniqueAddressAndService: data.uniqueAddressAndService.present
+          ? data.uniqueAddressAndService.value
+          : this.uniqueAddressAndService,
+      service: data.service.present ? data.service.value : this.service,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SqliteHandleRow(')
+          ..write('id: $id, ')
+          ..write('originalRowid: $originalRowid, ')
+          ..write('address: $address, ')
+          ..write('country: $country, ')
+          ..write('color: $color, ')
+          ..write('defaultPhone: $defaultPhone, ')
+          ..write('defaultEmail: $defaultEmail, ')
+          ..write('formattedAddress: $formattedAddress, ')
+          ..write('uniqueAddressAndService: $uniqueAddressAndService, ')
+          ..write('service: $service')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    originalRowid,
+    address,
+    country,
+    color,
+    defaultPhone,
+    defaultEmail,
+    formattedAddress,
+    uniqueAddressAndService,
+    service,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SqliteHandleRow &&
+          other.id == this.id &&
+          other.originalRowid == this.originalRowid &&
+          other.address == this.address &&
+          other.country == this.country &&
+          other.color == this.color &&
+          other.defaultPhone == this.defaultPhone &&
+          other.defaultEmail == this.defaultEmail &&
+          other.formattedAddress == this.formattedAddress &&
+          other.uniqueAddressAndService == this.uniqueAddressAndService &&
+          other.service == this.service);
+}
+
+class HandlesCompanion extends UpdateCompanion<SqliteHandleRow> {
+  final Value<int> id;
+  final Value<int?> originalRowid;
+  final Value<String> address;
+  final Value<String?> country;
+  final Value<String?> color;
+  final Value<String?> defaultPhone;
+  final Value<String?> defaultEmail;
+  final Value<String?> formattedAddress;
+  final Value<String> uniqueAddressAndService;
+  final Value<String> service;
+  const HandlesCompanion({
+    this.id = const Value.absent(),
+    this.originalRowid = const Value.absent(),
+    this.address = const Value.absent(),
+    this.country = const Value.absent(),
+    this.color = const Value.absent(),
+    this.defaultPhone = const Value.absent(),
+    this.defaultEmail = const Value.absent(),
+    this.formattedAddress = const Value.absent(),
+    this.uniqueAddressAndService = const Value.absent(),
+    this.service = const Value.absent(),
+  });
+  HandlesCompanion.insert({
+    this.id = const Value.absent(),
+    this.originalRowid = const Value.absent(),
+    required String address,
+    this.country = const Value.absent(),
+    this.color = const Value.absent(),
+    this.defaultPhone = const Value.absent(),
+    this.defaultEmail = const Value.absent(),
+    this.formattedAddress = const Value.absent(),
+    required String uniqueAddressAndService,
+    required String service,
+  }) : address = Value(address),
+       uniqueAddressAndService = Value(uniqueAddressAndService),
+       service = Value(service);
+  static Insertable<SqliteHandleRow> custom({
+    Expression<int>? id,
+    Expression<int>? originalRowid,
+    Expression<String>? address,
+    Expression<String>? country,
+    Expression<String>? color,
+    Expression<String>? defaultPhone,
+    Expression<String>? defaultEmail,
+    Expression<String>? formattedAddress,
+    Expression<String>? uniqueAddressAndService,
+    Expression<String>? service,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (originalRowid != null) 'original_rowid': originalRowid,
+      if (address != null) 'address': address,
+      if (country != null) 'country': country,
+      if (color != null) 'color': color,
+      if (defaultPhone != null) 'default_phone': defaultPhone,
+      if (defaultEmail != null) 'default_email': defaultEmail,
+      if (formattedAddress != null) 'formatted_address': formattedAddress,
+      if (uniqueAddressAndService != null)
+        'unique_address_and_service': uniqueAddressAndService,
+      if (service != null) 'service': service,
+    });
+  }
+
+  HandlesCompanion copyWith({
+    Value<int>? id,
+    Value<int?>? originalRowid,
+    Value<String>? address,
+    Value<String?>? country,
+    Value<String?>? color,
+    Value<String?>? defaultPhone,
+    Value<String?>? defaultEmail,
+    Value<String?>? formattedAddress,
+    Value<String>? uniqueAddressAndService,
+    Value<String>? service,
+  }) {
+    return HandlesCompanion(
+      id: id ?? this.id,
+      originalRowid: originalRowid ?? this.originalRowid,
+      address: address ?? this.address,
+      country: country ?? this.country,
+      color: color ?? this.color,
+      defaultPhone: defaultPhone ?? this.defaultPhone,
+      defaultEmail: defaultEmail ?? this.defaultEmail,
+      formattedAddress: formattedAddress ?? this.formattedAddress,
+      uniqueAddressAndService:
+          uniqueAddressAndService ?? this.uniqueAddressAndService,
+      service: service ?? this.service,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (originalRowid.present) {
+      map['original_rowid'] = Variable<int>(originalRowid.value);
+    }
+    if (address.present) {
+      map['address'] = Variable<String>(address.value);
+    }
+    if (country.present) {
+      map['country'] = Variable<String>(country.value);
+    }
+    if (color.present) {
+      map['color'] = Variable<String>(color.value);
+    }
+    if (defaultPhone.present) {
+      map['default_phone'] = Variable<String>(defaultPhone.value);
+    }
+    if (defaultEmail.present) {
+      map['default_email'] = Variable<String>(defaultEmail.value);
+    }
+    if (formattedAddress.present) {
+      map['formatted_address'] = Variable<String>(formattedAddress.value);
+    }
+    if (uniqueAddressAndService.present) {
+      map['unique_address_and_service'] = Variable<String>(
+        uniqueAddressAndService.value,
+      );
+    }
+    if (service.present) {
+      map['service'] = Variable<String>(service.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('HandlesCompanion(')
+          ..write('id: $id, ')
+          ..write('originalRowid: $originalRowid, ')
+          ..write('address: $address, ')
+          ..write('country: $country, ')
+          ..write('color: $color, ')
+          ..write('defaultPhone: $defaultPhone, ')
+          ..write('defaultEmail: $defaultEmail, ')
+          ..write('formattedAddress: $formattedAddress, ')
+          ..write('uniqueAddressAndService: $uniqueAddressAndService, ')
+          ..write('service: $service')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $MessagesTable extends Messages
     with TableInfo<$MessagesTable, SqliteMessageRow> {
   @override
@@ -2433,6 +3076,7 @@ class $MessagesTable extends Messages
     true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
+    $customConstraints: 'NULL REFERENCES chats (id) ON DELETE SET NULL',
   );
   static const VerificationMeta _attributedBodyJsonMeta =
       const VerificationMeta('attributedBodyJson');
@@ -2566,6 +3210,7 @@ class $MessagesTable extends Messages
     true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
+    $customConstraints: 'NULL REFERENCES handles (id) ON DELETE SET NULL',
   );
   static const VerificationMeta _errorMessageMeta = const VerificationMeta(
     'errorMessage',
@@ -4707,649 +5352,6 @@ class MessagesCompanion extends UpdateCompanion<SqliteMessageRow> {
   }
 }
 
-class $HandlesTable extends Handles
-    with TableInfo<$HandlesTable, SqliteHandleRow> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $HandlesTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<int> id = GeneratedColumn<int>(
-    'id',
-    aliasedName,
-    false,
-    hasAutoIncrement: true,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'PRIMARY KEY AUTOINCREMENT',
-    ),
-  );
-  static const VerificationMeta _originalRowidMeta = const VerificationMeta(
-    'originalRowid',
-  );
-  @override
-  late final GeneratedColumn<int> originalRowid = GeneratedColumn<int>(
-    'original_rowid',
-    aliasedName,
-    true,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _addressMeta = const VerificationMeta(
-    'address',
-  );
-  @override
-  late final GeneratedColumn<String> address = GeneratedColumn<String>(
-    'address',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _countryMeta = const VerificationMeta(
-    'country',
-  );
-  @override
-  late final GeneratedColumn<String> country = GeneratedColumn<String>(
-    'country',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _colorMeta = const VerificationMeta('color');
-  @override
-  late final GeneratedColumn<String> color = GeneratedColumn<String>(
-    'color',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _defaultPhoneMeta = const VerificationMeta(
-    'defaultPhone',
-  );
-  @override
-  late final GeneratedColumn<String> defaultPhone = GeneratedColumn<String>(
-    'default_phone',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _defaultEmailMeta = const VerificationMeta(
-    'defaultEmail',
-  );
-  @override
-  late final GeneratedColumn<String> defaultEmail = GeneratedColumn<String>(
-    'default_email',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _formattedAddressMeta = const VerificationMeta(
-    'formattedAddress',
-  );
-  @override
-  late final GeneratedColumn<String> formattedAddress = GeneratedColumn<String>(
-    'formatted_address',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _uniqueAddressAndServiceMeta =
-      const VerificationMeta('uniqueAddressAndService');
-  @override
-  late final GeneratedColumn<String> uniqueAddressAndService =
-      GeneratedColumn<String>(
-        'unique_address_and_service',
-        aliasedName,
-        false,
-        type: DriftSqlType.string,
-        requiredDuringInsert: true,
-        defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
-      );
-  static const VerificationMeta _serviceMeta = const VerificationMeta(
-    'service',
-  );
-  @override
-  late final GeneratedColumn<String> service = GeneratedColumn<String>(
-    'service',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  @override
-  List<GeneratedColumn> get $columns => [
-    id,
-    originalRowid,
-    address,
-    country,
-    color,
-    defaultPhone,
-    defaultEmail,
-    formattedAddress,
-    uniqueAddressAndService,
-    service,
-  ];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'handles';
-  @override
-  VerificationContext validateIntegrity(
-    Insertable<SqliteHandleRow> instance, {
-    bool isInserting = false,
-  }) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('original_rowid')) {
-      context.handle(
-        _originalRowidMeta,
-        originalRowid.isAcceptableOrUnknown(
-          data['original_rowid']!,
-          _originalRowidMeta,
-        ),
-      );
-    }
-    if (data.containsKey('address')) {
-      context.handle(
-        _addressMeta,
-        address.isAcceptableOrUnknown(data['address']!, _addressMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_addressMeta);
-    }
-    if (data.containsKey('country')) {
-      context.handle(
-        _countryMeta,
-        country.isAcceptableOrUnknown(data['country']!, _countryMeta),
-      );
-    }
-    if (data.containsKey('color')) {
-      context.handle(
-        _colorMeta,
-        color.isAcceptableOrUnknown(data['color']!, _colorMeta),
-      );
-    }
-    if (data.containsKey('default_phone')) {
-      context.handle(
-        _defaultPhoneMeta,
-        defaultPhone.isAcceptableOrUnknown(
-          data['default_phone']!,
-          _defaultPhoneMeta,
-        ),
-      );
-    }
-    if (data.containsKey('default_email')) {
-      context.handle(
-        _defaultEmailMeta,
-        defaultEmail.isAcceptableOrUnknown(
-          data['default_email']!,
-          _defaultEmailMeta,
-        ),
-      );
-    }
-    if (data.containsKey('formatted_address')) {
-      context.handle(
-        _formattedAddressMeta,
-        formattedAddress.isAcceptableOrUnknown(
-          data['formatted_address']!,
-          _formattedAddressMeta,
-        ),
-      );
-    }
-    if (data.containsKey('unique_address_and_service')) {
-      context.handle(
-        _uniqueAddressAndServiceMeta,
-        uniqueAddressAndService.isAcceptableOrUnknown(
-          data['unique_address_and_service']!,
-          _uniqueAddressAndServiceMeta,
-        ),
-      );
-    } else if (isInserting) {
-      context.missing(_uniqueAddressAndServiceMeta);
-    }
-    if (data.containsKey('service')) {
-      context.handle(
-        _serviceMeta,
-        service.isAcceptableOrUnknown(data['service']!, _serviceMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_serviceMeta);
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {id};
-  @override
-  SqliteHandleRow map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return SqliteHandleRow(
-      id: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}id'],
-      )!,
-      originalRowid: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}original_rowid'],
-      ),
-      address: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}address'],
-      )!,
-      country: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}country'],
-      ),
-      color: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}color'],
-      ),
-      defaultPhone: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}default_phone'],
-      ),
-      defaultEmail: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}default_email'],
-      ),
-      formattedAddress: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}formatted_address'],
-      ),
-      uniqueAddressAndService: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}unique_address_and_service'],
-      )!,
-      service: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}service'],
-      )!,
-    );
-  }
-
-  @override
-  $HandlesTable createAlias(String alias) {
-    return $HandlesTable(attachedDatabase, alias);
-  }
-}
-
-class SqliteHandleRow extends DataClass implements Insertable<SqliteHandleRow> {
-  final int id;
-  final int? originalRowid;
-  final String address;
-  final String? country;
-  final String? color;
-  final String? defaultPhone;
-  final String? defaultEmail;
-  final String? formattedAddress;
-  final String uniqueAddressAndService;
-  final String service;
-  const SqliteHandleRow({
-    required this.id,
-    this.originalRowid,
-    required this.address,
-    this.country,
-    this.color,
-    this.defaultPhone,
-    this.defaultEmail,
-    this.formattedAddress,
-    required this.uniqueAddressAndService,
-    required this.service,
-  });
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['id'] = Variable<int>(id);
-    if (!nullToAbsent || originalRowid != null) {
-      map['original_rowid'] = Variable<int>(originalRowid);
-    }
-    map['address'] = Variable<String>(address);
-    if (!nullToAbsent || country != null) {
-      map['country'] = Variable<String>(country);
-    }
-    if (!nullToAbsent || color != null) {
-      map['color'] = Variable<String>(color);
-    }
-    if (!nullToAbsent || defaultPhone != null) {
-      map['default_phone'] = Variable<String>(defaultPhone);
-    }
-    if (!nullToAbsent || defaultEmail != null) {
-      map['default_email'] = Variable<String>(defaultEmail);
-    }
-    if (!nullToAbsent || formattedAddress != null) {
-      map['formatted_address'] = Variable<String>(formattedAddress);
-    }
-    map['unique_address_and_service'] = Variable<String>(
-      uniqueAddressAndService,
-    );
-    map['service'] = Variable<String>(service);
-    return map;
-  }
-
-  HandlesCompanion toCompanion(bool nullToAbsent) {
-    return HandlesCompanion(
-      id: Value(id),
-      originalRowid: originalRowid == null && nullToAbsent
-          ? const Value.absent()
-          : Value(originalRowid),
-      address: Value(address),
-      country: country == null && nullToAbsent
-          ? const Value.absent()
-          : Value(country),
-      color: color == null && nullToAbsent
-          ? const Value.absent()
-          : Value(color),
-      defaultPhone: defaultPhone == null && nullToAbsent
-          ? const Value.absent()
-          : Value(defaultPhone),
-      defaultEmail: defaultEmail == null && nullToAbsent
-          ? const Value.absent()
-          : Value(defaultEmail),
-      formattedAddress: formattedAddress == null && nullToAbsent
-          ? const Value.absent()
-          : Value(formattedAddress),
-      uniqueAddressAndService: Value(uniqueAddressAndService),
-      service: Value(service),
-    );
-  }
-
-  factory SqliteHandleRow.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return SqliteHandleRow(
-      id: serializer.fromJson<int>(json['id']),
-      originalRowid: serializer.fromJson<int?>(json['originalRowid']),
-      address: serializer.fromJson<String>(json['address']),
-      country: serializer.fromJson<String?>(json['country']),
-      color: serializer.fromJson<String?>(json['color']),
-      defaultPhone: serializer.fromJson<String?>(json['defaultPhone']),
-      defaultEmail: serializer.fromJson<String?>(json['defaultEmail']),
-      formattedAddress: serializer.fromJson<String?>(json['formattedAddress']),
-      uniqueAddressAndService: serializer.fromJson<String>(
-        json['uniqueAddressAndService'],
-      ),
-      service: serializer.fromJson<String>(json['service']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'id': serializer.toJson<int>(id),
-      'originalRowid': serializer.toJson<int?>(originalRowid),
-      'address': serializer.toJson<String>(address),
-      'country': serializer.toJson<String?>(country),
-      'color': serializer.toJson<String?>(color),
-      'defaultPhone': serializer.toJson<String?>(defaultPhone),
-      'defaultEmail': serializer.toJson<String?>(defaultEmail),
-      'formattedAddress': serializer.toJson<String?>(formattedAddress),
-      'uniqueAddressAndService': serializer.toJson<String>(
-        uniqueAddressAndService,
-      ),
-      'service': serializer.toJson<String>(service),
-    };
-  }
-
-  SqliteHandleRow copyWith({
-    int? id,
-    Value<int?> originalRowid = const Value.absent(),
-    String? address,
-    Value<String?> country = const Value.absent(),
-    Value<String?> color = const Value.absent(),
-    Value<String?> defaultPhone = const Value.absent(),
-    Value<String?> defaultEmail = const Value.absent(),
-    Value<String?> formattedAddress = const Value.absent(),
-    String? uniqueAddressAndService,
-    String? service,
-  }) => SqliteHandleRow(
-    id: id ?? this.id,
-    originalRowid: originalRowid.present
-        ? originalRowid.value
-        : this.originalRowid,
-    address: address ?? this.address,
-    country: country.present ? country.value : this.country,
-    color: color.present ? color.value : this.color,
-    defaultPhone: defaultPhone.present ? defaultPhone.value : this.defaultPhone,
-    defaultEmail: defaultEmail.present ? defaultEmail.value : this.defaultEmail,
-    formattedAddress: formattedAddress.present
-        ? formattedAddress.value
-        : this.formattedAddress,
-    uniqueAddressAndService:
-        uniqueAddressAndService ?? this.uniqueAddressAndService,
-    service: service ?? this.service,
-  );
-  SqliteHandleRow copyWithCompanion(HandlesCompanion data) {
-    return SqliteHandleRow(
-      id: data.id.present ? data.id.value : this.id,
-      originalRowid: data.originalRowid.present
-          ? data.originalRowid.value
-          : this.originalRowid,
-      address: data.address.present ? data.address.value : this.address,
-      country: data.country.present ? data.country.value : this.country,
-      color: data.color.present ? data.color.value : this.color,
-      defaultPhone: data.defaultPhone.present
-          ? data.defaultPhone.value
-          : this.defaultPhone,
-      defaultEmail: data.defaultEmail.present
-          ? data.defaultEmail.value
-          : this.defaultEmail,
-      formattedAddress: data.formattedAddress.present
-          ? data.formattedAddress.value
-          : this.formattedAddress,
-      uniqueAddressAndService: data.uniqueAddressAndService.present
-          ? data.uniqueAddressAndService.value
-          : this.uniqueAddressAndService,
-      service: data.service.present ? data.service.value : this.service,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('SqliteHandleRow(')
-          ..write('id: $id, ')
-          ..write('originalRowid: $originalRowid, ')
-          ..write('address: $address, ')
-          ..write('country: $country, ')
-          ..write('color: $color, ')
-          ..write('defaultPhone: $defaultPhone, ')
-          ..write('defaultEmail: $defaultEmail, ')
-          ..write('formattedAddress: $formattedAddress, ')
-          ..write('uniqueAddressAndService: $uniqueAddressAndService, ')
-          ..write('service: $service')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(
-    id,
-    originalRowid,
-    address,
-    country,
-    color,
-    defaultPhone,
-    defaultEmail,
-    formattedAddress,
-    uniqueAddressAndService,
-    service,
-  );
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is SqliteHandleRow &&
-          other.id == this.id &&
-          other.originalRowid == this.originalRowid &&
-          other.address == this.address &&
-          other.country == this.country &&
-          other.color == this.color &&
-          other.defaultPhone == this.defaultPhone &&
-          other.defaultEmail == this.defaultEmail &&
-          other.formattedAddress == this.formattedAddress &&
-          other.uniqueAddressAndService == this.uniqueAddressAndService &&
-          other.service == this.service);
-}
-
-class HandlesCompanion extends UpdateCompanion<SqliteHandleRow> {
-  final Value<int> id;
-  final Value<int?> originalRowid;
-  final Value<String> address;
-  final Value<String?> country;
-  final Value<String?> color;
-  final Value<String?> defaultPhone;
-  final Value<String?> defaultEmail;
-  final Value<String?> formattedAddress;
-  final Value<String> uniqueAddressAndService;
-  final Value<String> service;
-  const HandlesCompanion({
-    this.id = const Value.absent(),
-    this.originalRowid = const Value.absent(),
-    this.address = const Value.absent(),
-    this.country = const Value.absent(),
-    this.color = const Value.absent(),
-    this.defaultPhone = const Value.absent(),
-    this.defaultEmail = const Value.absent(),
-    this.formattedAddress = const Value.absent(),
-    this.uniqueAddressAndService = const Value.absent(),
-    this.service = const Value.absent(),
-  });
-  HandlesCompanion.insert({
-    this.id = const Value.absent(),
-    this.originalRowid = const Value.absent(),
-    required String address,
-    this.country = const Value.absent(),
-    this.color = const Value.absent(),
-    this.defaultPhone = const Value.absent(),
-    this.defaultEmail = const Value.absent(),
-    this.formattedAddress = const Value.absent(),
-    required String uniqueAddressAndService,
-    required String service,
-  }) : address = Value(address),
-       uniqueAddressAndService = Value(uniqueAddressAndService),
-       service = Value(service);
-  static Insertable<SqliteHandleRow> custom({
-    Expression<int>? id,
-    Expression<int>? originalRowid,
-    Expression<String>? address,
-    Expression<String>? country,
-    Expression<String>? color,
-    Expression<String>? defaultPhone,
-    Expression<String>? defaultEmail,
-    Expression<String>? formattedAddress,
-    Expression<String>? uniqueAddressAndService,
-    Expression<String>? service,
-  }) {
-    return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (originalRowid != null) 'original_rowid': originalRowid,
-      if (address != null) 'address': address,
-      if (country != null) 'country': country,
-      if (color != null) 'color': color,
-      if (defaultPhone != null) 'default_phone': defaultPhone,
-      if (defaultEmail != null) 'default_email': defaultEmail,
-      if (formattedAddress != null) 'formatted_address': formattedAddress,
-      if (uniqueAddressAndService != null)
-        'unique_address_and_service': uniqueAddressAndService,
-      if (service != null) 'service': service,
-    });
-  }
-
-  HandlesCompanion copyWith({
-    Value<int>? id,
-    Value<int?>? originalRowid,
-    Value<String>? address,
-    Value<String?>? country,
-    Value<String?>? color,
-    Value<String?>? defaultPhone,
-    Value<String?>? defaultEmail,
-    Value<String?>? formattedAddress,
-    Value<String>? uniqueAddressAndService,
-    Value<String>? service,
-  }) {
-    return HandlesCompanion(
-      id: id ?? this.id,
-      originalRowid: originalRowid ?? this.originalRowid,
-      address: address ?? this.address,
-      country: country ?? this.country,
-      color: color ?? this.color,
-      defaultPhone: defaultPhone ?? this.defaultPhone,
-      defaultEmail: defaultEmail ?? this.defaultEmail,
-      formattedAddress: formattedAddress ?? this.formattedAddress,
-      uniqueAddressAndService:
-          uniqueAddressAndService ?? this.uniqueAddressAndService,
-      service: service ?? this.service,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<int>(id.value);
-    }
-    if (originalRowid.present) {
-      map['original_rowid'] = Variable<int>(originalRowid.value);
-    }
-    if (address.present) {
-      map['address'] = Variable<String>(address.value);
-    }
-    if (country.present) {
-      map['country'] = Variable<String>(country.value);
-    }
-    if (color.present) {
-      map['color'] = Variable<String>(color.value);
-    }
-    if (defaultPhone.present) {
-      map['default_phone'] = Variable<String>(defaultPhone.value);
-    }
-    if (defaultEmail.present) {
-      map['default_email'] = Variable<String>(defaultEmail.value);
-    }
-    if (formattedAddress.present) {
-      map['formatted_address'] = Variable<String>(formattedAddress.value);
-    }
-    if (uniqueAddressAndService.present) {
-      map['unique_address_and_service'] = Variable<String>(
-        uniqueAddressAndService.value,
-      );
-    }
-    if (service.present) {
-      map['service'] = Variable<String>(service.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('HandlesCompanion(')
-          ..write('id: $id, ')
-          ..write('originalRowid: $originalRowid, ')
-          ..write('address: $address, ')
-          ..write('country: $country, ')
-          ..write('color: $color, ')
-          ..write('defaultPhone: $defaultPhone, ')
-          ..write('defaultEmail: $defaultEmail, ')
-          ..write('formattedAddress: $formattedAddress, ')
-          ..write('uniqueAddressAndService: $uniqueAddressAndService, ')
-          ..write('service: $service')
-          ..write(')'))
-        .toString();
-  }
-}
-
 class $ChatHandlesTable extends ChatHandles
     with TableInfo<$ChatHandlesTable, SqliteChatHandleRow> {
   @override
@@ -5364,6 +5366,7 @@ class $ChatHandlesTable extends ChatHandles
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL REFERENCES chats (id) ON DELETE CASCADE',
   );
   static const VerificationMeta _handleIdMeta = const VerificationMeta(
     'handleId',
@@ -5375,6 +5378,7 @@ class $ChatHandlesTable extends ChatHandles
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL REFERENCES handles (id) ON DELETE CASCADE',
   );
   @override
   List<GeneratedColumn> get $columns => [chatId, handleId];
@@ -5687,6 +5691,7 @@ class $AttachmentsTable extends Attachments
     true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
+    $customConstraints: 'NULL REFERENCES messages (id) ON DELETE SET NULL',
   );
   static const VerificationMeta _hasLivePhotoMeta = const VerificationMeta(
     'hasLivePhoto',
@@ -7390,6 +7395,7 @@ class $ContactHandlesTable extends ContactHandles
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL REFERENCES contacts (id) ON DELETE CASCADE',
   );
   static const VerificationMeta _handleIdMeta = const VerificationMeta(
     'handleId',
@@ -7401,6 +7407,7 @@ class $ContactHandlesTable extends ContactHandles
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL REFERENCES handles (id) ON DELETE CASCADE',
   );
   @override
   List<GeneratedColumn> get $columns => [contactId, handleId];
@@ -7912,6 +7919,8 @@ class $CustomGroupChatsTable extends CustomGroupChats
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
+    $customConstraints:
+        'NOT NULL REFERENCES custom_groups (id) ON DELETE CASCADE',
   );
   static const VerificationMeta _chatIdMeta = const VerificationMeta('chatId');
   @override
@@ -7921,6 +7930,7 @@ class $CustomGroupChatsTable extends CustomGroupChats
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL REFERENCES chats (id) ON DELETE CASCADE',
   );
   @override
   List<GeneratedColumn> get $columns => [groupId, chatId];
@@ -8602,8 +8612,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final $ChatsTable chats = $ChatsTable(this);
-  late final $MessagesTable messages = $MessagesTable(this);
   late final $HandlesTable handles = $HandlesTable(this);
+  late final $MessagesTable messages = $MessagesTable(this);
   late final $ChatHandlesTable chatHandles = $ChatHandlesTable(this);
   late final $AttachmentsTable attachments = $AttachmentsTable(this);
   late final $ContactsTable contacts = $ContactsTable(this);
@@ -8622,8 +8632,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   @override
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     chats,
-    messages,
     handles,
+    messages,
     chatHandles,
     attachments,
     contacts,
@@ -8633,6 +8643,72 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     storageMeta,
     copyCheckpoints,
   ];
+  @override
+  StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'chats',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('messages', kind: UpdateKind.update)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'handles',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('messages', kind: UpdateKind.update)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'chats',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('chat_handles', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'handles',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('chat_handles', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'messages',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('attachments', kind: UpdateKind.update)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'contacts',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('contact_handles', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'handles',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('contact_handles', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'custom_groups',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('custom_group_chats', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'chats',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('custom_group_chats', kind: UpdateKind.delete)],
+    ),
+  ]);
 }
 
 typedef $$ChatsTableCreateCompanionBuilder =
@@ -8711,6 +8787,70 @@ typedef $$ChatsTableUpdateCompanionBuilder =
       Value<String?> customBackgroundPath,
       Value<int?> pinIndex,
     });
+
+final class $$ChatsTableReferences
+    extends BaseReferences<_$AppDatabase, $ChatsTable, SqliteChatRow> {
+  $$ChatsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$MessagesTable, List<SqliteMessageRow>>
+  _messagesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.messages,
+    aliasName: $_aliasNameGenerator(db.chats.id, db.messages.chatId),
+  );
+
+  $$MessagesTableProcessedTableManager get messagesRefs {
+    final manager = $$MessagesTableTableManager(
+      $_db,
+      $_db.messages,
+    ).filter((f) => f.chatId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_messagesRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$ChatHandlesTable, List<SqliteChatHandleRow>>
+  _chatHandlesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.chatHandles,
+    aliasName: $_aliasNameGenerator(db.chats.id, db.chatHandles.chatId),
+  );
+
+  $$ChatHandlesTableProcessedTableManager get chatHandlesRefs {
+    final manager = $$ChatHandlesTableTableManager(
+      $_db,
+      $_db.chatHandles,
+    ).filter((f) => f.chatId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_chatHandlesRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<
+    $CustomGroupChatsTable,
+    List<SqliteCustomGroupChatRow>
+  >
+  _customGroupChatsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.customGroupChats,
+    aliasName: $_aliasNameGenerator(db.chats.id, db.customGroupChats.chatId),
+  );
+
+  $$CustomGroupChatsTableProcessedTableManager get customGroupChatsRefs {
+    final manager = $$CustomGroupChatsTableTableManager(
+      $_db,
+      $_db.customGroupChats,
+    ).filter((f) => f.chatId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _customGroupChatsRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
 
 class $$ChatsTableFilterComposer extends Composer<_$AppDatabase, $ChatsTable> {
   $$ChatsTableFilterComposer({
@@ -8894,6 +9034,81 @@ class $$ChatsTableFilterComposer extends Composer<_$AppDatabase, $ChatsTable> {
     column: $table.pinIndex,
     builder: (column) => ColumnFilters(column),
   );
+
+  Expression<bool> messagesRefs(
+    Expression<bool> Function($$MessagesTableFilterComposer f) f,
+  ) {
+    final $$MessagesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.messages,
+      getReferencedColumn: (t) => t.chatId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MessagesTableFilterComposer(
+            $db: $db,
+            $table: $db.messages,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> chatHandlesRefs(
+    Expression<bool> Function($$ChatHandlesTableFilterComposer f) f,
+  ) {
+    final $$ChatHandlesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.chatHandles,
+      getReferencedColumn: (t) => t.chatId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ChatHandlesTableFilterComposer(
+            $db: $db,
+            $table: $db.chatHandles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> customGroupChatsRefs(
+    Expression<bool> Function($$CustomGroupChatsTableFilterComposer f) f,
+  ) {
+    final $$CustomGroupChatsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.customGroupChats,
+      getReferencedColumn: (t) => t.chatId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CustomGroupChatsTableFilterComposer(
+            $db: $db,
+            $table: $db.customGroupChats,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$ChatsTableOrderingComposer
@@ -9246,6 +9461,81 @@ class $$ChatsTableAnnotationComposer
 
   GeneratedColumn<int> get pinIndex =>
       $composableBuilder(column: $table.pinIndex, builder: (column) => column);
+
+  Expression<T> messagesRefs<T extends Object>(
+    Expression<T> Function($$MessagesTableAnnotationComposer a) f,
+  ) {
+    final $$MessagesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.messages,
+      getReferencedColumn: (t) => t.chatId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MessagesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.messages,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<T> chatHandlesRefs<T extends Object>(
+    Expression<T> Function($$ChatHandlesTableAnnotationComposer a) f,
+  ) {
+    final $$ChatHandlesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.chatHandles,
+      getReferencedColumn: (t) => t.chatId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ChatHandlesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.chatHandles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<T> customGroupChatsRefs<T extends Object>(
+    Expression<T> Function($$CustomGroupChatsTableAnnotationComposer a) f,
+  ) {
+    final $$CustomGroupChatsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.customGroupChats,
+      getReferencedColumn: (t) => t.chatId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CustomGroupChatsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.customGroupChats,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$ChatsTableTableManager
@@ -9259,12 +9549,13 @@ class $$ChatsTableTableManager
           $$ChatsTableAnnotationComposer,
           $$ChatsTableCreateCompanionBuilder,
           $$ChatsTableUpdateCompanionBuilder,
-          (
-            SqliteChatRow,
-            BaseReferences<_$AppDatabase, $ChatsTable, SqliteChatRow>,
-          ),
+          (SqliteChatRow, $$ChatsTableReferences),
           SqliteChatRow,
-          PrefetchHooks Function()
+          PrefetchHooks Function({
+            bool messagesRefs,
+            bool chatHandlesRefs,
+            bool customGroupChatsRefs,
+          })
         > {
   $$ChatsTableTableManager(_$AppDatabase db, $ChatsTable table)
     : super(
@@ -9426,9 +9717,94 @@ class $$ChatsTableTableManager
                 pinIndex: pinIndex,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) =>
+                    (e.readTable(table), $$ChatsTableReferences(db, table, e)),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback:
+              ({
+                messagesRefs = false,
+                chatHandlesRefs = false,
+                customGroupChatsRefs = false,
+              }) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (messagesRefs) db.messages,
+                    if (chatHandlesRefs) db.chatHandles,
+                    if (customGroupChatsRefs) db.customGroupChats,
+                  ],
+                  addJoins: null,
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (messagesRefs)
+                        await $_getPrefetchedData<
+                          SqliteChatRow,
+                          $ChatsTable,
+                          SqliteMessageRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$ChatsTableReferences
+                              ._messagesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$ChatsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).messagesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.chatId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (chatHandlesRefs)
+                        await $_getPrefetchedData<
+                          SqliteChatRow,
+                          $ChatsTable,
+                          SqliteChatHandleRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$ChatsTableReferences
+                              ._chatHandlesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$ChatsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).chatHandlesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.chatId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (customGroupChatsRefs)
+                        await $_getPrefetchedData<
+                          SqliteChatRow,
+                          $ChatsTable,
+                          SqliteCustomGroupChatRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$ChatsTableReferences
+                              ._customGroupChatsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$ChatsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).customGroupChatsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.chatId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
+              },
         ),
       );
 }
@@ -9443,12 +9819,613 @@ typedef $$ChatsTableProcessedTableManager =
       $$ChatsTableAnnotationComposer,
       $$ChatsTableCreateCompanionBuilder,
       $$ChatsTableUpdateCompanionBuilder,
-      (
-        SqliteChatRow,
-        BaseReferences<_$AppDatabase, $ChatsTable, SqliteChatRow>,
-      ),
+      (SqliteChatRow, $$ChatsTableReferences),
       SqliteChatRow,
-      PrefetchHooks Function()
+      PrefetchHooks Function({
+        bool messagesRefs,
+        bool chatHandlesRefs,
+        bool customGroupChatsRefs,
+      })
+    >;
+typedef $$HandlesTableCreateCompanionBuilder =
+    HandlesCompanion Function({
+      Value<int> id,
+      Value<int?> originalRowid,
+      required String address,
+      Value<String?> country,
+      Value<String?> color,
+      Value<String?> defaultPhone,
+      Value<String?> defaultEmail,
+      Value<String?> formattedAddress,
+      required String uniqueAddressAndService,
+      required String service,
+    });
+typedef $$HandlesTableUpdateCompanionBuilder =
+    HandlesCompanion Function({
+      Value<int> id,
+      Value<int?> originalRowid,
+      Value<String> address,
+      Value<String?> country,
+      Value<String?> color,
+      Value<String?> defaultPhone,
+      Value<String?> defaultEmail,
+      Value<String?> formattedAddress,
+      Value<String> uniqueAddressAndService,
+      Value<String> service,
+    });
+
+final class $$HandlesTableReferences
+    extends BaseReferences<_$AppDatabase, $HandlesTable, SqliteHandleRow> {
+  $$HandlesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$MessagesTable, List<SqliteMessageRow>>
+  _messagesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.messages,
+    aliasName: $_aliasNameGenerator(
+      db.handles.id,
+      db.messages.handleRelationId,
+    ),
+  );
+
+  $$MessagesTableProcessedTableManager get messagesRefs {
+    final manager = $$MessagesTableTableManager(
+      $_db,
+      $_db.messages,
+    ).filter((f) => f.handleRelationId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_messagesRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$ChatHandlesTable, List<SqliteChatHandleRow>>
+  _chatHandlesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.chatHandles,
+    aliasName: $_aliasNameGenerator(db.handles.id, db.chatHandles.handleId),
+  );
+
+  $$ChatHandlesTableProcessedTableManager get chatHandlesRefs {
+    final manager = $$ChatHandlesTableTableManager(
+      $_db,
+      $_db.chatHandles,
+    ).filter((f) => f.handleId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_chatHandlesRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$ContactHandlesTable, List<SqliteContactHandleRow>>
+  _contactHandlesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.contactHandles,
+    aliasName: $_aliasNameGenerator(db.handles.id, db.contactHandles.handleId),
+  );
+
+  $$ContactHandlesTableProcessedTableManager get contactHandlesRefs {
+    final manager = $$ContactHandlesTableTableManager(
+      $_db,
+      $_db.contactHandles,
+    ).filter((f) => f.handleId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_contactHandlesRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
+
+class $$HandlesTableFilterComposer
+    extends Composer<_$AppDatabase, $HandlesTable> {
+  $$HandlesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get originalRowid => $composableBuilder(
+    column: $table.originalRowid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get address => $composableBuilder(
+    column: $table.address,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get country => $composableBuilder(
+    column: $table.country,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get color => $composableBuilder(
+    column: $table.color,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get defaultPhone => $composableBuilder(
+    column: $table.defaultPhone,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get defaultEmail => $composableBuilder(
+    column: $table.defaultEmail,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get formattedAddress => $composableBuilder(
+    column: $table.formattedAddress,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get uniqueAddressAndService => $composableBuilder(
+    column: $table.uniqueAddressAndService,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get service => $composableBuilder(
+    column: $table.service,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  Expression<bool> messagesRefs(
+    Expression<bool> Function($$MessagesTableFilterComposer f) f,
+  ) {
+    final $$MessagesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.messages,
+      getReferencedColumn: (t) => t.handleRelationId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MessagesTableFilterComposer(
+            $db: $db,
+            $table: $db.messages,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> chatHandlesRefs(
+    Expression<bool> Function($$ChatHandlesTableFilterComposer f) f,
+  ) {
+    final $$ChatHandlesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.chatHandles,
+      getReferencedColumn: (t) => t.handleId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ChatHandlesTableFilterComposer(
+            $db: $db,
+            $table: $db.chatHandles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> contactHandlesRefs(
+    Expression<bool> Function($$ContactHandlesTableFilterComposer f) f,
+  ) {
+    final $$ContactHandlesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.contactHandles,
+      getReferencedColumn: (t) => t.handleId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ContactHandlesTableFilterComposer(
+            $db: $db,
+            $table: $db.contactHandles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$HandlesTableOrderingComposer
+    extends Composer<_$AppDatabase, $HandlesTable> {
+  $$HandlesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get originalRowid => $composableBuilder(
+    column: $table.originalRowid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get address => $composableBuilder(
+    column: $table.address,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get country => $composableBuilder(
+    column: $table.country,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get color => $composableBuilder(
+    column: $table.color,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get defaultPhone => $composableBuilder(
+    column: $table.defaultPhone,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get defaultEmail => $composableBuilder(
+    column: $table.defaultEmail,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get formattedAddress => $composableBuilder(
+    column: $table.formattedAddress,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get uniqueAddressAndService => $composableBuilder(
+    column: $table.uniqueAddressAndService,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get service => $composableBuilder(
+    column: $table.service,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$HandlesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $HandlesTable> {
+  $$HandlesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get originalRowid => $composableBuilder(
+    column: $table.originalRowid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get address =>
+      $composableBuilder(column: $table.address, builder: (column) => column);
+
+  GeneratedColumn<String> get country =>
+      $composableBuilder(column: $table.country, builder: (column) => column);
+
+  GeneratedColumn<String> get color =>
+      $composableBuilder(column: $table.color, builder: (column) => column);
+
+  GeneratedColumn<String> get defaultPhone => $composableBuilder(
+    column: $table.defaultPhone,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get defaultEmail => $composableBuilder(
+    column: $table.defaultEmail,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get formattedAddress => $composableBuilder(
+    column: $table.formattedAddress,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get uniqueAddressAndService => $composableBuilder(
+    column: $table.uniqueAddressAndService,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get service =>
+      $composableBuilder(column: $table.service, builder: (column) => column);
+
+  Expression<T> messagesRefs<T extends Object>(
+    Expression<T> Function($$MessagesTableAnnotationComposer a) f,
+  ) {
+    final $$MessagesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.messages,
+      getReferencedColumn: (t) => t.handleRelationId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MessagesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.messages,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<T> chatHandlesRefs<T extends Object>(
+    Expression<T> Function($$ChatHandlesTableAnnotationComposer a) f,
+  ) {
+    final $$ChatHandlesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.chatHandles,
+      getReferencedColumn: (t) => t.handleId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ChatHandlesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.chatHandles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<T> contactHandlesRefs<T extends Object>(
+    Expression<T> Function($$ContactHandlesTableAnnotationComposer a) f,
+  ) {
+    final $$ContactHandlesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.contactHandles,
+      getReferencedColumn: (t) => t.handleId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ContactHandlesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.contactHandles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$HandlesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $HandlesTable,
+          SqliteHandleRow,
+          $$HandlesTableFilterComposer,
+          $$HandlesTableOrderingComposer,
+          $$HandlesTableAnnotationComposer,
+          $$HandlesTableCreateCompanionBuilder,
+          $$HandlesTableUpdateCompanionBuilder,
+          (SqliteHandleRow, $$HandlesTableReferences),
+          SqliteHandleRow,
+          PrefetchHooks Function({
+            bool messagesRefs,
+            bool chatHandlesRefs,
+            bool contactHandlesRefs,
+          })
+        > {
+  $$HandlesTableTableManager(_$AppDatabase db, $HandlesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$HandlesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$HandlesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$HandlesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int?> originalRowid = const Value.absent(),
+                Value<String> address = const Value.absent(),
+                Value<String?> country = const Value.absent(),
+                Value<String?> color = const Value.absent(),
+                Value<String?> defaultPhone = const Value.absent(),
+                Value<String?> defaultEmail = const Value.absent(),
+                Value<String?> formattedAddress = const Value.absent(),
+                Value<String> uniqueAddressAndService = const Value.absent(),
+                Value<String> service = const Value.absent(),
+              }) => HandlesCompanion(
+                id: id,
+                originalRowid: originalRowid,
+                address: address,
+                country: country,
+                color: color,
+                defaultPhone: defaultPhone,
+                defaultEmail: defaultEmail,
+                formattedAddress: formattedAddress,
+                uniqueAddressAndService: uniqueAddressAndService,
+                service: service,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int?> originalRowid = const Value.absent(),
+                required String address,
+                Value<String?> country = const Value.absent(),
+                Value<String?> color = const Value.absent(),
+                Value<String?> defaultPhone = const Value.absent(),
+                Value<String?> defaultEmail = const Value.absent(),
+                Value<String?> formattedAddress = const Value.absent(),
+                required String uniqueAddressAndService,
+                required String service,
+              }) => HandlesCompanion.insert(
+                id: id,
+                originalRowid: originalRowid,
+                address: address,
+                country: country,
+                color: color,
+                defaultPhone: defaultPhone,
+                defaultEmail: defaultEmail,
+                formattedAddress: formattedAddress,
+                uniqueAddressAndService: uniqueAddressAndService,
+                service: service,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$HandlesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback:
+              ({
+                messagesRefs = false,
+                chatHandlesRefs = false,
+                contactHandlesRefs = false,
+              }) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (messagesRefs) db.messages,
+                    if (chatHandlesRefs) db.chatHandles,
+                    if (contactHandlesRefs) db.contactHandles,
+                  ],
+                  addJoins: null,
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (messagesRefs)
+                        await $_getPrefetchedData<
+                          SqliteHandleRow,
+                          $HandlesTable,
+                          SqliteMessageRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$HandlesTableReferences
+                              ._messagesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$HandlesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).messagesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.handleRelationId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (chatHandlesRefs)
+                        await $_getPrefetchedData<
+                          SqliteHandleRow,
+                          $HandlesTable,
+                          SqliteChatHandleRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$HandlesTableReferences
+                              ._chatHandlesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$HandlesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).chatHandlesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.handleId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (contactHandlesRefs)
+                        await $_getPrefetchedData<
+                          SqliteHandleRow,
+                          $HandlesTable,
+                          SqliteContactHandleRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$HandlesTableReferences
+                              ._contactHandlesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$HandlesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).contactHandlesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.handleId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
+              },
+        ),
+      );
+}
+
+typedef $$HandlesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $HandlesTable,
+      SqliteHandleRow,
+      $$HandlesTableFilterComposer,
+      $$HandlesTableOrderingComposer,
+      $$HandlesTableAnnotationComposer,
+      $$HandlesTableCreateCompanionBuilder,
+      $$HandlesTableUpdateCompanionBuilder,
+      (SqliteHandleRow, $$HandlesTableReferences),
+      SqliteHandleRow,
+      PrefetchHooks Function({
+        bool messagesRefs,
+        bool chatHandlesRefs,
+        bool contactHandlesRefs,
+      })
     >;
 typedef $$MessagesTableCreateCompanionBuilder =
     MessagesCompanion Function({
@@ -9548,6 +10525,66 @@ typedef $$MessagesTableUpdateCompanionBuilder =
       Value<bool> hasEffectPlayed,
       Value<String?> appleChatGuid,
     });
+
+final class $$MessagesTableReferences
+    extends BaseReferences<_$AppDatabase, $MessagesTable, SqliteMessageRow> {
+  $$MessagesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $ChatsTable _chatIdTable(_$AppDatabase db) => db.chats.createAlias(
+    $_aliasNameGenerator(db.messages.chatId, db.chats.id),
+  );
+
+  $$ChatsTableProcessedTableManager? get chatId {
+    final $_column = $_itemColumn<int>('chat_id');
+    if ($_column == null) return null;
+    final manager = $$ChatsTableTableManager(
+      $_db,
+      $_db.chats,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_chatIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $HandlesTable _handleRelationIdTable(_$AppDatabase db) =>
+      db.handles.createAlias(
+        $_aliasNameGenerator(db.messages.handleRelationId, db.handles.id),
+      );
+
+  $$HandlesTableProcessedTableManager? get handleRelationId {
+    final $_column = $_itemColumn<int>('handle_relation_id');
+    if ($_column == null) return null;
+    final manager = $$HandlesTableTableManager(
+      $_db,
+      $_db.handles,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_handleRelationIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static MultiTypedResultKey<$AttachmentsTable, List<SqliteAttachmentRow>>
+  _attachmentsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.attachments,
+    aliasName: $_aliasNameGenerator(db.messages.id, db.attachments.messageId),
+  );
+
+  $$AttachmentsTableProcessedTableManager get attachmentsRefs {
+    final manager = $$AttachmentsTableTableManager(
+      $_db,
+      $_db.attachments,
+    ).filter((f) => f.messageId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_attachmentsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
 
 class $$MessagesTableFilterComposer
     extends Composer<_$AppDatabase, $MessagesTable> {
@@ -9713,11 +10750,6 @@ class $$MessagesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<int> get chatId => $composableBuilder(
-    column: $table.chatId,
-    builder: (column) => ColumnFilters(column),
-  );
-
   ColumnFilters<String> get attributedBodyJson => $composableBuilder(
     column: $table.attributedBodyJson,
     builder: (column) => ColumnFilters(column),
@@ -9768,11 +10800,6 @@ class $$MessagesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<int> get handleRelationId => $composableBuilder(
-    column: $table.handleRelationId,
-    builder: (column) => ColumnFilters(column),
-  );
-
   ColumnFilters<String> get errorMessage => $composableBuilder(
     column: $table.errorMessage,
     builder: (column) => ColumnFilters(column),
@@ -9787,6 +10814,77 @@ class $$MessagesTableFilterComposer
     column: $table.appleChatGuid,
     builder: (column) => ColumnFilters(column),
   );
+
+  $$ChatsTableFilterComposer get chatId {
+    final $$ChatsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.chatId,
+      referencedTable: $db.chats,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ChatsTableFilterComposer(
+            $db: $db,
+            $table: $db.chats,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$HandlesTableFilterComposer get handleRelationId {
+    final $$HandlesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.handleRelationId,
+      referencedTable: $db.handles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$HandlesTableFilterComposer(
+            $db: $db,
+            $table: $db.handles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  Expression<bool> attachmentsRefs(
+    Expression<bool> Function($$AttachmentsTableFilterComposer f) f,
+  ) {
+    final $$AttachmentsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.attachments,
+      getReferencedColumn: (t) => t.messageId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$AttachmentsTableFilterComposer(
+            $db: $db,
+            $table: $db.attachments,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$MessagesTableOrderingComposer
@@ -9953,11 +11051,6 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<int> get chatId => $composableBuilder(
-    column: $table.chatId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   ColumnOrderings<String> get attributedBodyJson => $composableBuilder(
     column: $table.attributedBodyJson,
     builder: (column) => ColumnOrderings(column),
@@ -10008,11 +11101,6 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<int> get handleRelationId => $composableBuilder(
-    column: $table.handleRelationId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   ColumnOrderings<String> get errorMessage => $composableBuilder(
     column: $table.errorMessage,
     builder: (column) => ColumnOrderings(column),
@@ -10027,6 +11115,52 @@ class $$MessagesTableOrderingComposer
     column: $table.appleChatGuid,
     builder: (column) => ColumnOrderings(column),
   );
+
+  $$ChatsTableOrderingComposer get chatId {
+    final $$ChatsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.chatId,
+      referencedTable: $db.chats,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ChatsTableOrderingComposer(
+            $db: $db,
+            $table: $db.chats,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$HandlesTableOrderingComposer get handleRelationId {
+    final $$HandlesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.handleRelationId,
+      referencedTable: $db.handles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$HandlesTableOrderingComposer(
+            $db: $db,
+            $table: $db.handles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$MessagesTableAnnotationComposer
@@ -10171,9 +11305,6 @@ class $$MessagesTableAnnotationComposer
   GeneratedColumn<int> get error =>
       $composableBuilder(column: $table.error, builder: (column) => column);
 
-  GeneratedColumn<int> get chatId =>
-      $composableBuilder(column: $table.chatId, builder: (column) => column);
-
   GeneratedColumn<String> get attributedBodyJson => $composableBuilder(
     column: $table.attributedBodyJson,
     builder: (column) => column,
@@ -10224,11 +11355,6 @@ class $$MessagesTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<int> get handleRelationId => $composableBuilder(
-    column: $table.handleRelationId,
-    builder: (column) => column,
-  );
-
   GeneratedColumn<String> get errorMessage => $composableBuilder(
     column: $table.errorMessage,
     builder: (column) => column,
@@ -10243,6 +11369,77 @@ class $$MessagesTableAnnotationComposer
     column: $table.appleChatGuid,
     builder: (column) => column,
   );
+
+  $$ChatsTableAnnotationComposer get chatId {
+    final $$ChatsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.chatId,
+      referencedTable: $db.chats,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ChatsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.chats,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$HandlesTableAnnotationComposer get handleRelationId {
+    final $$HandlesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.handleRelationId,
+      referencedTable: $db.handles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$HandlesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.handles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  Expression<T> attachmentsRefs<T extends Object>(
+    Expression<T> Function($$AttachmentsTableAnnotationComposer a) f,
+  ) {
+    final $$AttachmentsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.attachments,
+      getReferencedColumn: (t) => t.messageId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$AttachmentsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.attachments,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$MessagesTableTableManager
@@ -10256,12 +11453,13 @@ class $$MessagesTableTableManager
           $$MessagesTableAnnotationComposer,
           $$MessagesTableCreateCompanionBuilder,
           $$MessagesTableUpdateCompanionBuilder,
-          (
-            SqliteMessageRow,
-            BaseReferences<_$AppDatabase, $MessagesTable, SqliteMessageRow>,
-          ),
+          (SqliteMessageRow, $$MessagesTableReferences),
           SqliteMessageRow,
-          PrefetchHooks Function()
+          PrefetchHooks Function({
+            bool chatId,
+            bool handleRelationId,
+            bool attachmentsRefs,
+          })
         > {
   $$MessagesTableTableManager(_$AppDatabase db, $MessagesTable table)
     : super(
@@ -10467,9 +11665,96 @@ class $$MessagesTableTableManager
                 appleChatGuid: appleChatGuid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$MessagesTableReferences(db, table, e),
+                ),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback:
+              ({
+                chatId = false,
+                handleRelationId = false,
+                attachmentsRefs = false,
+              }) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (attachmentsRefs) db.attachments,
+                  ],
+                  addJoins:
+                      <
+                        T extends TableManagerState<
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic
+                        >
+                      >(state) {
+                        if (chatId) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.chatId,
+                                    referencedTable: $$MessagesTableReferences
+                                        ._chatIdTable(db),
+                                    referencedColumn: $$MessagesTableReferences
+                                        ._chatIdTable(db)
+                                        .id,
+                                  )
+                                  as T;
+                        }
+                        if (handleRelationId) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.handleRelationId,
+                                    referencedTable: $$MessagesTableReferences
+                                        ._handleRelationIdTable(db),
+                                    referencedColumn: $$MessagesTableReferences
+                                        ._handleRelationIdTable(db)
+                                        .id,
+                                  )
+                                  as T;
+                        }
+
+                        return state;
+                      },
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (attachmentsRefs)
+                        await $_getPrefetchedData<
+                          SqliteMessageRow,
+                          $MessagesTable,
+                          SqliteAttachmentRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$MessagesTableReferences
+                              ._attachmentsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$MessagesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).attachmentsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.messageId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
+              },
         ),
       );
 }
@@ -10484,316 +11769,61 @@ typedef $$MessagesTableProcessedTableManager =
       $$MessagesTableAnnotationComposer,
       $$MessagesTableCreateCompanionBuilder,
       $$MessagesTableUpdateCompanionBuilder,
-      (
-        SqliteMessageRow,
-        BaseReferences<_$AppDatabase, $MessagesTable, SqliteMessageRow>,
-      ),
+      (SqliteMessageRow, $$MessagesTableReferences),
       SqliteMessageRow,
-      PrefetchHooks Function()
-    >;
-typedef $$HandlesTableCreateCompanionBuilder =
-    HandlesCompanion Function({
-      Value<int> id,
-      Value<int?> originalRowid,
-      required String address,
-      Value<String?> country,
-      Value<String?> color,
-      Value<String?> defaultPhone,
-      Value<String?> defaultEmail,
-      Value<String?> formattedAddress,
-      required String uniqueAddressAndService,
-      required String service,
-    });
-typedef $$HandlesTableUpdateCompanionBuilder =
-    HandlesCompanion Function({
-      Value<int> id,
-      Value<int?> originalRowid,
-      Value<String> address,
-      Value<String?> country,
-      Value<String?> color,
-      Value<String?> defaultPhone,
-      Value<String?> defaultEmail,
-      Value<String?> formattedAddress,
-      Value<String> uniqueAddressAndService,
-      Value<String> service,
-    });
-
-class $$HandlesTableFilterComposer
-    extends Composer<_$AppDatabase, $HandlesTable> {
-  $$HandlesTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<int> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get originalRowid => $composableBuilder(
-    column: $table.originalRowid,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get address => $composableBuilder(
-    column: $table.address,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get country => $composableBuilder(
-    column: $table.country,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get color => $composableBuilder(
-    column: $table.color,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get defaultPhone => $composableBuilder(
-    column: $table.defaultPhone,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get defaultEmail => $composableBuilder(
-    column: $table.defaultEmail,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get formattedAddress => $composableBuilder(
-    column: $table.formattedAddress,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get uniqueAddressAndService => $composableBuilder(
-    column: $table.uniqueAddressAndService,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get service => $composableBuilder(
-    column: $table.service,
-    builder: (column) => ColumnFilters(column),
-  );
-}
-
-class $$HandlesTableOrderingComposer
-    extends Composer<_$AppDatabase, $HandlesTable> {
-  $$HandlesTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<int> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get originalRowid => $composableBuilder(
-    column: $table.originalRowid,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get address => $composableBuilder(
-    column: $table.address,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get country => $composableBuilder(
-    column: $table.country,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get color => $composableBuilder(
-    column: $table.color,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get defaultPhone => $composableBuilder(
-    column: $table.defaultPhone,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get defaultEmail => $composableBuilder(
-    column: $table.defaultEmail,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get formattedAddress => $composableBuilder(
-    column: $table.formattedAddress,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get uniqueAddressAndService => $composableBuilder(
-    column: $table.uniqueAddressAndService,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get service => $composableBuilder(
-    column: $table.service,
-    builder: (column) => ColumnOrderings(column),
-  );
-}
-
-class $$HandlesTableAnnotationComposer
-    extends Composer<_$AppDatabase, $HandlesTable> {
-  $$HandlesTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<int> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<int> get originalRowid => $composableBuilder(
-    column: $table.originalRowid,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get address =>
-      $composableBuilder(column: $table.address, builder: (column) => column);
-
-  GeneratedColumn<String> get country =>
-      $composableBuilder(column: $table.country, builder: (column) => column);
-
-  GeneratedColumn<String> get color =>
-      $composableBuilder(column: $table.color, builder: (column) => column);
-
-  GeneratedColumn<String> get defaultPhone => $composableBuilder(
-    column: $table.defaultPhone,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get defaultEmail => $composableBuilder(
-    column: $table.defaultEmail,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get formattedAddress => $composableBuilder(
-    column: $table.formattedAddress,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get uniqueAddressAndService => $composableBuilder(
-    column: $table.uniqueAddressAndService,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get service =>
-      $composableBuilder(column: $table.service, builder: (column) => column);
-}
-
-class $$HandlesTableTableManager
-    extends
-        RootTableManager<
-          _$AppDatabase,
-          $HandlesTable,
-          SqliteHandleRow,
-          $$HandlesTableFilterComposer,
-          $$HandlesTableOrderingComposer,
-          $$HandlesTableAnnotationComposer,
-          $$HandlesTableCreateCompanionBuilder,
-          $$HandlesTableUpdateCompanionBuilder,
-          (
-            SqliteHandleRow,
-            BaseReferences<_$AppDatabase, $HandlesTable, SqliteHandleRow>,
-          ),
-          SqliteHandleRow,
-          PrefetchHooks Function()
-        > {
-  $$HandlesTableTableManager(_$AppDatabase db, $HandlesTable table)
-    : super(
-        TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$HandlesTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$HandlesTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$HandlesTableAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback:
-              ({
-                Value<int> id = const Value.absent(),
-                Value<int?> originalRowid = const Value.absent(),
-                Value<String> address = const Value.absent(),
-                Value<String?> country = const Value.absent(),
-                Value<String?> color = const Value.absent(),
-                Value<String?> defaultPhone = const Value.absent(),
-                Value<String?> defaultEmail = const Value.absent(),
-                Value<String?> formattedAddress = const Value.absent(),
-                Value<String> uniqueAddressAndService = const Value.absent(),
-                Value<String> service = const Value.absent(),
-              }) => HandlesCompanion(
-                id: id,
-                originalRowid: originalRowid,
-                address: address,
-                country: country,
-                color: color,
-                defaultPhone: defaultPhone,
-                defaultEmail: defaultEmail,
-                formattedAddress: formattedAddress,
-                uniqueAddressAndService: uniqueAddressAndService,
-                service: service,
-              ),
-          createCompanionCallback:
-              ({
-                Value<int> id = const Value.absent(),
-                Value<int?> originalRowid = const Value.absent(),
-                required String address,
-                Value<String?> country = const Value.absent(),
-                Value<String?> color = const Value.absent(),
-                Value<String?> defaultPhone = const Value.absent(),
-                Value<String?> defaultEmail = const Value.absent(),
-                Value<String?> formattedAddress = const Value.absent(),
-                required String uniqueAddressAndService,
-                required String service,
-              }) => HandlesCompanion.insert(
-                id: id,
-                originalRowid: originalRowid,
-                address: address,
-                country: country,
-                color: color,
-                defaultPhone: defaultPhone,
-                defaultEmail: defaultEmail,
-                formattedAddress: formattedAddress,
-                uniqueAddressAndService: uniqueAddressAndService,
-                service: service,
-              ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
-          prefetchHooksCallback: null,
-        ),
-      );
-}
-
-typedef $$HandlesTableProcessedTableManager =
-    ProcessedTableManager<
-      _$AppDatabase,
-      $HandlesTable,
-      SqliteHandleRow,
-      $$HandlesTableFilterComposer,
-      $$HandlesTableOrderingComposer,
-      $$HandlesTableAnnotationComposer,
-      $$HandlesTableCreateCompanionBuilder,
-      $$HandlesTableUpdateCompanionBuilder,
-      (
-        SqliteHandleRow,
-        BaseReferences<_$AppDatabase, $HandlesTable, SqliteHandleRow>,
-      ),
-      SqliteHandleRow,
-      PrefetchHooks Function()
+      PrefetchHooks Function({
+        bool chatId,
+        bool handleRelationId,
+        bool attachmentsRefs,
+      })
     >;
 typedef $$ChatHandlesTableCreateCompanionBuilder =
     ChatHandlesCompanion Function({required int chatId, required int handleId});
 typedef $$ChatHandlesTableUpdateCompanionBuilder =
     ChatHandlesCompanion Function({Value<int> chatId, Value<int> handleId});
+
+final class $$ChatHandlesTableReferences
+    extends
+        BaseReferences<_$AppDatabase, $ChatHandlesTable, SqliteChatHandleRow> {
+  $$ChatHandlesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $ChatsTable _chatIdTable(_$AppDatabase db) => db.chats.createAlias(
+    $_aliasNameGenerator(db.chatHandles.chatId, db.chats.id),
+  );
+
+  $$ChatsTableProcessedTableManager get chatId {
+    final $_column = $_itemColumn<int>('chat_id')!;
+
+    final manager = $$ChatsTableTableManager(
+      $_db,
+      $_db.chats,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_chatIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $HandlesTable _handleIdTable(_$AppDatabase db) =>
+      db.handles.createAlias(
+        $_aliasNameGenerator(db.chatHandles.handleId, db.handles.id),
+      );
+
+  $$HandlesTableProcessedTableManager get handleId {
+    final $_column = $_itemColumn<int>('handle_id')!;
+
+    final manager = $$HandlesTableTableManager(
+      $_db,
+      $_db.handles,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_handleIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
 
 class $$ChatHandlesTableFilterComposer
     extends Composer<_$AppDatabase, $ChatHandlesTable> {
@@ -10804,15 +11834,51 @@ class $$ChatHandlesTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<int> get chatId => $composableBuilder(
-    column: $table.chatId,
-    builder: (column) => ColumnFilters(column),
-  );
+  $$ChatsTableFilterComposer get chatId {
+    final $$ChatsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.chatId,
+      referencedTable: $db.chats,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ChatsTableFilterComposer(
+            $db: $db,
+            $table: $db.chats,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
-  ColumnFilters<int> get handleId => $composableBuilder(
-    column: $table.handleId,
-    builder: (column) => ColumnFilters(column),
-  );
+  $$HandlesTableFilterComposer get handleId {
+    final $$HandlesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.handleId,
+      referencedTable: $db.handles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$HandlesTableFilterComposer(
+            $db: $db,
+            $table: $db.handles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$ChatHandlesTableOrderingComposer
@@ -10824,15 +11890,51 @@ class $$ChatHandlesTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<int> get chatId => $composableBuilder(
-    column: $table.chatId,
-    builder: (column) => ColumnOrderings(column),
-  );
+  $$ChatsTableOrderingComposer get chatId {
+    final $$ChatsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.chatId,
+      referencedTable: $db.chats,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ChatsTableOrderingComposer(
+            $db: $db,
+            $table: $db.chats,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
-  ColumnOrderings<int> get handleId => $composableBuilder(
-    column: $table.handleId,
-    builder: (column) => ColumnOrderings(column),
-  );
+  $$HandlesTableOrderingComposer get handleId {
+    final $$HandlesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.handleId,
+      referencedTable: $db.handles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$HandlesTableOrderingComposer(
+            $db: $db,
+            $table: $db.handles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$ChatHandlesTableAnnotationComposer
@@ -10844,11 +11946,51 @@ class $$ChatHandlesTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<int> get chatId =>
-      $composableBuilder(column: $table.chatId, builder: (column) => column);
+  $$ChatsTableAnnotationComposer get chatId {
+    final $$ChatsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.chatId,
+      referencedTable: $db.chats,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ChatsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.chats,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
-  GeneratedColumn<int> get handleId =>
-      $composableBuilder(column: $table.handleId, builder: (column) => column);
+  $$HandlesTableAnnotationComposer get handleId {
+    final $$HandlesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.handleId,
+      referencedTable: $db.handles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$HandlesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.handles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$ChatHandlesTableTableManager
@@ -10862,16 +12004,9 @@ class $$ChatHandlesTableTableManager
           $$ChatHandlesTableAnnotationComposer,
           $$ChatHandlesTableCreateCompanionBuilder,
           $$ChatHandlesTableUpdateCompanionBuilder,
-          (
-            SqliteChatHandleRow,
-            BaseReferences<
-              _$AppDatabase,
-              $ChatHandlesTable,
-              SqliteChatHandleRow
-            >,
-          ),
+          (SqliteChatHandleRow, $$ChatHandlesTableReferences),
           SqliteChatHandleRow,
-          PrefetchHooks Function()
+          PrefetchHooks Function({bool chatId, bool handleId})
         > {
   $$ChatHandlesTableTableManager(_$AppDatabase db, $ChatHandlesTable table)
     : super(
@@ -10896,9 +12031,67 @@ class $$ChatHandlesTableTableManager
                     handleId: handleId,
                   ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$ChatHandlesTableReferences(db, table, e),
+                ),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({chatId = false, handleId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (chatId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.chatId,
+                                referencedTable: $$ChatHandlesTableReferences
+                                    ._chatIdTable(db),
+                                referencedColumn: $$ChatHandlesTableReferences
+                                    ._chatIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+                    if (handleId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.handleId,
+                                referencedTable: $$ChatHandlesTableReferences
+                                    ._handleIdTable(db),
+                                referencedColumn: $$ChatHandlesTableReferences
+                                    ._handleIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
         ),
       );
 }
@@ -10913,12 +12106,9 @@ typedef $$ChatHandlesTableProcessedTableManager =
       $$ChatHandlesTableAnnotationComposer,
       $$ChatHandlesTableCreateCompanionBuilder,
       $$ChatHandlesTableUpdateCompanionBuilder,
-      (
-        SqliteChatHandleRow,
-        BaseReferences<_$AppDatabase, $ChatHandlesTable, SqliteChatHandleRow>,
-      ),
+      (SqliteChatHandleRow, $$ChatHandlesTableReferences),
       SqliteChatHandleRow,
-      PrefetchHooks Function()
+      PrefetchHooks Function({bool chatId, bool handleId})
     >;
 typedef $$AttachmentsTableCreateCompanionBuilder =
     AttachmentsCompanion Function({
@@ -10958,6 +12148,31 @@ typedef $$AttachmentsTableUpdateCompanionBuilder =
       Value<String?> metadataJson,
       Value<String?> exifJson,
     });
+
+final class $$AttachmentsTableReferences
+    extends
+        BaseReferences<_$AppDatabase, $AttachmentsTable, SqliteAttachmentRow> {
+  $$AttachmentsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $MessagesTable _messageIdTable(_$AppDatabase db) =>
+      db.messages.createAlias(
+        $_aliasNameGenerator(db.attachments.messageId, db.messages.id),
+      );
+
+  $$MessagesTableProcessedTableManager? get messageId {
+    final $_column = $_itemColumn<int>('message_id');
+    if ($_column == null) return null;
+    final manager = $$MessagesTableTableManager(
+      $_db,
+      $_db.messages,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_messageIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
 
 class $$AttachmentsTableFilterComposer
     extends Composer<_$AppDatabase, $AttachmentsTable> {
@@ -11023,11 +12238,6 @@ class $$AttachmentsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<int> get messageId => $composableBuilder(
-    column: $table.messageId,
-    builder: (column) => ColumnFilters(column),
-  );
-
   ColumnFilters<bool> get hasLivePhoto => $composableBuilder(
     column: $table.hasLivePhoto,
     builder: (column) => ColumnFilters(column),
@@ -11047,6 +12257,29 @@ class $$AttachmentsTableFilterComposer
     column: $table.exifJson,
     builder: (column) => ColumnFilters(column),
   );
+
+  $$MessagesTableFilterComposer get messageId {
+    final $$MessagesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.messageId,
+      referencedTable: $db.messages,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MessagesTableFilterComposer(
+            $db: $db,
+            $table: $db.messages,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$AttachmentsTableOrderingComposer
@@ -11113,11 +12346,6 @@ class $$AttachmentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<int> get messageId => $composableBuilder(
-    column: $table.messageId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   ColumnOrderings<bool> get hasLivePhoto => $composableBuilder(
     column: $table.hasLivePhoto,
     builder: (column) => ColumnOrderings(column),
@@ -11137,6 +12365,29 @@ class $$AttachmentsTableOrderingComposer
     column: $table.exifJson,
     builder: (column) => ColumnOrderings(column),
   );
+
+  $$MessagesTableOrderingComposer get messageId {
+    final $$MessagesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.messageId,
+      referencedTable: $db.messages,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MessagesTableOrderingComposer(
+            $db: $db,
+            $table: $db.messages,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$AttachmentsTableAnnotationComposer
@@ -11189,9 +12440,6 @@ class $$AttachmentsTableAnnotationComposer
   GeneratedColumn<String> get webUrl =>
       $composableBuilder(column: $table.webUrl, builder: (column) => column);
 
-  GeneratedColumn<int> get messageId =>
-      $composableBuilder(column: $table.messageId, builder: (column) => column);
-
   GeneratedColumn<bool> get hasLivePhoto => $composableBuilder(
     column: $table.hasLivePhoto,
     builder: (column) => column,
@@ -11209,6 +12457,29 @@ class $$AttachmentsTableAnnotationComposer
 
   GeneratedColumn<String> get exifJson =>
       $composableBuilder(column: $table.exifJson, builder: (column) => column);
+
+  $$MessagesTableAnnotationComposer get messageId {
+    final $$MessagesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.messageId,
+      referencedTable: $db.messages,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MessagesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.messages,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$AttachmentsTableTableManager
@@ -11222,16 +12493,9 @@ class $$AttachmentsTableTableManager
           $$AttachmentsTableAnnotationComposer,
           $$AttachmentsTableCreateCompanionBuilder,
           $$AttachmentsTableUpdateCompanionBuilder,
-          (
-            SqliteAttachmentRow,
-            BaseReferences<
-              _$AppDatabase,
-              $AttachmentsTable,
-              SqliteAttachmentRow
-            >,
-          ),
+          (SqliteAttachmentRow, $$AttachmentsTableReferences),
           SqliteAttachmentRow,
-          PrefetchHooks Function()
+          PrefetchHooks Function({bool messageId})
         > {
   $$AttachmentsTableTableManager(_$AppDatabase db, $AttachmentsTable table)
     : super(
@@ -11317,9 +12581,54 @@ class $$AttachmentsTableTableManager
                 exifJson: exifJson,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$AttachmentsTableReferences(db, table, e),
+                ),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({messageId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (messageId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.messageId,
+                                referencedTable: $$AttachmentsTableReferences
+                                    ._messageIdTable(db),
+                                referencedColumn: $$AttachmentsTableReferences
+                                    ._messageIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
         ),
       );
 }
@@ -11334,12 +12643,9 @@ typedef $$AttachmentsTableProcessedTableManager =
       $$AttachmentsTableAnnotationComposer,
       $$AttachmentsTableCreateCompanionBuilder,
       $$AttachmentsTableUpdateCompanionBuilder,
-      (
-        SqliteAttachmentRow,
-        BaseReferences<_$AppDatabase, $AttachmentsTable, SqliteAttachmentRow>,
-      ),
+      (SqliteAttachmentRow, $$AttachmentsTableReferences),
       SqliteAttachmentRow,
-      PrefetchHooks Function()
+      PrefetchHooks Function({bool messageId})
     >;
 typedef $$ContactsTableCreateCompanionBuilder =
     ContactsCompanion Function({
@@ -11377,6 +12683,32 @@ typedef $$ContactsTableUpdateCompanionBuilder =
       Value<String?> emailAddressesJson,
       Value<bool> isNative,
     });
+
+final class $$ContactsTableReferences
+    extends BaseReferences<_$AppDatabase, $ContactsTable, SqliteContactRow> {
+  $$ContactsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$ContactHandlesTable, List<SqliteContactHandleRow>>
+  _contactHandlesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.contactHandles,
+    aliasName: $_aliasNameGenerator(
+      db.contacts.id,
+      db.contactHandles.contactId,
+    ),
+  );
+
+  $$ContactHandlesTableProcessedTableManager get contactHandlesRefs {
+    final manager = $$ContactHandlesTableTableManager(
+      $_db,
+      $_db.contactHandles,
+    ).filter((f) => f.contactId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_contactHandlesRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
 
 class $$ContactsTableFilterComposer
     extends Composer<_$AppDatabase, $ContactsTable> {
@@ -11461,6 +12793,31 @@ class $$ContactsTableFilterComposer
     column: $table.isNative,
     builder: (column) => ColumnFilters(column),
   );
+
+  Expression<bool> contactHandlesRefs(
+    Expression<bool> Function($$ContactHandlesTableFilterComposer f) f,
+  ) {
+    final $$ContactHandlesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.contactHandles,
+      getReferencedColumn: (t) => t.contactId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ContactHandlesTableFilterComposer(
+            $db: $db,
+            $table: $db.contactHandles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$ContactsTableOrderingComposer
@@ -11619,6 +12976,31 @@ class $$ContactsTableAnnotationComposer
 
   GeneratedColumn<bool> get isNative =>
       $composableBuilder(column: $table.isNative, builder: (column) => column);
+
+  Expression<T> contactHandlesRefs<T extends Object>(
+    Expression<T> Function($$ContactHandlesTableAnnotationComposer a) f,
+  ) {
+    final $$ContactHandlesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.contactHandles,
+      getReferencedColumn: (t) => t.contactId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ContactHandlesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.contactHandles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$ContactsTableTableManager
@@ -11632,12 +13014,9 @@ class $$ContactsTableTableManager
           $$ContactsTableAnnotationComposer,
           $$ContactsTableCreateCompanionBuilder,
           $$ContactsTableUpdateCompanionBuilder,
-          (
-            SqliteContactRow,
-            BaseReferences<_$AppDatabase, $ContactsTable, SqliteContactRow>,
-          ),
+          (SqliteContactRow, $$ContactsTableReferences),
           SqliteContactRow,
-          PrefetchHooks Function()
+          PrefetchHooks Function({bool contactHandlesRefs})
         > {
   $$ContactsTableTableManager(_$AppDatabase db, $ContactsTable table)
     : super(
@@ -11719,9 +13098,44 @@ class $$ContactsTableTableManager
                 isNative: isNative,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$ContactsTableReferences(db, table, e),
+                ),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({contactHandlesRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (contactHandlesRefs) db.contactHandles,
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (contactHandlesRefs)
+                    await $_getPrefetchedData<
+                      SqliteContactRow,
+                      $ContactsTable,
+                      SqliteContactHandleRow
+                    >(
+                      currentTable: table,
+                      referencedTable: $$ContactsTableReferences
+                          ._contactHandlesRefsTable(db),
+                      managerFromTypedResult: (p0) => $$ContactsTableReferences(
+                        db,
+                        table,
+                        p0,
+                      ).contactHandlesRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.contactId == item.id),
+                      typedResults: items,
+                    ),
+                ];
+              },
+            );
+          },
         ),
       );
 }
@@ -11736,12 +13150,9 @@ typedef $$ContactsTableProcessedTableManager =
       $$ContactsTableAnnotationComposer,
       $$ContactsTableCreateCompanionBuilder,
       $$ContactsTableUpdateCompanionBuilder,
-      (
-        SqliteContactRow,
-        BaseReferences<_$AppDatabase, $ContactsTable, SqliteContactRow>,
-      ),
+      (SqliteContactRow, $$ContactsTableReferences),
       SqliteContactRow,
-      PrefetchHooks Function()
+      PrefetchHooks Function({bool contactHandlesRefs})
     >;
 typedef $$ContactHandlesTableCreateCompanionBuilder =
     ContactHandlesCompanion Function({
@@ -11754,6 +13165,58 @@ typedef $$ContactHandlesTableUpdateCompanionBuilder =
       Value<int> handleId,
     });
 
+final class $$ContactHandlesTableReferences
+    extends
+        BaseReferences<
+          _$AppDatabase,
+          $ContactHandlesTable,
+          SqliteContactHandleRow
+        > {
+  $$ContactHandlesTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $ContactsTable _contactIdTable(_$AppDatabase db) =>
+      db.contacts.createAlias(
+        $_aliasNameGenerator(db.contactHandles.contactId, db.contacts.id),
+      );
+
+  $$ContactsTableProcessedTableManager get contactId {
+    final $_column = $_itemColumn<int>('contact_id')!;
+
+    final manager = $$ContactsTableTableManager(
+      $_db,
+      $_db.contacts,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_contactIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $HandlesTable _handleIdTable(_$AppDatabase db) =>
+      db.handles.createAlias(
+        $_aliasNameGenerator(db.contactHandles.handleId, db.handles.id),
+      );
+
+  $$HandlesTableProcessedTableManager get handleId {
+    final $_column = $_itemColumn<int>('handle_id')!;
+
+    final manager = $$HandlesTableTableManager(
+      $_db,
+      $_db.handles,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_handleIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
 class $$ContactHandlesTableFilterComposer
     extends Composer<_$AppDatabase, $ContactHandlesTable> {
   $$ContactHandlesTableFilterComposer({
@@ -11763,15 +13226,51 @@ class $$ContactHandlesTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<int> get contactId => $composableBuilder(
-    column: $table.contactId,
-    builder: (column) => ColumnFilters(column),
-  );
+  $$ContactsTableFilterComposer get contactId {
+    final $$ContactsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.contactId,
+      referencedTable: $db.contacts,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ContactsTableFilterComposer(
+            $db: $db,
+            $table: $db.contacts,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
-  ColumnFilters<int> get handleId => $composableBuilder(
-    column: $table.handleId,
-    builder: (column) => ColumnFilters(column),
-  );
+  $$HandlesTableFilterComposer get handleId {
+    final $$HandlesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.handleId,
+      referencedTable: $db.handles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$HandlesTableFilterComposer(
+            $db: $db,
+            $table: $db.handles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$ContactHandlesTableOrderingComposer
@@ -11783,15 +13282,51 @@ class $$ContactHandlesTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<int> get contactId => $composableBuilder(
-    column: $table.contactId,
-    builder: (column) => ColumnOrderings(column),
-  );
+  $$ContactsTableOrderingComposer get contactId {
+    final $$ContactsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.contactId,
+      referencedTable: $db.contacts,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ContactsTableOrderingComposer(
+            $db: $db,
+            $table: $db.contacts,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
-  ColumnOrderings<int> get handleId => $composableBuilder(
-    column: $table.handleId,
-    builder: (column) => ColumnOrderings(column),
-  );
+  $$HandlesTableOrderingComposer get handleId {
+    final $$HandlesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.handleId,
+      referencedTable: $db.handles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$HandlesTableOrderingComposer(
+            $db: $db,
+            $table: $db.handles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$ContactHandlesTableAnnotationComposer
@@ -11803,11 +13338,51 @@ class $$ContactHandlesTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<int> get contactId =>
-      $composableBuilder(column: $table.contactId, builder: (column) => column);
+  $$ContactsTableAnnotationComposer get contactId {
+    final $$ContactsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.contactId,
+      referencedTable: $db.contacts,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ContactsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.contacts,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
-  GeneratedColumn<int> get handleId =>
-      $composableBuilder(column: $table.handleId, builder: (column) => column);
+  $$HandlesTableAnnotationComposer get handleId {
+    final $$HandlesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.handleId,
+      referencedTable: $db.handles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$HandlesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.handles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$ContactHandlesTableTableManager
@@ -11821,16 +13396,9 @@ class $$ContactHandlesTableTableManager
           $$ContactHandlesTableAnnotationComposer,
           $$ContactHandlesTableCreateCompanionBuilder,
           $$ContactHandlesTableUpdateCompanionBuilder,
-          (
-            SqliteContactHandleRow,
-            BaseReferences<
-              _$AppDatabase,
-              $ContactHandlesTable,
-              SqliteContactHandleRow
-            >,
-          ),
+          (SqliteContactHandleRow, $$ContactHandlesTableReferences),
           SqliteContactHandleRow,
-          PrefetchHooks Function()
+          PrefetchHooks Function({bool contactId, bool handleId})
         > {
   $$ContactHandlesTableTableManager(
     _$AppDatabase db,
@@ -11860,9 +13428,69 @@ class $$ContactHandlesTableTableManager
                     handleId: handleId,
                   ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$ContactHandlesTableReferences(db, table, e),
+                ),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({contactId = false, handleId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (contactId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.contactId,
+                                referencedTable: $$ContactHandlesTableReferences
+                                    ._contactIdTable(db),
+                                referencedColumn:
+                                    $$ContactHandlesTableReferences
+                                        ._contactIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+                    if (handleId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.handleId,
+                                referencedTable: $$ContactHandlesTableReferences
+                                    ._handleIdTable(db),
+                                referencedColumn:
+                                    $$ContactHandlesTableReferences
+                                        ._handleIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
         ),
       );
 }
@@ -11877,16 +13505,9 @@ typedef $$ContactHandlesTableProcessedTableManager =
       $$ContactHandlesTableAnnotationComposer,
       $$ContactHandlesTableCreateCompanionBuilder,
       $$ContactHandlesTableUpdateCompanionBuilder,
-      (
-        SqliteContactHandleRow,
-        BaseReferences<
-          _$AppDatabase,
-          $ContactHandlesTable,
-          SqliteContactHandleRow
-        >,
-      ),
+      (SqliteContactHandleRow, $$ContactHandlesTableReferences),
       SqliteContactHandleRow,
-      PrefetchHooks Function()
+      PrefetchHooks Function({bool contactId, bool handleId})
     >;
 typedef $$CustomGroupsTableCreateCompanionBuilder =
     CustomGroupsCompanion Function({
@@ -11902,6 +13523,42 @@ typedef $$CustomGroupsTableUpdateCompanionBuilder =
       Value<int> sortOrder,
       Value<bool> showUnreadBadge,
     });
+
+final class $$CustomGroupsTableReferences
+    extends
+        BaseReferences<
+          _$AppDatabase,
+          $CustomGroupsTable,
+          SqliteCustomGroupRow
+        > {
+  $$CustomGroupsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<
+    $CustomGroupChatsTable,
+    List<SqliteCustomGroupChatRow>
+  >
+  _customGroupChatsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.customGroupChats,
+    aliasName: $_aliasNameGenerator(
+      db.customGroups.id,
+      db.customGroupChats.groupId,
+    ),
+  );
+
+  $$CustomGroupChatsTableProcessedTableManager get customGroupChatsRefs {
+    final manager = $$CustomGroupChatsTableTableManager(
+      $_db,
+      $_db.customGroupChats,
+    ).filter((f) => f.groupId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _customGroupChatsRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
 
 class $$CustomGroupsTableFilterComposer
     extends Composer<_$AppDatabase, $CustomGroupsTable> {
@@ -11931,6 +13588,31 @@ class $$CustomGroupsTableFilterComposer
     column: $table.showUnreadBadge,
     builder: (column) => ColumnFilters(column),
   );
+
+  Expression<bool> customGroupChatsRefs(
+    Expression<bool> Function($$CustomGroupChatsTableFilterComposer f) f,
+  ) {
+    final $$CustomGroupChatsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.customGroupChats,
+      getReferencedColumn: (t) => t.groupId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CustomGroupChatsTableFilterComposer(
+            $db: $db,
+            $table: $db.customGroupChats,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$CustomGroupsTableOrderingComposer
@@ -11985,6 +13667,31 @@ class $$CustomGroupsTableAnnotationComposer
     column: $table.showUnreadBadge,
     builder: (column) => column,
   );
+
+  Expression<T> customGroupChatsRefs<T extends Object>(
+    Expression<T> Function($$CustomGroupChatsTableAnnotationComposer a) f,
+  ) {
+    final $$CustomGroupChatsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.customGroupChats,
+      getReferencedColumn: (t) => t.groupId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CustomGroupChatsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.customGroupChats,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$CustomGroupsTableTableManager
@@ -11998,16 +13705,9 @@ class $$CustomGroupsTableTableManager
           $$CustomGroupsTableAnnotationComposer,
           $$CustomGroupsTableCreateCompanionBuilder,
           $$CustomGroupsTableUpdateCompanionBuilder,
-          (
-            SqliteCustomGroupRow,
-            BaseReferences<
-              _$AppDatabase,
-              $CustomGroupsTable,
-              SqliteCustomGroupRow
-            >,
-          ),
+          (SqliteCustomGroupRow, $$CustomGroupsTableReferences),
           SqliteCustomGroupRow,
-          PrefetchHooks Function()
+          PrefetchHooks Function({bool customGroupChatsRefs})
         > {
   $$CustomGroupsTableTableManager(_$AppDatabase db, $CustomGroupsTable table)
     : super(
@@ -12045,9 +13745,45 @@ class $$CustomGroupsTableTableManager
                 showUnreadBadge: showUnreadBadge,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$CustomGroupsTableReferences(db, table, e),
+                ),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({customGroupChatsRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (customGroupChatsRefs) db.customGroupChats,
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (customGroupChatsRefs)
+                    await $_getPrefetchedData<
+                      SqliteCustomGroupRow,
+                      $CustomGroupsTable,
+                      SqliteCustomGroupChatRow
+                    >(
+                      currentTable: table,
+                      referencedTable: $$CustomGroupsTableReferences
+                          ._customGroupChatsRefsTable(db),
+                      managerFromTypedResult: (p0) =>
+                          $$CustomGroupsTableReferences(
+                            db,
+                            table,
+                            p0,
+                          ).customGroupChatsRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.groupId == item.id),
+                      typedResults: items,
+                    ),
+                ];
+              },
+            );
+          },
         ),
       );
 }
@@ -12062,12 +13798,9 @@ typedef $$CustomGroupsTableProcessedTableManager =
       $$CustomGroupsTableAnnotationComposer,
       $$CustomGroupsTableCreateCompanionBuilder,
       $$CustomGroupsTableUpdateCompanionBuilder,
-      (
-        SqliteCustomGroupRow,
-        BaseReferences<_$AppDatabase, $CustomGroupsTable, SqliteCustomGroupRow>,
-      ),
+      (SqliteCustomGroupRow, $$CustomGroupsTableReferences),
       SqliteCustomGroupRow,
-      PrefetchHooks Function()
+      PrefetchHooks Function({bool customGroupChatsRefs})
     >;
 typedef $$CustomGroupChatsTableCreateCompanionBuilder =
     CustomGroupChatsCompanion Function({
@@ -12076,6 +13809,57 @@ typedef $$CustomGroupChatsTableCreateCompanionBuilder =
     });
 typedef $$CustomGroupChatsTableUpdateCompanionBuilder =
     CustomGroupChatsCompanion Function({Value<int> groupId, Value<int> chatId});
+
+final class $$CustomGroupChatsTableReferences
+    extends
+        BaseReferences<
+          _$AppDatabase,
+          $CustomGroupChatsTable,
+          SqliteCustomGroupChatRow
+        > {
+  $$CustomGroupChatsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $CustomGroupsTable _groupIdTable(_$AppDatabase db) =>
+      db.customGroups.createAlias(
+        $_aliasNameGenerator(db.customGroupChats.groupId, db.customGroups.id),
+      );
+
+  $$CustomGroupsTableProcessedTableManager get groupId {
+    final $_column = $_itemColumn<int>('group_id')!;
+
+    final manager = $$CustomGroupsTableTableManager(
+      $_db,
+      $_db.customGroups,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_groupIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $ChatsTable _chatIdTable(_$AppDatabase db) => db.chats.createAlias(
+    $_aliasNameGenerator(db.customGroupChats.chatId, db.chats.id),
+  );
+
+  $$ChatsTableProcessedTableManager get chatId {
+    final $_column = $_itemColumn<int>('chat_id')!;
+
+    final manager = $$ChatsTableTableManager(
+      $_db,
+      $_db.chats,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_chatIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
 
 class $$CustomGroupChatsTableFilterComposer
     extends Composer<_$AppDatabase, $CustomGroupChatsTable> {
@@ -12086,15 +13870,51 @@ class $$CustomGroupChatsTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<int> get groupId => $composableBuilder(
-    column: $table.groupId,
-    builder: (column) => ColumnFilters(column),
-  );
+  $$CustomGroupsTableFilterComposer get groupId {
+    final $$CustomGroupsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.groupId,
+      referencedTable: $db.customGroups,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CustomGroupsTableFilterComposer(
+            $db: $db,
+            $table: $db.customGroups,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
-  ColumnFilters<int> get chatId => $composableBuilder(
-    column: $table.chatId,
-    builder: (column) => ColumnFilters(column),
-  );
+  $$ChatsTableFilterComposer get chatId {
+    final $$ChatsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.chatId,
+      referencedTable: $db.chats,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ChatsTableFilterComposer(
+            $db: $db,
+            $table: $db.chats,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$CustomGroupChatsTableOrderingComposer
@@ -12106,15 +13926,51 @@ class $$CustomGroupChatsTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<int> get groupId => $composableBuilder(
-    column: $table.groupId,
-    builder: (column) => ColumnOrderings(column),
-  );
+  $$CustomGroupsTableOrderingComposer get groupId {
+    final $$CustomGroupsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.groupId,
+      referencedTable: $db.customGroups,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CustomGroupsTableOrderingComposer(
+            $db: $db,
+            $table: $db.customGroups,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
-  ColumnOrderings<int> get chatId => $composableBuilder(
-    column: $table.chatId,
-    builder: (column) => ColumnOrderings(column),
-  );
+  $$ChatsTableOrderingComposer get chatId {
+    final $$ChatsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.chatId,
+      referencedTable: $db.chats,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ChatsTableOrderingComposer(
+            $db: $db,
+            $table: $db.chats,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$CustomGroupChatsTableAnnotationComposer
@@ -12126,11 +13982,51 @@ class $$CustomGroupChatsTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<int> get groupId =>
-      $composableBuilder(column: $table.groupId, builder: (column) => column);
+  $$CustomGroupsTableAnnotationComposer get groupId {
+    final $$CustomGroupsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.groupId,
+      referencedTable: $db.customGroups,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CustomGroupsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.customGroups,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
-  GeneratedColumn<int> get chatId =>
-      $composableBuilder(column: $table.chatId, builder: (column) => column);
+  $$ChatsTableAnnotationComposer get chatId {
+    final $$ChatsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.chatId,
+      referencedTable: $db.chats,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ChatsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.chats,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$CustomGroupChatsTableTableManager
@@ -12144,16 +14040,9 @@ class $$CustomGroupChatsTableTableManager
           $$CustomGroupChatsTableAnnotationComposer,
           $$CustomGroupChatsTableCreateCompanionBuilder,
           $$CustomGroupChatsTableUpdateCompanionBuilder,
-          (
-            SqliteCustomGroupChatRow,
-            BaseReferences<
-              _$AppDatabase,
-              $CustomGroupChatsTable,
-              SqliteCustomGroupChatRow
-            >,
-          ),
+          (SqliteCustomGroupChatRow, $$CustomGroupChatsTableReferences),
           SqliteCustomGroupChatRow,
-          PrefetchHooks Function()
+          PrefetchHooks Function({bool groupId, bool chatId})
         > {
   $$CustomGroupChatsTableTableManager(
     _$AppDatabase db,
@@ -12180,9 +14069,71 @@ class $$CustomGroupChatsTableTableManager
                     chatId: chatId,
                   ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$CustomGroupChatsTableReferences(db, table, e),
+                ),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({groupId = false, chatId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (groupId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.groupId,
+                                referencedTable:
+                                    $$CustomGroupChatsTableReferences
+                                        ._groupIdTable(db),
+                                referencedColumn:
+                                    $$CustomGroupChatsTableReferences
+                                        ._groupIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+                    if (chatId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.chatId,
+                                referencedTable:
+                                    $$CustomGroupChatsTableReferences
+                                        ._chatIdTable(db),
+                                referencedColumn:
+                                    $$CustomGroupChatsTableReferences
+                                        ._chatIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
         ),
       );
 }
@@ -12197,16 +14148,9 @@ typedef $$CustomGroupChatsTableProcessedTableManager =
       $$CustomGroupChatsTableAnnotationComposer,
       $$CustomGroupChatsTableCreateCompanionBuilder,
       $$CustomGroupChatsTableUpdateCompanionBuilder,
-      (
-        SqliteCustomGroupChatRow,
-        BaseReferences<
-          _$AppDatabase,
-          $CustomGroupChatsTable,
-          SqliteCustomGroupChatRow
-        >,
-      ),
+      (SqliteCustomGroupChatRow, $$CustomGroupChatsTableReferences),
       SqliteCustomGroupChatRow,
-      PrefetchHooks Function()
+      PrefetchHooks Function({bool groupId, bool chatId})
     >;
 typedef $$StorageMetaTableCreateCompanionBuilder =
     StorageMetaCompanion Function({
@@ -12525,10 +14469,10 @@ class $AppDatabaseManager {
   $AppDatabaseManager(this._db);
   $$ChatsTableTableManager get chats =>
       $$ChatsTableTableManager(_db, _db.chats);
-  $$MessagesTableTableManager get messages =>
-      $$MessagesTableTableManager(_db, _db.messages);
   $$HandlesTableTableManager get handles =>
       $$HandlesTableTableManager(_db, _db.handles);
+  $$MessagesTableTableManager get messages =>
+      $$MessagesTableTableManager(_db, _db.messages);
   $$ChatHandlesTableTableManager get chatHandles =>
       $$ChatHandlesTableTableManager(_db, _db.chatHandles);
   $$AttachmentsTableTableManager get attachments =>

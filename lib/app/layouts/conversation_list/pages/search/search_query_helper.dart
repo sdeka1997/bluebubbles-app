@@ -60,6 +60,42 @@ class SearchQueryHelper {
     required bool isNotFromMe,
     required DateTime? sinceDate,
   }) async {
+    final results = findLocal(
+      term: term,
+      selectedChat: selectedChat,
+      selectedHandle: selectedHandle,
+      isFromMe: isFromMe,
+      isNotFromMe: isNotFromMe,
+      sinceDate: sinceDate,
+    );
+
+    final messages = results.map((e) {
+      e.realAttachments;
+      e.fetchAssociatedMessages();
+      return e;
+    }).toList();
+    final chats = results.map((e) => e.chat.target).toList();
+
+    final items = <SearchResultItem>[];
+    chats.forEachIndexed((index, chat) {
+      if (chat == null) return;
+      items.add(SearchResultItem(chat: chat, message: messages[index]));
+    });
+    return items;
+  }
+
+  /// The messages [runLocal] shows, newest first: text containing [term]
+  /// (ASCII case folded), no reactions, not deleted, with a date. The SQLite
+  /// store answers the same question with `MessageRepo.search`.
+  static List<Message> findLocal({
+    required String term,
+    required Chat? selectedChat,
+    required Handle? selectedHandle,
+    required bool isFromMe,
+    required bool isNotFromMe,
+    required DateTime? sinceDate,
+    int limit = 50,
+  }) {
     obx.Condition<Message> condition = Message_.text
         .contains(term, caseSensitive: false)
         .and(Message_.associatedMessageGuid.isNull())
@@ -84,23 +120,10 @@ class SearchQueryHelper {
     }
 
     final query = qBuilder.order(Message_.dateCreated, flags: Order.descending).build();
-    query.limit = 50;
+    query.limit = limit;
     final results = query.find();
     query.close();
-
-    final messages = results.map((e) {
-      e.realAttachments;
-      e.fetchAssociatedMessages();
-      return e;
-    }).toList();
-    final chats = results.map((e) => e.chat.target).toList();
-
-    final items = <SearchResultItem>[];
-    chats.forEachIndexed((index, chat) {
-      if (chat == null) return;
-      items.add(SearchResultItem(chat: chat, message: messages[index]));
-    });
-    return items;
+    return results;
   }
 
   static Future<List<SearchResultItem>> runNetwork({

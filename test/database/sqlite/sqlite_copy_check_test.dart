@@ -7,6 +7,8 @@ import 'package:bluebubbles/database/sqlite/objectbox_sqlite_copy.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_copy_check.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'schema_v2_test.dart' show writeS1File;
+
 void main() {
   late Directory directory;
   late Store store;
@@ -130,6 +132,25 @@ void main() {
     final again = <String>[];
     expect(await runSqliteCopyCheck(store: store, file: file, log: again.add, checkVersion: 2), isTrue);
     expect(again.single, startsWith('BBSQL skip: copy verified'));
+  });
+
+  test('the S1 file on the phone (schema v1, check v3, verified) is migrated to v2 and checked again from scratch', () async {
+    expect(copyCheckVersion, 4, reason: 'schema v2 (foreign keys, messages_fts) changed the stored form');
+    final file = writeS1File(directory);
+    final lines = <String>[];
+    expect(await runSqliteCopyCheck(store: store, file: file, log: lines.add), isTrue);
+    expect(lines.singleWhere((l) => l.startsWith('BBSQL start')), contains('mode=recheck'));
+    expect(lines.singleWhere((l) => l.startsWith('BBSQL copied')), contains('messages=25'));
+
+    final database = AppDatabase.file(file);
+    addTearDown(database.close);
+    expect(database.schemaVersion, 2);
+    final meta = await readStorageMeta(database);
+    expect(meta['check_version'], '4');
+    expect(meta['fts_state'], 'ready');
+    // Only what is in ObjectBox now: the S1 rows are gone.
+    expect((await database.customSelect('SELECT count(*) AS c FROM messages').getSingle()).read<int>('c'), 25);
+    expect((await database.customSelect("SELECT count(*) AS c FROM messages_fts WHERE text LIKE '%SECRET TEXT 1%'").getSingle()).read<int>('c'), 11);
   });
 
   test('an error is logged as one line without statement parameters and reported as not ok', () async {

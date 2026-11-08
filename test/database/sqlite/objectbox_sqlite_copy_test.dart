@@ -112,6 +112,24 @@ Future<Map<String, List<Map<String, Object?>>>> dumpTables(AppDatabase database)
 Future<int> count(AppDatabase database, String table) async =>
     (await database.customSelect('SELECT count(*) AS c FROM $table').getSingle()).read<int>('c');
 
+Future<List<int>> ftsIds(AppDatabase database, String term) async => [
+      for (final r in await database
+          .customSelect("SELECT rowid FROM messages_fts WHERE text LIKE '%$term%' ORDER BY rowid")
+          .get())
+        r.read<int>('rowid'),
+    ];
+
+Future<List<String>> ftsTriggerNames(AppDatabase database) async => [
+      for (final r in await database
+          .customSelect("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'messages_fts_%' ORDER BY name")
+          .get())
+        r.read<String>('name'),
+    ];
+
+/// FTS5's own check that messages_fts holds exactly the indexed text of messages.
+Future<void> expectFtsConsistent(AppDatabase database) =>
+    database.customStatement("INSERT INTO messages_fts (messages_fts, rank) VALUES ('integrity-check', 1)");
+
 void main() {
   // The resume test holds a clean copy and a resumed one open side by side.
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -162,6 +180,50 @@ void main() {
     final meta = await readStorageMeta(database);
     expect(meta['copy_state'], 'verified');
     expect(meta['verify_result'], contains('"ok":true'));
+  });
+
+  test('fills messages_fts once after the bulk insert and keeps it maintained afterwards', () async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final lines = <String>[];
+    final copy = ObjectBoxSqliteCopy(source: fixture.store, target: database, batchSize: 7, log: lines.add);
+    await copy.run();
+    expect((await copy.verify()).ok, isTrue);
+
+    expect((await readStorageMeta(database))['fts_state'], 'ready');
+    expect(await ftsTriggerNames(database), ['messages_fts_ad', 'messages_fts_ai', 'messages_fts_au']);
+    await expectFtsConsistent(database);
+    final m7 = fixture.store.box<Message>().query(Message_.guid.equals('m7')).build().findFirst()!;
+    expect(await ftsIds(database, 'text 7'), [m7.id]);
+    expect(await ftsIds(database, 'from 2017'), hasLength(1));
+    expect(lines.where((l) => l.startsWith('BBSQL fts rebuilt')), hasLength(1));
+
+    // A top-up run goes through the triggers.
+    final newer = Message(guid: 'new-fts', text: 'freshly searchable', dateCreated: _ms(1800000000000));
+    newer.chat.target = fixture.alice;
+    fixture.store.box<Message>().put(newer);
+    await ObjectBoxSqliteCopy(source: fixture.store, target: database, batchSize: 7).run();
+    expect(await ftsIds(database, 'freshly'), [newer.id]);
+    await expectFtsConsistent(database);
+  });
+
+  test('a copy killed mid-way has no index triggers yet; the resumed copy builds the index', () async {
+    final file = File('${directory.path}/bluebubbles.db');
+    var database = AppDatabase.file(file);
+    await ObjectBoxSqliteCopy(source: fixture.store, target: database, batchSize: 4, stopAfterBatches: 3).run();
+    expect((await readStorageMeta(database))['fts_state'], 'building');
+    expect(await ftsTriggerNames(database), isEmpty, reason: 'the bulk insert does no per-row index work');
+    await database.close();
+
+    database = AppDatabase.file(file);
+    addTearDown(database.close);
+    final resumed = ObjectBoxSqliteCopy(source: fixture.store, target: database, batchSize: 4);
+    expect((await resumed.run()).completed, isTrue);
+    expect((await resumed.verify()).ok, isTrue);
+    expect((await readStorageMeta(database))['fts_state'], 'ready');
+    expect(await ftsTriggerNames(database), hasLength(3));
+    await expectFtsConsistent(database);
+    expect(await ftsIds(database, 'text 59'), hasLength(1));
   });
 
   test('never writes to the ObjectBox store', () async {
