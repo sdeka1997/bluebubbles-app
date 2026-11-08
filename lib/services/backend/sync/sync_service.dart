@@ -5,7 +5,6 @@ import 'package:bluebubbles/utils/memory_trace.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
-import 'package:bluebubbles/database/sqlite/sqlite_copy_check.dart';
 import 'package:bluebubbles/helpers/ui/async_task.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_metadata_helpers.dart';
 import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
@@ -348,11 +347,6 @@ class SyncService {
     incrementalSyncTotal.value = 0;
     isIncrementalSyncing.value = false;
     MemTrace.mark('sync finished');
-
-    // Stage S1 copy check: once per launch, after a sync that brought the
-    // database up to date, copy it into SQLite in the background and verify it.
-    // The app keeps using ObjectBox; nothing reads the copy yet.
-    if (!chatSyncFailed) unawaited(SqliteCopyCheck.instance.start());
   }
 
   Future<bool> performContactSyncToHandles() async {

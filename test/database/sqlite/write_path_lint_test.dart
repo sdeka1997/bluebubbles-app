@@ -8,13 +8,15 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// `lib/database/sqlite/` files allowed to talk to drift directly: Db itself,
-/// the schema, and the S1 copy (one isolate, ObjectBox to an unshared file).
+/// the schema, and the copy with its startup state machine (one isolate,
+/// ObjectBox to a file no one else opens until it is ready, under a lock).
 const _allowed = {
   'db.dart',
   'app_database.dart',
   'app_database.g.dart',
   'objectbox_sqlite_copy.dart',
   'sqlite_copy_check.dart',
+  'storage_state.dart',
   'sqlite_chat_repository.dart',
 };
 

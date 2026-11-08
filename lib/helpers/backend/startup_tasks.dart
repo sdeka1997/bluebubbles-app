@@ -5,6 +5,7 @@ import 'package:bluebubbles/utils/memory_trace.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/sqlite/storage_state.dart';
 import 'package:bluebubbles/services/isolates/global_isolate.dart';
 import 'package:bluebubbles/services/isolates/incremental_sync_isolate.dart';
 import 'package:bluebubbles/services/backend/interfaces/prefs_interface.dart';
@@ -328,6 +329,7 @@ class StartupTasks {
       binaryMessenger: messenger,
     );
 
+    await StorageStartup.waitUntilUsable();
     Logger.info("Initializing database...");
     await Database.init();
     Logger.info("Database initialized");
@@ -359,6 +361,7 @@ class StartupTasks {
       binaryMessenger: messenger,
     );
 
+    await StorageStartup.waitUntilUsable();
     Logger.info("Initializing database...");
     await Database.init();
     Logger.info("Database initialized");
@@ -388,6 +391,7 @@ class StartupTasks {
       isBubble: false,
     );
 
+    StorageStartup.checkWorker();
     Logger.info("Initializing database...");
     await Database.init();
     Logger.info("Database initialized");

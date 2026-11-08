@@ -134,7 +134,7 @@ void main() {
     expect(again.single, startsWith('BBSQL skip: copy verified'));
   });
 
-  test('the S1 file on the phone (schema v1, check v3, verified) is migrated to v2 and checked again from scratch', () async {
+  test('a schema-v1 file of check v3 opened by the check is migrated to v2 and checked again from scratch', () async {
     expect(copyCheckVersion, 4, reason: 'schema v2 (foreign keys, messages_fts) changed the stored form');
     final file = writeS1File(directory);
     final lines = <String>[];
@@ -191,14 +191,5 @@ void main() {
     final runner = SqliteCopyCheckRunner(enabled: () => true, body: () async => throw StateError('boom'));
     await expectLater(runner.start(), completes);
     expect(runner.isRunning, isFalse);
-  });
-
-  test('the copy check starts in the background once the startup sync has finished', () {
-    final source = File('lib/services/backend/sync/sync_service.dart').readAsStringSync();
-    final finished = source.indexOf('isIncrementalSyncing.value = false;');
-    final start = source.indexOf('unawaited(SqliteCopyCheck.instance.start());');
-    expect(finished, greaterThan(0));
-    expect(start, greaterThan(finished), reason: 'starts after the sync is marked finished, without awaiting it');
-    expect(source.substring(finished, start), contains('!chatSyncFailed'));
   });
 }

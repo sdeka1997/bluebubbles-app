@@ -9,6 +9,7 @@ import 'package:bluebubbles/services/backend/actions/image_actions.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/migrations/chat_latest_message_migration.dart';
 import 'package:bluebubbles/database/migrations/message_handle_relationship_migration.dart';
+import 'package:bluebubbles/database/sqlite/storage_state.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:collection/collection.dart';
@@ -104,6 +105,10 @@ class Database {
     }
 
     await seedThemes();
+
+    // The SQLite copy (storage_state.dart): main isolate only, in the
+    // background while the app runs on ObjectBox.
+    if (!isIsolate) await StorageStartup.start();
 
     initComplete.complete();
   }

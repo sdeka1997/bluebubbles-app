@@ -2,36 +2,15 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/app_database.dart';
 import 'package:bluebubbles/database/sqlite/objectbox_sqlite_copy.dart';
-import 'package:bluebubbles/env.dart';
-import 'package:bluebubbles/services/services.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart';
 
-/// Stage S1 "copy check": copies the messaging set from ObjectBox into
-/// `bluebubbles.db` next to `objectbox/`, verifies it and logs `BBSQL` lines.
-/// The app still reads and writes ObjectBox only; nothing reads this file yet.
-class SqliteCopyCheck {
-  static const fileName = 'bluebubbles.db';
-
-  static final SqliteCopyCheckRunner instance = SqliteCopyCheckRunner(
-    enabled: () =>
-        !kIsWeb && Platform.isAndroid && !isIsolate && SettingsSvc.settings.finishedSetup.value,
-    body: _runInIsolate,
-  );
-
-  /// Runs the copy on its own isolate so the UI isolate only waits on a port.
-  static Future<void> _runInIsolate() async {
-    await runSqliteCopyCheckInIsolate(
-      objectBoxPath: join(Database.appDocPath, 'objectbox'),
-      sqlitePath: join(Database.appDocPath, fileName),
-    );
-  }
-}
+// Stage S1 "copy check": copies the messaging set from ObjectBox into an
+// SQLite file, verifies it and logs `BBSQL` lines. The startup state machine
+// (storage_state.dart) runs it on `bluebubbles.db.partial`.
 
 /// [runSqliteCopyCheck] on a new isolate attached to the ObjectBox store already
 /// open at [objectBoxPath] (as the app's worker isolates attach). Closing the
@@ -108,6 +87,8 @@ Future<bool> runSqliteCopyCheck({
   required void Function(String line) log,
   int batchSize = 1000,
   int checkVersion = copyCheckVersion,
+  int? stopAfterBatches,
+  void Function(double fraction)? onProgress,
 }) async {
   final clock = Stopwatch()..start();
   AppDatabase? database;
@@ -136,7 +117,13 @@ Future<bool> runSqliteCopyCheck({
     final mode = version != checkVersion ? 'recheck' : (state == null ? 'new' : 'resume:$state');
     log('BBSQL start mode=$mode messages=${store.box<Message>().count()} rssMb=${_mb(ProcessInfo.currentRss)}');
 
-    final copy = ObjectBoxSqliteCopy(source: store, target: database, batchSize: batchSize, log: log);
+    final copy = ObjectBoxSqliteCopy(
+        source: store,
+        target: database,
+        batchSize: batchSize,
+        log: log,
+        stopAfterBatches: stopAfterBatches,
+        onProgress: onProgress);
     final report = await copy.run();
     if (!report.completed) {
       log('BBSQL stopped mode=${report.mode.name} ms=${report.elapsed.inMilliseconds}');

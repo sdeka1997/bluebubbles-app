@@ -25,6 +25,22 @@ void main() {
   const deleted = MethodChannelInboundMethods.messageDeleted;
   const restored = MethodChannelInboundMethods.messageRestored;
 
+  test('while storage is not usable every push asks for a retry instead of being handled', () async {
+    final handlers = MethodChannelHandlers(_FakeDelegate(headless: true));
+    addTearDown(() => MethodChannelHandlers.storageUsable = MethodChannelHandlers.alwaysUsable);
+    expect(await MethodChannelHandlers.storageUsable(), isTrue, reason: 'by default nothing is gated');
+
+    var asked = 0;
+    MethodChannelHandlers.storageUsable = () async {
+      asked++;
+      return false;
+    };
+    // An unknown method would otherwise report success and be dropped.
+    expect(await handlers.handle(const MethodCall('not-a-method'), const {}), isFalse);
+    expect(await handlers.handle(const MethodCall(MethodChannelInboundMethods.messageDeleted), const {'guid': 'g'}), isFalse);
+    expect(asked, 2);
+  });
+
   test('chat-deleted requests retry when the payload is absent', () async {
     final handlers = MethodChannelHandlers(_FakeDelegate(headless: true));
 
