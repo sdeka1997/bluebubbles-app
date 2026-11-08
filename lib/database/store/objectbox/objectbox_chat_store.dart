@@ -1,9 +1,9 @@
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
+import 'package:bluebubbles/database/store/objectbox/objectbox_thread_store_helpers.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
-import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
@@ -369,7 +369,7 @@ mixin ObjectBoxChatStore implements ChatStore {
           }
         }
       }
-      foldServiceTwins(chatsToSave);
+      foldServiceTwinsObjectBox(chatsToSave);
       return (chatIds: chatsToSave.map((e) => e.id!).toList(), brandNewHandleIds: brandNewHandleIds);
     });
   }

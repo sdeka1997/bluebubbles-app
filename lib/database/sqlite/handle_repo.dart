@@ -122,4 +122,9 @@ class HandleRepo {
     }
     return result;
   }
+  Future<void> clear(WriteTx tx) => tx.execute('DELETE FROM handles');
+
+  /// The handle for [address] on [service], as `Handle.findOne(addressAndService:)` finds it.
+
+
 }

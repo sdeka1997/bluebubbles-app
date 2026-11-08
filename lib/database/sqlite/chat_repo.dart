@@ -283,4 +283,20 @@ class ChatRepo {
     }
     return folded;
   }
+  Future<List<Chat>> all() async {
+    final ids = [for (final row in await db.select('SELECT id FROM chats ORDER BY id')) row['id'] as int];
+    final chats = await byIds(ids);
+    return [for (final id in ids) if (chats[id] != null) chats[id]!];
+  }
+
+  Future<void> setHandleIds(WriteTx tx, Map<int, List<int>> handleIdsByChat) async {
+    for (final entry in handleIdsByChat.entries) {
+      await tx.execute('DELETE FROM chat_handles WHERE chat_id = ?', [entry.key]);
+      for (final handleId in entry.value.toSet()) {
+        await tx.execute('INSERT INTO chat_handles (chat_id, handle_id) VALUES (?, ?)', [entry.key, handleId]);
+      }
+      tx.markChanged('chat_handles', [entry.key]);
+    }
+  }
+
 }

@@ -64,22 +64,3 @@ bool keepNewestOf(Chat thread, Iterable<Message> added) {
   thread.dbOnlyLatestMessageDate = newest.dateCreated;
   return true;
 }
-
-/// [refreshThreadLatest] against the local database for the chat [chat].
-bool refreshThreadLatestFromDb(Chat chat) {
-  final newest = newestMessageIn(chat.id!) ?? newestMessageIn(chat.id!, listing: false);
-  return refreshThreadLatest(chat, [?newest]);
-}
-
-/// Chats still listed by a status item are pointed at their newest ordinary
-/// item. Must run inside a write transaction. Returns the chats that changed.
-List<Chat> relistChatsShownByEvents(Iterable<Chat> chats) {
-  final changed = <Chat>[];
-  for (final chat in chats) {
-    final latest = chat.dbLatestMessage.target;
-    if (chat.id == null || latest == null || listsThread(latest)) continue;
-    if (refreshThreadLatestFromDb(chat)) changed.add(chat);
-  }
-  if (changed.isNotEmpty) Database.chats.putMany(changed);
-  return changed;
-}

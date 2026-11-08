@@ -1,4 +1,3 @@
-import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_keys.dart';
@@ -145,50 +144,6 @@ bool carryOverThreadSettings(Chat thread, Iterable<Chat> twins) {
     }
   }
   return changed;
-}
-
-/// Regroups every local chat, then moves the messages of each folded chat in
-/// [chats], or whose thread changed, to its thread. Must run inside a write
-/// transaction. Returns each folded chat's guid mapped to its thread.
-Map<String, Chat> foldServiceTwins(Iterable<Chat> chats) {
-  final regrouped = assignThreadKeys(Database.chats.getAll());
-  if (regrouped.isNotEmpty) Database.chats.putMany(regrouped);
-  final folded = <String, Chat>{};
-  final threads = <int, Chat>{};
-  // A thread's first chat can change when a chat joins it, so every chat in a
-  // touched thread is checked, not only the ones whose key changed.
-  final touched = {for (final c in [...chats, ...regrouped]) c.guid: c};
-  final keys = {for (final c in touched.values) c.threadKey}..remove(null);
-  for (final key in keys) {
-    for (final c in _chatsInThread(key)) {
-      touched.putIfAbsent(c.guid, () => c);
-    }
-  }
-  final candidates = touched.values;
-  for (final twin in candidates) {
-    final stored = twin.id == null ? Chat.findOne(guid: twin.guid) : twin;
-    if (stored == null) continue;
-    stored.threadKey ??= twin.threadKey;
-    final found = findCanonicalTwin(stored);
-    if (found == null) continue;
-    // One instance per thread, so the preview refresh below reaches the caller.
-    final canonical = threads.putIfAbsent(found.id!, () => found);
-    folded[twin.guid] = canonical;
-    if (carryOverThreadSettings(canonical, [stored])) Database.chats.put(canonical);
-
-    final query = (Database.messages.query()..link(Message_.chat, Chat_.id.equals(stored.id!))).build();
-    final messages = query.find();
-    query.close();
-    if (messages.isEmpty) continue;
-    for (final m in messages) {
-      // Keep where it really came from, so replies can go back through it.
-      m.appleChatGuid ??= stored.guid;
-      m.chat.target = canonical;
-    }
-    Database.messages.putMany(messages);
-    if (keepNewestOf(canonical, messages)) Database.chats.put(canonical);
-  }
-  return folded;
 }
 
 /// The name a thread shows, from its [copies] ([thread] included). Messages

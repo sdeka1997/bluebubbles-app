@@ -7,6 +7,7 @@ import 'package:bluebubbles/database/store/objectbox/objectbox_handle_store.dart
 import 'package:bluebubbles/database/store/objectbox/objectbox_message_store.dart';
 import 'package:bluebubbles/database/store/objectbox/objectbox_send_target_store.dart';
 import 'package:bluebubbles/database/store/objectbox/objectbox_storage_store.dart';
+import 'package:bluebubbles/database/store/objectbox/objectbox_sync_helper_store.dart';
 import 'package:bluebubbles/database/store/objectbox/objectbox_sync_store.dart';
 
 /// [MessagingStore] on ObjectBox: the Actions' own code, moved here unchanged
@@ -20,6 +21,7 @@ class ObjectBoxMessagingStore extends MessagingStore
         ObjectBoxCustomGroupStore,
         ObjectBoxMessageStore,
         ObjectBoxAttachmentStore,
+        ObjectBoxSyncHelperStore,
         ObjectBoxSyncStore,
         ObjectBoxChatStore {
   @override

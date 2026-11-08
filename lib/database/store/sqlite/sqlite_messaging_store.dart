@@ -8,6 +8,7 @@ import 'package:bluebubbles/database/store/sqlite/sqlite_handle_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_message_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_send_target_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_storage_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_sync_helper_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_sync_store.dart';
 import 'package:drift/native.dart' show SqliteException;
 
@@ -23,6 +24,7 @@ class SqliteMessagingStore extends MessagingStore
         SqliteCustomGroupStore,
         SqliteMessageStore,
         SqliteAttachmentStore,
+        SqliteSyncHelperStore,
         SqliteSyncStore,
         SqliteChatStore {
   SqliteMessagingStore(this.db);

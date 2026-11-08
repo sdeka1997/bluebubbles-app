@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 
 import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/database/models.dart';
@@ -183,7 +184,7 @@ class AppleStateCatchUp {
     MemTrace.mark('catch-up: read state applied');
 
     for (final guid in snapshot.deletedMessages) {
-      final message = Message.findOne(guid: guid);
+      final message = await MessagingStore.current.messageByGuid(guid);
       if (message == null || message.dateDeleted != null) continue;
       await RecoverableMessages.apply(guid, hide: true);
       changed++;
@@ -203,7 +204,7 @@ class RecoverableMessages {
   /// not a live query.
   static Future<void> apply(String guid, {required bool hide}) async {
     if (kIsWeb) return;
-    final message = Message.findOne(guid: guid);
+    final message = await MessagingStore.current.messageByGuid(guid);
     final chatGuid = message?.chat.target?.guid;
 
     final service = chatGuid == null ? null : maybeFindMessagesSvc(chatGuid);

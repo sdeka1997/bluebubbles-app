@@ -110,6 +110,14 @@ mixin ObjectBoxHandleStore implements HandleStore {
   }
 
   @override
+  Future<List<Handle>> allHandles() async => Database.handles.getAll();
+
+  @override
+  Future<void> clearHandles() async {
+    Database.handles.removeAll();
+  }
+
+  @override
   Future<Handle?> handleById(int id) async => Database.handles.get(id);
 
   @override

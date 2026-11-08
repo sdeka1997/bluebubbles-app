@@ -1159,11 +1159,13 @@ class OutgoingMessageHandler {
     String existingGuid,
     Attachment replacement,
   ) async {
-    final alreadyPresent = await Attachment.findOneAsync(replacement.guid!);
+    final replacementId = await MessagingStore.current.findAttachmentId(replacement.guid!);
+    final alreadyPresent = replacementId == null ? null : await MessagingStore.current.attachmentById(replacementId);
     if (alreadyPresent != null) {
       await Attachment.replaceAttachmentAsync(replacement.guid, replacement);
       if (existingGuid != replacement.guid) {
-        final stale = await Attachment.findOneAsync(existingGuid);
+        final staleId = await MessagingStore.current.findAttachmentId(existingGuid);
+        final stale = staleId == null ? null : await MessagingStore.current.attachmentById(staleId);
         if (stale != null) {
           await Attachment.deleteAsync(stale.guid!);
         }

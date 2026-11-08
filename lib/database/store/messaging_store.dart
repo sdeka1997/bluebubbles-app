@@ -78,6 +78,11 @@ abstract interface class HandleStore {
 
   Future<List<int>> allHandleIds();
 
+  Future<List<Handle>> allHandles();
+
+  /// Removes every handle. Used only by the handle-resync rollback flow.
+  Future<void> clearHandles();
+
   Future<Handle?> handleById(int id);
 
   /// The stored handles of [ids], in that order; missing ones are skipped.
@@ -184,6 +189,29 @@ abstract interface class AttachmentStore {
   Future<List<Attachment>> attachmentsByIds(List<int> ids);
 }
 
+/// The legacy sync_helpers.dart merge helpers.
+abstract interface class SyncHelperStore {
+  /// Inserts missing attachments and merges stored attachments, with incoming
+  /// server fields taking precedence. The SQLite path is one Db.write.
+  Future<List<Attachment>> syncAttachments(List<Attachment> attachments);
+
+  /// Inserts missing messages, merges stored messages, and links every result
+  /// to [chat]. The SQLite path is one Db.write.
+  Future<List<Message>> syncMessages(Chat chat, List<Message> messages);
+}
+
+class ChatMetadataRefreshResult {
+  const ChatMetadataRefreshResult({
+    required this.changedChats,
+    required this.foldedChats,
+    required this.relistedChats,
+  });
+
+  final List<Chat> changedChats;
+  final Map<String, Chat> foldedChats;
+  final List<Chat> relistedChats;
+}
+
 /// The sync batch (SyncActions.bulkSyncData) and the chat reads of its callers.
 abstract interface class SyncStore {
   /// Saves a server batch (`chatData`, `messagesData`) as one write: handles,
@@ -200,6 +228,18 @@ abstract interface class SyncStore {
 
   /// The stored chats of [ids], in that order; missing ones are skipped.
   Future<List<Chat>> chatsByIds(List<int> ids);
+
+  Future<List<Chat>> allChats();
+
+  /// Replaces every listed chat's participant links in one write.
+  Future<void> setChatHandleIds(Map<int, List<int>> handleIdsByChat);
+
+  /// Newest stored group-name change for [chatGuid] or its canonical service copy.
+  Future<DateTime?> newestStoredNameChange(String chatGuid);
+
+  /// Applies remote grouping/spam metadata, folds service copies, and repairs
+  /// latest pointers in the same write boundary as the legacy refresh.
+  Future<ChatMetadataRefreshResult> refreshChatMetadata(List<Map<String, dynamic>> remoteChats);
 }
 
 /// Chat action reads and writes (ChatActions, ChatInterface).
@@ -271,6 +311,7 @@ abstract class MessagingStore
         CustomGroupStore,
         MessageStore,
         AttachmentStore,
+        SyncHelperStore,
         SyncStore,
         ChatStore {
   /// Which store this is; picks the sync markers (SyncMarker.of).
