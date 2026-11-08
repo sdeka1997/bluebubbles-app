@@ -1,5 +1,5 @@
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/services/backend/actions/sync_actions.dart';
 import 'package:bluebubbles/services/isolates/incremental_sync_isolate.dart';
@@ -27,10 +27,8 @@ class SyncInterface {
 
     final messageIds = (result['messageIds'] as List).cast<int>();
     final chatIds = (result['chatIds'] as List).cast<int>();
-    return (
-      messages: Database.messages.getMany(messageIds).whereType<Message>().toList(),
-      chats: Database.chats.getMany(chatIds).whereType<Chat>().toList(),
-    );
+    final store = MessagingStore.current;
+    return (messages: await store.messagesByIds(messageIds), chats: await store.chatsByIds(chatIds));
   }
 
   /// Performs an incremental sync in the isolate.
@@ -50,6 +48,6 @@ class SyncInterface {
       }
     }
 
-    return Database.messages.getMany(messageIds).whereType<Message>().toList();
+    return MessagingStore.current.messagesByIds(messageIds);
   }
 }

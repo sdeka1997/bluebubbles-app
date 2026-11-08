@@ -45,6 +45,9 @@ abstract class StoreFixture {
   Future<ContactV2> contact(String nativeId, String name, {List<Handle> handles = const []});
 
   Future<void> setLatest(Chat chat, Message? message);
+
+  /// Empties the store (it stays `MessagingStore.current`).
+  Future<void> reset();
 }
 
 DateTime ms(int value) => DateTime.fromMillisecondsSinceEpoch(value);
@@ -130,19 +133,28 @@ class ObjectBoxFixture extends StoreFixture {
     chat.dbOnlyLatestMessageDate = message?.dateCreated;
     obx.box<Chat>().put(chat);
   }
+
+  @override
+  Future<void> reset() async => _emptyObjectBox(obx);
 }
 
 class SqliteFixture extends StoreFixture {
-  SqliteFixture() : db = Db.memory();
-
   @override
-  final Db db;
+  Db db = Db.memory();
 
   @override
   ActiveStore get kind => ActiveStore.sqlite;
 
   @override
-  late final MessagingStore store = MessagingStore.forStore(ActiveStore.sqlite, db: db);
+  late MessagingStore store = MessagingStore.forStore(ActiveStore.sqlite, db: db);
+
+  @override
+  Future<void> reset() async {
+    await db.close();
+    db = Db.memory();
+    store = MessagingStore.forStore(ActiveStore.sqlite, db: db);
+    MessagingStore.use(store);
+  }
 
   Future<int> _insert(String table, Map<String, Object?> row) => db.write((tx) => tx.insert(table, row..['id'] = null));
 

@@ -133,7 +133,25 @@ abstract interface class AttachmentStore {
   Future<List<Attachment>> attachmentsByIds(List<int> ids);
 }
 
-abstract class MessagingStore implements HandleStore, CustomGroupStore, MessageStore, AttachmentStore {
+/// The sync batch (SyncActions.bulkSyncData) and the chat reads of its callers.
+abstract interface class SyncStore {
+  /// Saves a server batch (`chatData`, `messagesData`) as one write: handles,
+  /// chats with participants (service twins folded), messages wired to chat
+  /// and sender, reactions and attachment flags, attachments, latest
+  /// pointers. Returns `messageIds` (every saved message) and `chatIds`
+  /// (chats whose latest pointer moved). On ObjectBox the batch's handles are
+  /// saved in a transaction of their own just before it.
+  Future<Map<String, dynamic>> syncBatch(dynamic data);
+
+  Future<Chat?> chatById(int id);
+
+  Future<Chat?> chatByGuid(String guid);
+
+  /// The stored chats of [ids], in that order; missing ones are skipped.
+  Future<List<Chat>> chatsByIds(List<int> ids);
+}
+
+abstract class MessagingStore implements HandleStore, CustomGroupStore, MessageStore, AttachmentStore, SyncStore {
   /// Which store this is; picks the sync markers (SyncMarker.of).
   ActiveStore get kind;
 

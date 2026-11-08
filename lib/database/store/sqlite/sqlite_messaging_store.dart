@@ -4,13 +4,14 @@ import 'package:bluebubbles/database/store/sqlite/sqlite_attachment_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_custom_group_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_handle_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_message_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_sync_store.dart';
 import 'package:drift/native.dart' show SqliteException;
 
 /// [MessagingStore] on SQLite: the repositories of lib/database/sqlite. Each
 /// write is one [Db.write] holding exactly what one ObjectBox write
 /// transaction held, with nothing but database calls inside it.
 class SqliteMessagingStore extends MessagingStore
-    with SqliteHandleStore, SqliteCustomGroupStore, SqliteMessageStore, SqliteAttachmentStore {
+    with SqliteHandleStore, SqliteCustomGroupStore, SqliteMessageStore, SqliteAttachmentStore, SqliteSyncStore {
   SqliteMessagingStore(this.db);
 
   @override
