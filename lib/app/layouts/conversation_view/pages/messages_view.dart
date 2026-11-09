@@ -18,7 +18,7 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show RenderAbstractViewport, ScrollCacheExtent;
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:get/get.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
@@ -48,27 +48,8 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
   bool noMoreMessages = false;
   List<Message> _messages = <Message>[];
 
-  // GlobalKey for SliverAnimatedList (the anchor and older rows)
+  // GlobalKey for SliverAnimatedList
   GlobalKey<SliverAnimatedListState> _listKey = GlobalKey<SliverAnimatedListState>();
-
-  // Rows newer than the anchor, while anchored.
-  GlobalKey<SliverAnimatedListState> _newerKey = GlobalKey<SliverAnimatedListState>();
-
-  /// The chat window (S3, SQLITE-PLAN-2.md section 5) drops rows at the far
-  /// end of what it holds, which in one reversed list moves the screen when
-  /// the dropped rows are the newest. While anchored, the scroll view's center
-  /// is the older list, whose first row `_messages[_split]` is the anchor, and
-  /// `_messages[0, _split)` sit in a second list below it: either far end can
-  /// then change without moving anything between. Unanchored is the one-list
-  /// layout, used until the window first drops its newest rows and again once
-  /// the newest rows are back at the bottom of the screen.
-  bool _anchored = false;
-  int _split = 0;
-  bool _fetchingNewer = false;
-
-  /// Set while the window is replaced wholesale (jump, reset): the drops it
-  /// reports are then not applied row by row.
-  bool _rebuilding = false;
 
   // Notifier for list structure changes only (add/remove)
   final ValueNotifier<int> _listVersion = ValueNotifier<int>(0);
@@ -116,8 +97,6 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
       setState(() {});
     });
 
-    scrollController.addListener(_onScroll);
-
     _eventSubscription = EventDispatcherSvc.stream.listen((e) async {
       if (!mounted) return;
       if ((e.type == "refresh-messagebloc" && e.data == chat.guid) || e.type == "storage-attachments-purged") {
@@ -125,9 +104,6 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
         noMoreMessages = false;
         _messages = [];
         _messageKeys.clear();
-        _anchored = false;
-        _split = 0;
-        _newerKey = GlobalKey<SliverAnimatedListState>();
         // Reload the state after refreshing
         await reloadMessagesService(
           chat,
@@ -202,10 +178,6 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
           onJumpToMessage: jumpToMessage,
         );
 
-        service.droppedFunc = _handleDropped;
-        service.resetToNewestFunc = () async => await _jumpToNewest();
-        controller.jumpToNewest = _jumpToNewest;
-
         // Recreate the list key to force SliverAnimatedList to rebuild with correct item count
         _listKey = GlobalKey<SliverAnimatedListState>();
         handlersInitialized = true;
@@ -243,17 +215,10 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
 
   @override
   void dispose() {
-    // Clean up managers. Only the newest row is the last one read: a window
-    // holding older rows would mark an older message.
-    if (_messages.isNotEmpty && (!isMessagesServiceInitialized || messageService.atNewestEdge)) {
+    // Clean up managers
+    if (_messages.isNotEmpty) {
       chat.lastReadMessageGuid = _messages.first.guid;
       chat.saveAsync(updateLastReadMessageGuid: true);
-    }
-    scrollController.removeListener(_onScroll);
-    if (controller.jumpToNewest == _jumpToNewest) controller.jumpToNewest = null;
-    if (isMessagesServiceInitialized && messageService.droppedFunc == _handleDropped) {
-      messageService.droppedFunc = null;
-      messageService.resetToNewestFunc = null;
     }
 
     // Reset the ready-signal so a future pendingSend on the same CVC starts fresh.
@@ -288,13 +253,6 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
 
     // Load messages surrounding the search result
     final method = messageService.method == "local" ? SearchMethod.local : SearchMethod.network;
-    if (method == SearchMethod.local && messageService.windowed) {
-      await _showAround(targetMessage);
-      await Future.delayed(const Duration(milliseconds: 300));
-      if (!mounted) return;
-      await jumpToMessage(guid);
-      return;
-    }
     await loadSearchChunk(targetMessage, method);
 
     if (!mounted) return;
@@ -340,16 +298,10 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
       scrollController.highlight(index, highlightDuration: const Duration(milliseconds: 2000));
       return;
     }
-    // otherwise load it: the window holds the rows around it; ObjectBox
-    // pages down until it is loaded
+    // otherwise fetch until it is loaded
     final message = await MessagingStore.current.messageByGuid(guid);
-    if (message != null && messageService.windowed) {
-      await _showAround(message);
-      await Future.delayed(const Duration(milliseconds: 100));
-    } else {
-      final pos = message?.id == null ? null : await MessagingStore.current.timelinePosition(chat.id!, message!.id!);
-      if (pos != null) await _loadMoreMessages(limit: pos + 10);
-    }
+    final pos = message?.id == null ? null : await MessagingStore.current.timelinePosition(chat.id!, message!.id!);
+    if (pos != null) await _loadMoreMessages(limit: pos + 10);
     index = _messages.indexWhere((element) => element.guid == guid);
     if (index != -1) {
       await scrollController.scrollToIndex(index, preferPosition: AutoScrollPosition.middle);
@@ -388,7 +340,8 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
       return;
     }
     fetching = true;
-    Logger.debug("_loadMoreMessages: Starting - current messages: ${_messages.length}");
+    final previousLength = _messages.length;
+    Logger.debug("_loadMoreMessages: Starting - current messages: $previousLength");
 
     // Start loading the next chunk of messages using mixin method
     noMoreMessages = !(await loadNextChunk(controller, _messages, limit: limit).catchError((e, stack) {
@@ -406,283 +359,46 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
       return;
     }
 
-    // The window may have dropped its newest rows while the page loaded
-    // ([_handleDropped] already took them off the list): what is new here is
-    // what the service holds and the list doesn't.
-    final shown = Set<String>.from(_messages.map((m) => m.guid).whereType<String>());
-    final newMessages = messageService.timeline.where((m) => !shown.contains(m.guid)).toList();
+    final oldLength = _messages.length;
+    final oldMessageGuids = Set<String>.from(_messages.map((m) => m.guid).whereType<String>());
 
-    Logger.debug("loadNextChunk: Found ${newMessages.length} new messages (shown: ${shown.length})");
+    final newMessagesFromService = messageService.struct.messages;
+    final newMessages = newMessagesFromService.where((m) => !oldMessageGuids.contains(m.guid)).toList();
+
+    Logger.debug(
+        "loadNextChunk: Found ${newMessages.length} new messages (old: $oldLength, new: ${newMessagesFromService.length})");
 
     // Initialize message widget controllers for new messages
     for (final newMsg in newMessages) {
       createStateForMessage(newMsg, controller);
     }
+
+    // Update the list without animation (bulk load)
+    final previousMessages = _messages;
+    _messages = newMessagesFromService;
+    _messages.sort(Message.sort);
     fetching = false;
 
-    if (!mounted || newMessages.isEmpty) return;
+    if (!mounted) return;
 
-    // Older (paginated) messages go after the shown ones since the list is
-    // newest-first. When that holds, insert only the new items via the
-    // SliverAnimatedList API instead of swapping _listKey, which would tear
-    // down the whole sliver, causing loaded images and url previews to
-    // redecode when scrolling back down.
-    final isSimpleAppend = _messages.isEmpty || Message.sort(newMessages.first, _messages.last) > 0;
+    // Older (paginated) messages are appended after the already-loaded ones since
+    // the list is sorted newest-first. When that holds, insert only the new items
+    // via the SliverAnimatedList API instead of swapping _listKey, which would tear
+    // down the whole sliver (and its AutomaticKeepAlive cache of loaded images/url
+    // previews), causing them to redecode when scrolling back down.
+    final addedCount = _messages.length - previousLength;
+    final isSimpleAppend = addedCount > 0 &&
+        const ListEquality().equals(_messages.sublist(0, previousLength), previousMessages);
+
     if (isSimpleAppend) {
-      final at = _messages.length - (_anchored ? _split : 0);
-      _messages.addAll(newMessages);
-      for (int i = 0; i < newMessages.length; i++) {
-        _listKey.currentState?.insertItem(at + i, duration: Duration.zero);
+      for (int i = 0; i < addedCount; i++) {
+        _listKey.currentState?.insertItem(previousLength + i, duration: Duration.zero);
       }
       _listVersion.value++;
     } else {
       // Fallback: structure changed in a way we can't express as a simple append.
-      _messages = messageService.timeline;
-      _anchored = false;
-      _split = 0;
       _listKey = GlobalKey<SliverAnimatedListState>();
-      _newerKey = GlobalKey<SliverAnimatedListState>();
       setState(() {});
-    }
-  }
-
-  // ========== Chat window (S3) ==========
-
-  /// Index of `_messages[i]` in the list that shows it, and that list.
-  ({GlobalKey<SliverAnimatedListState> key, int index}) _slot(int i) =>
-      _anchored && i < _split ? (key: _newerKey, index: _split - 1 - i) : (key: _listKey, index: _anchored ? i - _split : i);
-
-  /// The row nearest the middle of the screen that is laid out, or null.
-  int? _visibleRow() {
-    if (!scrollController.hasClients) return null;
-    final box = context.findRenderObject() as RenderBox?;
-    final middle = (box?.size.height ?? 0) / 2;
-    int? best;
-    var bestDistance = double.infinity;
-    for (var i = 0; i < _messages.length; i++) {
-      final row = _messageKeys[_messages[i].guid]?.currentContext?.findRenderObject() as RenderBox?;
-      if (row == null || !row.attached || !row.hasSize) continue;
-      final top = row.localToGlobal(Offset.zero, ancestor: box).dy;
-      final distance = (top + row.size.height / 2 - middle).abs();
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        best = i;
-      }
-    }
-    return best;
-  }
-
-  /// Makes `_messages[row]` (laid out) the anchor without moving the screen.
-  void _anchorAt(int row) {
-    final box = _messageKeys[_messages[row].guid]?.currentContext?.findRenderObject();
-    if (box == null || !scrollController.hasClients) return;
-    final reveal = RenderAbstractViewport.of(box).getOffsetToReveal(box, 0).offset;
-    final position = scrollController.position as ScrollPositionWithSingleContext;
-    // A fling sets absolute positions each frame and would undo the
-    // correction, so it pauses for this frame and restarts at its speed once
-    // the new layout has set the scroll limits.
-    // Read-only use of the running activity's speed; no public getter has it.
-    // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
-    final velocity = position.activity?.velocity ?? 0;
-    position.correctBy(-reveal);
-    if (velocity != 0) {
-      position.goIdle();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && scrollController.hasClients) position.goBallistic(velocity);
-      });
-    }
-    _anchored = true;
-    _split = row;
-    _listKey = GlobalKey<SliverAnimatedListState>();
-    _newerKey = GlobalKey<SliverAnimatedListState>();
-    setState(() {});
-  }
-
-  /// The window dropped [dropped] at its newest or oldest end.
-  void _handleDropped(List<Message> dropped, {required bool newest}) {
-    if (!mounted || _rebuilding) return;
-    if (!newest) noMoreMessages = false;
-    final guids = dropped.map((m) => m.guid).toSet();
-    if (newest && !_anchored) {
-      final visible = _visibleRow();
-      final firstKept = _messages.indexWhere((m) => !guids.contains(m.guid));
-      if (visible != null && firstKept >= 0) _anchorAt(max(visible, firstKept));
-    }
-    for (var i = _messages.length - 1; i >= 0; i--) {
-      if (!guids.contains(_messages[i].guid)) continue;
-      final slot = _slot(i);
-      final message = _messages.removeAt(i);
-      if (_anchored && i < _split) _split--;
-      _messageKeys.remove(message.guid);
-      slot.key.currentState?.removeItem(slot.index, (_, __) => const SizedBox.shrink(), duration: Duration.zero);
-    }
-    if (_anchored && _split >= _messages.length) {
-      // Everything left is newer than the anchor; start over unanchored.
-      _anchored = false;
-      _split = 0;
-      _listKey = GlobalKey<SliverAnimatedListState>();
-      _newerKey = GlobalKey<SliverAnimatedListState>();
-      setState(() {});
-    }
-    _listVersion.value++;
-  }
-
-  void _onScroll() {
-    if (!scrollController.hasClients || scrollController.positions.length != 1 || !handlersInitialized) return;
-    final position = scrollController.position;
-    // Near the bottom of the window while it doesn't reach the newest: load newer.
-    if (!messageService.atNewestEdge && position.pixels - position.minScrollExtent < 1500) _loadNewerMessages();
-  }
-
-  Future<void> _loadNewerMessages() async {
-    if (_fetchingNewer || !isMessagesServiceInitialized || messageService.atNewestEdge) return;
-    _fetchingNewer = true;
-    try {
-      final page = await messageService.loadNewerPage(controller);
-      if (!mounted || page.isEmpty) return;
-      if (!_anchored) {
-        final visible = _visibleRow();
-        if (visible != null) _anchorAt(visible);
-      }
-      final have = _messages.map((m) => m.guid).toSet();
-      final added = page.where((m) => !have.contains(m.guid)).toList();
-      _messages.insertAll(0, added.where((m) => true));
-      _messages.sort(Message.sort);
-      if (_anchored) {
-        _split += added.length;
-        for (var i = 0; i < added.length; i++) {
-          _newerKey.currentState?.insertItem(_split - added.length + i, duration: Duration.zero);
-        }
-      } else {
-        for (var i = 0; i < added.length; i++) {
-          _listKey.currentState?.insertItem(i, duration: Duration.zero);
-        }
-      }
-      _listVersion.value++;
-    } finally {
-      _fetchingNewer = false;
-    }
-  }
-
-  /// Replaces what is shown with `messageService.timeline` (after a jump or a
-  /// reset), unanchored, without per-row animation.
-  void _showWindow() {
-    _messages = messageService.timeline;
-    _messageKeys.removeWhere((guid, _) => !_messages.any((m) => m.guid == guid));
-    createStatesForMessages(_messages, controller);
-    noMoreMessages = false;
-    _anchored = false;
-    _split = 0;
-    _listKey = GlobalKey<SliverAnimatedListState>();
-    _newerKey = GlobalKey<SliverAnimatedListState>();
-    if (mounted) setState(() {});
-  }
-
-  /// Shows the rows around [message] (jump to message, search result, oldest unread).
-  Future<void> _showAround(Message message) async {
-    _rebuilding = true;
-    try {
-      await loadSearchChunk(message, SearchMethod.local);
-    } finally {
-      _rebuilding = false;
-    }
-    if (mounted) _showWindow();
-  }
-
-  /// [ConversationViewController.jumpToNewest]: when the window holds older
-  /// rows, loads the newest page again and shows it at the bottom.
-  Future<bool> _jumpToNewest() async {
-    if (!isMessagesServiceInitialized || messageService.atNewestEdge) return false;
-    _rebuilding = true;
-    try {
-      messageService.resetWindow();
-      await messageService.loadChunk(controller);
-    } finally {
-      _rebuilding = false;
-    }
-    if (!mounted) return true;
-    _showWindow();
-    if (scrollController.hasClients) scrollController.jumpTo(0);
-    return true;
-  }
-
-  // ========== End chat window ==========
-
-  /// The row of `_messages[index]` (the pagination loader just past the oldest).
-  Widget _buildRow(BuildContext context, int index, Animation<double> animation) {
-    try {
-      // paginate
-      if (index >= _messages.length) {
-        if (!noMoreMessages && handlersInitialized && index == _messages.length) {
-          if (!fetching) {
-            _loadMoreMessages();
-          }
-          return const Loader();
-        }
-
-        return const SizedBox.shrink();
-      }
-
-      Message? olderMessage;
-      Message? newerMessage;
-      if (index + 1 < _messages.length) {
-        olderMessage = _messages[index + 1];
-      }
-      if (index - 1 >= 0) {
-        newerMessage = _messages[index - 1];
-      }
-
-      final message = _messages[index];
-      final messageId = message.guid ?? 'unknown-$index';
-      final messageWidget = RepaintBoundary(
-        key: _messageKeys.putIfAbsent(messageId, () => GlobalKey()),
-        child: Padding(
-          padding: const EdgeInsets.only(left: 5.0, right: 5.0),
-          child: AutoScrollTag(
-            key: ValueKey("$messageId-scrolling"),
-            index: index,
-            controller: scrollController,
-            highlightColor: context.theme.colorScheme.surface.withValues(alpha: 0.7),
-            child: MessageHolder(
-              cvController: controller,
-              message: message,
-              oldMessage: olderMessage,
-              newMessage: newerMessage,
-            ),
-          ),
-        ),
-      );
-
-      // Animate sent messages with size + slide + fade (only if outgoing from this device)
-      final isFromMe = message.isFromMe ?? false;
-      if (isFromMe &&
-          message.isSending &&
-          animationOrchestrator.isMessageAnimating(message)) {
-        return animationOrchestrator.buildSentMessageAnimation(
-          child: messageWidget,
-          animation: animation,
-        );
-      }
-
-      // Animate other messages with size + slide only (received or from other devices)
-      if (animationOrchestrator.isMessageAnimating(message)) {
-        return animationOrchestrator.buildReceivedMessageAnimation(
-          child: messageWidget,
-          animation: animation,
-        );
-      }
-
-      return messageWidget;
-    } catch (e, stack) {
-      Logger.error("Error in SliverAnimatedList itemBuilder at index $index",
-          error: e, trace: stack);
-      return SizedBox(
-        key: ValueKey('error-$index'),
-        height: 50,
-        child: Center(
-          child: Text('Error loading message at index $index'),
-        ),
-      );
     }
   }
 
@@ -728,7 +444,6 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
     _messages.add(message);
     _messages.sort(Message.sort);
     final insertIndex = _messages.indexOf(message);
-    if (_anchored && insertIndex <= _split) _split++;
 
     // Initialize message widget controller
     createStateForMessage(message, controller);
@@ -738,9 +453,8 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
 
     // Use insertItem to animate the list sliding up to make space (all messages)
     final duration = animationOrchestrator.getInsertionDuration();
-    final slot = _slot(insertIndex);
-    slot.key.currentState?.insertItem(
-      slot.index,
+    _listKey.currentState?.insertItem(
+      insertIndex,
       duration: duration,
     );
 
@@ -823,12 +537,8 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
     Logger.debug("handleDeletedMessage: Deleting message ${message.guid}");
     final index = _messages.indexWhere((e) => e.guid == message.guid);
     if (index != -1) {
-      final slot = _slot(index);
       _messages.removeAt(index);
-      if (_anchored && index < _split) _split--;
       _messageKeys.remove(message.guid);
-      // Anchored, each list's count must follow its rows.
-      if (_anchored) slot.key.currentState?.removeItem(slot.index, (_, __) => const SizedBox.shrink(), duration: Duration.zero);
       Logger.debug("handleDeletedMessage: Removed message at index $index");
       _listVersion.value++;
       _setStateDebouncer?.cancel();
@@ -937,14 +647,14 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
                       child: CustomScrollView(
                         controller: scrollController,
                         reverse: true,
-                        // Anchored: the older list is the center, rows newer than it sit below.
-                        center: _anchored ? _listKey : null,
-                        physics: _StickToNewestPhysics(parent: ThemeSwitcher.getScrollPhysics()),
-                        // Rows are no longer kept alive (S3): one leaving this extent is disposed
-                        // with its decoded image, and rebuilt from the window's data on return. A
-                        // few screens keeps short scroll-backs built; a 10k px extent visibly
-                        // stuttered chat open, since everything within it is built and laid out.
-                        scrollCacheExtent: const ScrollCacheExtent.pixels(1500),
+                        physics: ThemeSwitcher.getScrollPhysics(),
+                        // MessageHolder implements AutomaticKeepAliveClientMixin, so already-built
+                        // messages survive scrolling arbitrarily far away without needing a large
+                        // cache extent (which forces eager build/layout of everything within its
+                        // window on every layout pass. A 10k px extent visibly stuttered chat open
+                        // for exactly that reason). This is just a small bump over the 250px default
+                        // for minor smoothing of local scroll gestures.
+                        scrollCacheExtent: const ScrollCacheExtent.pixels(500),
                         slivers: <Widget>[
                           SliverToBoxAdapter(
                             child: SmartRepliesRow(
@@ -969,17 +679,89 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
                             const SliverToBoxAdapter(
                               child: Loader(text: "Loading surrounding message context..."),
                             ),
-                          if (_anchored)
-                            SliverAnimatedList(
-                              key: _newerKey,
-                              initialItemCount: _split,
-                              itemBuilder: (context, index, animation) => _buildRow(context, _split - 1 - index, animation),
-                            ),
-                          SliverAnimatedList(
-                            key: _listKey,
-                            initialItemCount: _messages.length - (_anchored ? _split : 0) + 1,
-                            itemBuilder: (context, index, animation) =>
-                                _buildRow(context, index + (_anchored ? _split : 0), animation),
+                          Builder(
+                            builder: (context) {
+                              return SliverAnimatedList(
+                                key: _listKey,
+                                initialItemCount: _messages.length + 1,
+                                itemBuilder: (BuildContext context, int index, Animation<double> animation) {
+                                  try {
+                                    // paginate
+                                    if (index >= _messages.length) {
+                                      if (!noMoreMessages && handlersInitialized && index == _messages.length) {
+                                        if (!fetching) {
+                                          _loadMoreMessages();
+                                        }
+                                        return const Loader();
+                                      }
+
+                                      return const SizedBox.shrink();
+                                    }
+
+                                    Message? olderMessage;
+                                    Message? newerMessage;
+                                    if (index + 1 < _messages.length) {
+                                      olderMessage = _messages[index + 1];
+                                    }
+                                    if (index - 1 >= 0) {
+                                      newerMessage = _messages[index - 1];
+                                    }
+
+                                    final message = _messages[index];
+                                    final messageId = message.guid ?? 'unknown-$index';
+                                    final messageWidget = RepaintBoundary(
+                                      key: _messageKeys.putIfAbsent(messageId, () => GlobalKey()),
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(left: 5.0, right: 5.0),
+                                        child: AutoScrollTag(
+                                          key: ValueKey("$messageId-scrolling"),
+                                          index: index,
+                                          controller: scrollController,
+                                          highlightColor: context.theme.colorScheme.surface.withValues(alpha: 0.7),
+                                          child: MessageHolder(
+                                            cvController: controller,
+                                            message: message,
+                                            oldMessage: olderMessage,
+                                            newMessage: newerMessage,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+
+                                    // Animate sent messages with size + slide + fade (only if outgoing from this device)
+                                    final isFromMe = message.isFromMe ?? false;
+                                    if (isFromMe &&
+                                        message.isSending &&
+                                        animationOrchestrator.isMessageAnimating(message)) {
+                                      return animationOrchestrator.buildSentMessageAnimation(
+                                        child: messageWidget,
+                                        animation: animation,
+                                      );
+                                    }
+
+                                    // Animate other messages with size + slide only (received or from other devices)
+                                    if (animationOrchestrator.isMessageAnimating(message)) {
+                                      return animationOrchestrator.buildReceivedMessageAnimation(
+                                        child: messageWidget,
+                                        animation: animation,
+                                      );
+                                    }
+
+                                    return messageWidget;
+                                  } catch (e, stack) {
+                                    Logger.error("Error in SliverAnimatedList itemBuilder at index $index",
+                                        error: e, trace: stack);
+                                    return SizedBox(
+                                      key: ValueKey('error-$index'),
+                                      height: 50,
+                                      child: Center(
+                                        child: Text('Error loading message at index $index'),
+                                      ),
+                                    );
+                                  }
+                                },
+                              );
+                            },
                           ),
                           const SliverPadding(
                             padding: EdgeInsets.all(70),
@@ -996,29 +778,6 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
             ],
           )),
     );
-  }
-}
-
-/// Anchored (chat window, S3), rows added at the newest end grow below the
-/// screen instead of pushing it up. When the screen was at the newest row,
-/// it stays there, in the same layout pass, as the one-list layout does.
-class _StickToNewestPhysics extends ScrollPhysics {
-  const _StickToNewestPhysics({super.parent});
-
-  @override
-  _StickToNewestPhysics applyTo(ScrollPhysics? ancestor) => _StickToNewestPhysics(parent: buildParent(ancestor));
-
-  @override
-  double adjustPositionForNewDimensions({
-    required ScrollMetrics oldPosition,
-    required ScrollMetrics newPosition,
-    required bool isScrolling,
-    required double velocity,
-  }) {
-    final adjusted = super.adjustPositionForNewDimensions(
-        oldPosition: oldPosition, newPosition: newPosition, isScrolling: isScrolling, velocity: velocity);
-    if (!isScrolling && (oldPosition.pixels - oldPosition.minScrollExtent).abs() < 1) return newPosition.minScrollExtent;
-    return adjusted;
   }
 }
 

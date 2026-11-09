@@ -441,43 +441,6 @@ mixin ObjectBoxChatStore implements ChatStore {
     return (ids: ids, next: const MessagePageCursor.objectBox());
   }
 
-  /// ObjectBox's chat screen keeps every row it loaded, so it never pages back down.
-  @override
-  Future<List<int>> newerMessagePage(int chatId, List<Handle> participants, int fromId, {required int limit}) async =>
-      const <int>[];
-
-  @override
-  Future<List<Message>> repliesOf(List<String> originatorGuids) async {
-    if (originatorGuids.isEmpty) return const <Message>[];
-    final query = Database.messages
-        .query(Message_.threadOriginatorGuid
-            .oneOf(originatorGuids.toSet().toList())
-            .and(Message_.associatedMessageGuid.isNull())
-            .and(Message_.dateDeleted.isNull()))
-        .build();
-    try {
-      return query.find();
-    } finally {
-      query.close();
-    }
-  }
-
-  @override
-  Future<Message?> newestTimelineMessage(int chatId, {bool? fromMe}) async {
-    var condition = Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull()).and(Message_.associatedMessageGuid.isNull());
-    if (fromMe != null) condition = condition.and(fromMe ? Message_.isFromMe.equals(true) : Message_.isFromMe.notEquals(true));
-    final query = (Database.messages.query(condition)
-          ..link(Message_.chat, Chat_.id.equals(chatId))
-          ..order(Message_.dateCreated, flags: Order.descending))
-        .build()
-      ..limit = 1;
-    try {
-      return query.findFirst();
-    } finally {
-      query.close();
-    }
-  }
-
   @override
   Future<MessagePage> olderMessagePage(
     int chatId,

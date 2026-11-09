@@ -170,13 +170,10 @@ class ConversationViewController extends StatefulController with GetSingleTicker
         subjectFocusNode.unfocus();
       }
 
-      // Distance from the newest row: the chat window's anchored layout puts
-      // offset 0 at its anchor, not the bottom.
-      final fromBottom = scrollController.position.pixels - scrollController.position.minScrollExtent;
-      if (showScrollDown.value && fromBottom >= 500) return;
-      if (!showScrollDown.value && fromBottom < 500) return;
+      if (showScrollDown.value && scrollController.offset >= 500) return;
+      if (!showScrollDown.value && scrollController.offset < 500) return;
 
-      if (fromBottom >= 500 && !showScrollDown.value) {
+      if (scrollController.offset >= 500 && !showScrollDown.value) {
         showScrollDown.value = true;
         if (_scrollDownDebounce?.isActive ?? false) _scrollDownDebounce?.cancel();
         _scrollDownDebounce = Timer(const Duration(seconds: 3), () {
@@ -248,19 +245,10 @@ class ConversationViewController extends StatefulController with GetSingleTicker
     return released;
   }
 
-  /// Set by MessagesView while the chat window (S3) can hold rows older than
-  /// the newest: reloads the newest page and shows it at the bottom. Returns
-  /// whether it had to (false when the newest rows were already held).
-  Future<bool> Function()? jumpToNewest;
-
   Future<void> scrollToBottom() async {
-    if (await jumpToNewest?.call() ?? false) {
-      if (SettingsSvc.settings.openKeyboardOnSTB.value) focusNode.requestFocus();
-      return;
-    }
     if (scrollController.positions.isNotEmpty && scrollController.positions.first.extentBefore > 0) {
       await scrollController.animateTo(
-        scrollController.positions.first.minScrollExtent,
+        0.0,
         curve: Curves.easeOut,
         duration: const Duration(milliseconds: 300),
       );

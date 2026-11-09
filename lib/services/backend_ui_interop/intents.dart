@@ -109,7 +109,7 @@ class ReplyRecentAction extends Action<ReplyRecentIntent> {
     if (chat == null) return null;
     final service = maybeFindMessagesSvc(chatGuid);
     if (service == null) return null;
-    final message = await service.newestMessage(fromMe: false);
+    final message = service.mostRecentReceived;
     if (message != null && SettingsSvc.settings.enablePrivateAPI.value) {
       final parts = service.getOrCreateState(message).parts;
       cvc(chat).replyToMessage = MessageReplyContext(message, parts.length - 1);
@@ -131,7 +131,7 @@ class HeartRecentAction extends Action<HeartRecentIntent> {
   Object? invoke(covariant HeartRecentIntent intent) async {
     final chat = ChatsSvc.getChatState(chatGuid)?.chat;
     if (chat == null) return null;
-    final message = await maybeFindMessagesSvc(chatGuid)?.newestMessage();
+    final message = maybeFindMessagesSvc(chatGuid)?.mostRecent;
     if (message != null && SettingsSvc.settings.enablePrivateAPI.value) {
       _sendReactionHelper(chat, message, ReactionTypes.LOVE);
     }
@@ -152,7 +152,7 @@ class LikeRecentAction extends Action<LikeRecentIntent> {
   Object? invoke(covariant LikeRecentIntent intent) async {
     final chat = ChatsSvc.getChatState(chatGuid)?.chat;
     if (chat == null) return null;
-    final message = await maybeFindMessagesSvc(chatGuid)?.newestMessage();
+    final message = maybeFindMessagesSvc(chatGuid)?.mostRecent;
     if (message != null && SettingsSvc.settings.enablePrivateAPI.value) {
       _sendReactionHelper(chat, message, ReactionTypes.LIKE);
     }
@@ -173,7 +173,7 @@ class DislikeRecentAction extends Action<DislikeRecentIntent> {
   Object? invoke(covariant DislikeRecentIntent intent) async {
     final chat = ChatsSvc.getChatState(chatGuid)?.chat;
     if (chat == null) return null;
-    final message = await maybeFindMessagesSvc(chatGuid)?.newestMessage();
+    final message = maybeFindMessagesSvc(chatGuid)?.mostRecent;
     if (message != null && SettingsSvc.settings.enablePrivateAPI.value) {
       _sendReactionHelper(chat, message, ReactionTypes.DISLIKE);
     }
@@ -194,7 +194,7 @@ class LaughRecentAction extends Action<LaughRecentIntent> {
   Object? invoke(covariant LaughRecentIntent intent) async {
     final chat = ChatsSvc.getChatState(chatGuid)?.chat;
     if (chat == null) return null;
-    final message = await maybeFindMessagesSvc(chatGuid)?.newestMessage();
+    final message = maybeFindMessagesSvc(chatGuid)?.mostRecent;
     if (message != null && SettingsSvc.settings.enablePrivateAPI.value) {
       _sendReactionHelper(chat, message, ReactionTypes.LAUGH);
     }
@@ -215,7 +215,7 @@ class EmphasizeRecentAction extends Action<EmphasizeRecentIntent> {
   Object? invoke(covariant EmphasizeRecentIntent intent) async {
     final chat = ChatsSvc.getChatState(chatGuid)?.chat;
     if (chat == null) return null;
-    final message = await maybeFindMessagesSvc(chatGuid)?.newestMessage();
+    final message = maybeFindMessagesSvc(chatGuid)?.mostRecent;
     if (message != null && SettingsSvc.settings.enablePrivateAPI.value) {
       _sendReactionHelper(chat, message, ReactionTypes.EMPHASIZE);
     }
@@ -236,7 +236,7 @@ class QuestionRecentAction extends Action<QuestionRecentIntent> {
   Object? invoke(covariant QuestionRecentIntent intent) async {
     final chat = ChatsSvc.getChatState(chatGuid)?.chat;
     if (chat == null) return null;
-    final message = await maybeFindMessagesSvc(chatGuid)?.newestMessage();
+    final message = maybeFindMessagesSvc(chatGuid)?.mostRecent;
     if (message != null && SettingsSvc.settings.enablePrivateAPI.value) {
       _sendReactionHelper(chat, message, ReactionTypes.QUESTION);
     }

@@ -52,7 +52,9 @@ class MessageHolder extends StatefulWidget {
   State<StatefulWidget> createState() => _MessageHolderState();
 }
 
-class _MessageHolderState extends State<MessageHolder> with ThemeHelpers {
+class _MessageHolderState extends State<MessageHolder> with AutomaticKeepAliveClientMixin, ThemeHelpers {
+  @override
+  bool get wantKeepAlive => true;
 
   MessageState get controller => widget.ms;
 
@@ -190,6 +192,7 @@ class _MessageHolderState extends State<MessageHolder> with ThemeHelpers {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     controller.built = true;
 
     // Cache settings values to avoid repeated observable reads

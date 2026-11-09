@@ -67,10 +67,6 @@ Future<Null> bubble() async {
 Future<Null> initApp(bool bubble, List<String> arguments) async {
   runZonedGuarded<Future<void>>(() async {
     WidgetsFlutterBinding.ensureInitialized();
-    // Decoded images, bounded (S3): rows scrolled away are disposed, so a
-    // return within the last ~96 MB of images is a cache hit and older ones
-    // decode from disk again. Flutter's default is 100 MB / 1000 images.
-    PaintingBinding.instance.imageCache.maximumSizeBytes = 96 << 20;
 
     /* ----- DESKTOP NATIVE SPLASH STATUS ----- */
     // Pushes startup status to the native splash; detached once it's dismissed.
