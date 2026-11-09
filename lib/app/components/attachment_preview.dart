@@ -1,5 +1,5 @@
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -42,12 +42,9 @@ class AttachmentPreview extends StatefulWidget {
     return null;
   }
 
-  /// Attachments for [message], re-querying the store when the in-memory
-  /// [Message.dbAttachments] backlink is a stale empty cache.
-  ///
-  /// Chat-list latest messages often hit `getNotificationText()` before the
-  /// attachment rows are linked. ObjectBox caches that empty ToMany, so later
-  /// reads on the same instance stay empty even after the files exist on disk.
+  /// Attachments of [message] already in memory: its [Message.dbAttachments],
+  /// else the parts of its loaded message state. Empty when neither has any;
+  /// [loadAttachmentsFor] then asks the store.
   static List<Attachment> attachmentsFor(Message message, {String? chatGuid}) {
     if (message.dbAttachments.isNotEmpty) {
       return List<Attachment>.from(message.dbAttachments);
@@ -61,34 +58,25 @@ class AttachmentPreview extends StatefulWidget {
         if (fromParts.isNotEmpty) return fromParts;
       }
     }
+    return const [];
+  }
 
-    if (kIsWeb) return const [];
-
-    if (message.id != null) {
-      final byMessage = (Database.attachments.query()
-            ..link(Attachment_.message, Message_.id.equals(message.id!)))
-          .build();
-      try {
-        final found = byMessage.find();
-        if (found.isNotEmpty) return found;
-      } finally {
-        byMessage.close();
-      }
-    }
-
+  /// [attachmentsFor], re-querying the store when memory has none.
+  ///
+  /// Chat-list latest messages often hit `getNotificationText()` before the
+  /// attachment rows are linked, so the copy in memory can stay empty after
+  /// the files exist on disk: the store looks them up by the message, else by
+  /// the attachment guids its attributed body names.
+  static Future<List<Attachment>> loadAttachmentsFor(Message message, {String? chatGuid}) async {
+    final inMemory = attachmentsFor(message, chatGuid: chatGuid);
+    if (inMemory.isNotEmpty || kIsWeb) return inMemory;
     final guids = <String>[
       for (final body in message.attributedBody)
         for (final run in body.runs)
           if (run.attributes?.attachmentGuid != null) run.attributes!.attachmentGuid!,
     ];
-    if (guids.isEmpty) return const [];
-
-    final byGuid = Database.attachments.query(Attachment_.guid.oneOf(guids)).build();
-    try {
-      return byGuid.find();
-    } finally {
-      byGuid.close();
-    }
+    if (message.id == null && guids.isEmpty) return const [];
+    return MessagingStore.current.attachmentsOfMessage(message.id, guids);
   }
 
   /// Whether [attachment] can render a compact preview without downloading.

@@ -1,4 +1,5 @@
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
@@ -124,4 +125,14 @@ mixin SqliteAttachmentStore implements AttachmentStore, SqliteStorePart {
 
   @override
   Future<List<Attachment>> attachmentsByIds(List<int> ids) async => inIdOrder(ids, await attachmentsWithMessages(db, ids));
+
+  @override
+  Future<List<Attachment>> attachmentsOfMessage(int? messageId, List<String> guids) async {
+    final repo = AttachmentRepo(db);
+    if (messageId != null) {
+      final found = (await repo.forMessages([messageId]))[messageId] ?? const <Attachment>[];
+      if (found.isNotEmpty) return found;
+    }
+    return [for (final guid in guids.toSet()) ?await repo.byGuid(guid)];
+  }
 }

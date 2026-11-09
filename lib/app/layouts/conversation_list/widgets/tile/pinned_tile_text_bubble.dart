@@ -32,6 +32,11 @@ class PinnedTileTextBubbleState extends CustomState<PinnedTileTextBubble, void, 
   final List<Worker> _previewWorkers = [];
   String? _requestedDownloadGuid;
 
+  /// Attachments the store found for the message [_loadedFor] when the copy in
+  /// memory had none.
+  List<Attachment> _loadedAttachments = const [];
+  String? _loadedFor;
+
   Chat get chat => widget.chat;
   double get size => widget.size;
   // Groups always place the tail on the left (pointing toward the sender icon).
@@ -83,7 +88,7 @@ class PinnedTileTextBubbleState extends CustomState<PinnedTileTextBubble, void, 
     }
     if (!SettingsSvc.settings.autoDownload.value) return;
 
-    final attachments = AttachmentPreview.attachmentsFor(lastMessage, chatGuid: chat.guid);
+    final attachments = _attachmentsOf(lastMessage);
     final preview = AttachmentPreview.firstPreviewableAttachment(attachments);
     if (preview == null) return;
     if (AttachmentsSvc.hasLocalFile(preview)) return;
@@ -93,6 +98,25 @@ class PinnedTileTextBubbleState extends CustomState<PinnedTileTextBubble, void, 
     _requestedDownloadGuid = guid;
 
     unawaited(_downloadPreview(preview));
+  }
+
+  /// [lastMessage]'s attachments in memory, else what the store found for it;
+  /// starts that lookup (once per message) and redraws when it returns.
+  List<Attachment> _attachmentsOf(Message lastMessage) {
+    final inMemory = AttachmentPreview.attachmentsFor(lastMessage, chatGuid: chat.guid);
+    if (inMemory.isNotEmpty) return inMemory;
+    if (_loadedFor == lastMessage.guid) return _loadedAttachments;
+    _loadedFor = lastMessage.guid;
+    _loadedAttachments = const [];
+    unawaited(_loadAttachments(lastMessage));
+    return const [];
+  }
+
+  Future<void> _loadAttachments(Message lastMessage) async {
+    final found = await AttachmentPreview.loadAttachmentsFor(lastMessage, chatGuid: chat.guid);
+    if (!mounted || _loadedFor != lastMessage.guid || found.isEmpty) return;
+    setState(() => _loadedAttachments = found);
+    _maybeDownloadPreview();
   }
 
   Future<void> _downloadPreview(Attachment attachment) async {
@@ -157,7 +181,7 @@ class PinnedTileTextBubbleState extends CustomState<PinnedTileTextBubble, void, 
 
       final attachments = lastMessage == null
           ? const <Attachment>[]
-          : AttachmentPreview.attachmentsFor(lastMessage, chatGuid: chat.guid);
+          : _attachmentsOf(lastMessage);
       final previewAttachment = AttachmentPreview.firstPreviewableAttachment(attachments);
       final showPreview = previewAttachment != null &&
           AttachmentPreview.canShow(previewAttachment, generateVideoThumbnail: true);

@@ -98,6 +98,20 @@ mixin SqliteHandleStore implements HandleStore, SqliteStorePart {
       [for (final row in await db.select('SELECT id FROM handles ORDER BY id')) row['id'] as int];
 
   @override
+  Future<Map<String, int>> localCounts() async {
+    final row = (await db.select('SELECT '
+            '(SELECT count(*) FROM messages WHERE date_deleted_us IS NULL) AS messages, '
+            '(SELECT count(*) FROM chats WHERE date_deleted_us IS NULL) AS chats, '
+            '(SELECT count(*) FROM handles) AS handles, '
+            '(SELECT count(*) FROM attachments WHERE mime_type IS NOT NULL) AS attachments, '
+            "(SELECT count(*) FROM attachments WHERE mime_type GLOB 'image/*') AS images, "
+            "(SELECT count(*) FROM attachments WHERE mime_type GLOB 'video/*') AS videos, "
+            "(SELECT count(*) FROM attachments WHERE mime_type = 'text/x-vlocation' OR uti = 'public.vlocation') AS locations"))
+        .single;
+    return {for (final key in ['messages', 'chats', 'handles', 'attachments', 'images', 'videos', 'locations']) key: row[key] as int};
+  }
+
+  @override
   Future<int> handleCount() async => (await db.select('SELECT count(*) AS n FROM handles')).first['n'] as int;
 
   @override

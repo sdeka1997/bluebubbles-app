@@ -15,6 +15,7 @@ const switched = [
   'lib/app/layouts/conversation_details/widgets/sections/links/links_section.dart',
   'lib/app/layouts/conversation_view/widgets/message/reply/reply_thread_popup.dart',
   'lib/app/layouts/conversation_view/pages/messages_view.dart',
+  'lib/app/layouts/conversation_list/pages/search/search_query_helper.dart',
 ];
 
 void main() {

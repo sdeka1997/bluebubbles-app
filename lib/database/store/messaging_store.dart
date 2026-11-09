@@ -89,6 +89,11 @@ abstract interface class HandleStore {
 
   Future<int> handleCount();
 
+  /// The server panel's local totals: live `messages` and `chats`, `handles`,
+  /// and `attachments` with a MIME type, of which `images`, `videos` and
+  /// `locations`.
+  Future<Map<String, int>> localCounts();
+
   /// Handles never matched to a server row (no originalROWID), by id.
   Future<List<Handle>> handlesWithoutRowId();
 
@@ -194,6 +199,10 @@ abstract interface class AttachmentStore {
 
   /// The stored attachments of [ids], in that order; missing ones are skipped.
   Future<List<Attachment>> attachmentsByIds(List<int> ids);
+
+  /// The attachments linked to the message [messageId]; when it has none, the
+  /// stored attachments with one of [guids] (those its attributed body names).
+  Future<List<Attachment>> attachmentsOfMessage(int? messageId, List<String> guids);
 }
 
 /// The legacy sync_helpers.dart merge helpers.
@@ -388,6 +397,16 @@ abstract interface class ChatStore {
   /// message, newest first: what jumping to a search result loads. [next] is
   /// where scrolling up continues (on ObjectBox, today's position again).
   Future<MessagePage> messagePageAround(int chatId, List<Handle> participants, int aroundId, {required int limit});
+
+  /// Messages whose text contains [term] (ASCII letters in either case), newest
+  /// created first, with their chat and attachments: not reactions, not
+  /// deleted, dated. Filters: [chatId], [isFromMe], [senderRowId] (the
+  /// sender's server ROWID) and [since].
+  Future<List<Message>> searchMessages(String term,
+      {int? chatId, bool? isFromMe, int? senderRowId, DateTime? since, int limit = 50});
+
+  /// The stored chats of [guids], in that order; missing ones are skipped.
+  Future<List<Chat>> chatsByGuids(List<String> guids);
 
   /// Live link-preview messages of [chatId], newest created first.
   Future<List<Message>> linkMessages(int chatId);

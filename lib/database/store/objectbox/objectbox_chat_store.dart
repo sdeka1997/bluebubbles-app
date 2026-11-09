@@ -483,6 +483,39 @@ mixin ObjectBoxChatStore implements ChatStore {
   }
 
   @override
+  Future<List<Message>> searchMessages(String term,
+      {int? chatId, bool? isFromMe, int? senderRowId, DateTime? since, int limit = 50}) async {
+    var condition = Message_.text
+        .contains(term, caseSensitive: false)
+        .and(Message_.associatedMessageGuid.isNull())
+        .and(Message_.dateDeleted.isNull())
+        .and(Message_.dateCreated.notNull());
+    if (isFromMe != null) condition = condition.and(Message_.isFromMe.equals(isFromMe));
+    if (senderRowId != null) condition = condition.and(Message_.handleId.equals(senderRowId));
+    if (since != null) condition = condition.and(Message_.dateCreated.greaterOrEqual(since.millisecondsSinceEpoch));
+
+    final builder = Database.messages.query(condition);
+    if (chatId != null) builder.link(Message_.chat, Chat_.id.equals(chatId));
+    final query = (builder..order(Message_.dateCreated, flags: Order.descending)).build()..limit = limit;
+    try {
+      return query.find();
+    } finally {
+      query.close();
+    }
+  }
+
+  @override
+  Future<List<Chat>> chatsByGuids(List<String> guids) async {
+    final query = Database.chats.query(Chat_.guid.oneOf(guids)).build();
+    try {
+      final byGuid = {for (final chat in query.find()) chat.guid: chat};
+      return [for (final guid in guids) ?byGuid[guid]];
+    } finally {
+      query.close();
+    }
+  }
+
+  @override
   Future<List<Message>> linkMessages(int chatId) async {
     final query = (Database.messages.query(Message_.dateDeleted.isNull() &
             Message_.dbPayloadData.notNull() &

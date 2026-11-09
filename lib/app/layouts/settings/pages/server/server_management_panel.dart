@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:bluebubbles/app/layouts/settings/pages/server/connection_panel/connection_panel.dart';
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/app/wrappers/stateful_boilerplate.dart';
-import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/models/models.dart' show ServerDetails;
 import 'package:bluebubbles/services/services.dart';
 import 'package:flutter/foundation.dart';
@@ -173,35 +173,7 @@ class ServerManagementPanelController extends StatefulController {
 
     try {
       await Database.waitForInit();
-      final statsMap = Database.runInTransaction(TxMode.read, () {
-        final messageQuery = Database.messages.query(Message_.dateDeleted.isNull()).build();
-        final chatQuery = Database.chats.query(Chat_.dateDeleted.isNull()).build();
-        final attachmentQuery = Database.attachments.query(Attachment_.mimeType.notNull()).build();
-        final imageQuery = Database.attachments.query(Attachment_.mimeType.startsWith("image/")).build();
-        final videoQuery = Database.attachments.query(Attachment_.mimeType.startsWith("video/")).build();
-        final locationQuery = Database.attachments
-            .query(Attachment_.mimeType.equals("text/x-vlocation").or(Attachment_.uti.equals("public.vlocation")))
-            .build();
-
-        try {
-          return <String, dynamic>{
-            'messages': messageQuery.count(),
-            'chats': chatQuery.count(),
-            'handles': Database.handles.count(),
-            'attachments': attachmentQuery.count(),
-            'images': imageQuery.count(),
-            'videos': videoQuery.count(),
-            'locations': locationQuery.count(),
-          };
-        } finally {
-          messageQuery.close();
-          chatQuery.close();
-          attachmentQuery.close();
-          imageQuery.close();
-          videoQuery.close();
-          locationQuery.close();
-        }
-      });
+      final statsMap = await MessagingStore.current.localCounts();
 
       localStats
         ..clear()

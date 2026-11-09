@@ -110,6 +110,39 @@ mixin ObjectBoxHandleStore implements HandleStore {
   }
 
   @override
+  Future<Map<String, int>> localCounts() async {
+    return Database.runInTransaction(TxMode.read, () {
+      final messageQuery = Database.messages.query(Message_.dateDeleted.isNull()).build();
+      final chatQuery = Database.chats.query(Chat_.dateDeleted.isNull()).build();
+      final attachmentQuery = Database.attachments.query(Attachment_.mimeType.notNull()).build();
+      final imageQuery = Database.attachments.query(Attachment_.mimeType.startsWith("image/")).build();
+      final videoQuery = Database.attachments.query(Attachment_.mimeType.startsWith("video/")).build();
+      final locationQuery = Database.attachments
+          .query(Attachment_.mimeType.equals("text/x-vlocation").or(Attachment_.uti.equals("public.vlocation")))
+          .build();
+
+      try {
+        return <String, int>{
+          'messages': messageQuery.count(),
+          'chats': chatQuery.count(),
+          'handles': Database.handles.count(),
+          'attachments': attachmentQuery.count(),
+          'images': imageQuery.count(),
+          'videos': videoQuery.count(),
+          'locations': locationQuery.count(),
+        };
+      } finally {
+        messageQuery.close();
+        chatQuery.close();
+        attachmentQuery.close();
+        imageQuery.close();
+        videoQuery.close();
+        locationQuery.close();
+      }
+    });
+  }
+
+  @override
   Future<int> handleCount() async => Database.handles.count();
 
   @override

@@ -1,10 +1,9 @@
 import 'dart:async';
 
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:collection/collection.dart';
-import 'package:objectbox/src/native/query/query.dart' as obx;
 
 import 'search_models.dart';
 
@@ -60,7 +59,7 @@ class SearchQueryHelper {
     required bool isNotFromMe,
     required DateTime? sinceDate,
   }) async {
-    final results = findLocal(
+    final results = await findLocal(
       term: term,
       selectedChat: selectedChat,
       selectedHandle: selectedHandle,
@@ -69,25 +68,20 @@ class SearchQueryHelper {
       sinceDate: sinceDate,
     );
 
-    final messages = results.map((e) {
-      e.realAttachments;
-      e.fetchAssociatedMessages();
-      return e;
-    }).toList();
-    final chats = results.map((e) => e.chat.target).toList();
-
     final items = <SearchResultItem>[];
-    chats.forEachIndexed((index, chat) {
-      if (chat == null) return;
-      items.add(SearchResultItem(chat: chat, message: messages[index]));
-    });
+    for (final message in results) {
+      final chat = message.chat.target;
+      if (chat == null) continue;
+      unawaited(message.fetchAssociatedMessages());
+      items.add(SearchResultItem(chat: chat, message: message));
+    }
     return items;
   }
 
   /// The messages [runLocal] shows, newest first: text containing [term]
-  /// (ASCII case folded), no reactions, not deleted, with a date. The SQLite
-  /// store answers the same question with `MessageRepo.search`.
-  static List<Message> findLocal({
+  /// (ASCII case folded), no reactions, not deleted, with a date
+  /// (MessagingStore.searchMessages).
+  static Future<List<Message>> findLocal({
     required String term,
     required Chat? selectedChat,
     required Handle? selectedHandle,
@@ -96,34 +90,14 @@ class SearchQueryHelper {
     required DateTime? sinceDate,
     int limit = 50,
   }) {
-    obx.Condition<Message> condition = Message_.text
-        .contains(term, caseSensitive: false)
-        .and(Message_.associatedMessageGuid.isNull())
-        .and(Message_.dateDeleted.isNull())
-        .and(Message_.dateCreated.notNull());
-
-    if (isFromMe) {
-      condition = condition.and(Message_.isFromMe.equals(true));
-    } else if (isNotFromMe) {
-      condition = condition.and(Message_.isFromMe.equals(false));
-    } else if (selectedHandle != null) {
-      condition = condition.and(Message_.handleId.equals(selectedHandle.originalROWID!));
-    }
-
-    if (sinceDate != null) {
-      condition = condition.and(Message_.dateCreated.greaterOrEqual(sinceDate.millisecondsSinceEpoch));
-    }
-
-    QueryBuilder<Message> qBuilder = Database.messages.query(condition);
-    if (selectedChat != null) {
-      qBuilder = qBuilder..link(Message_.chat, Chat_.guid.equals(selectedChat.guid));
-    }
-
-    final query = qBuilder.order(Message_.dateCreated, flags: Order.descending).build();
-    query.limit = limit;
-    final results = query.find();
-    query.close();
-    return results;
+    return MessagingStore.current.searchMessages(
+      term,
+      chatId: selectedChat?.id,
+      isFromMe: isFromMe ? true : (isNotFromMe ? false : null),
+      senderRowId: isFromMe || isNotFromMe ? null : selectedHandle?.originalROWID,
+      since: sinceDate,
+      limit: limit,
+    );
   }
 
   static Future<List<SearchResultItem>> runNetwork({
@@ -184,7 +158,7 @@ class SearchQueryHelper {
     }
 
     final chatGuids = itemChats.map((e) => e.guid).toList();
-    final dbChats = Database.chats.query(Chat_.guid.oneOf(chatGuids)).build().find();
+    final dbChats = await MessagingStore.current.chatsByGuids(chatGuids);
 
     final items = <SearchResultItem>[];
     for (int i = 0; i < itemChats.length; i++) {

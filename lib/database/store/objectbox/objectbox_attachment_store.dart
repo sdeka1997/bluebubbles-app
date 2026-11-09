@@ -198,4 +198,24 @@ mixin ObjectBoxAttachmentStore implements AttachmentStore {
   @override
   Future<List<Attachment>> attachmentsByIds(List<int> ids) async =>
       Database.attachments.getMany(ids).whereType<Attachment>().toList();
+
+  @override
+  Future<List<Attachment>> attachmentsOfMessage(int? messageId, List<String> guids) async {
+    if (messageId != null) {
+      final byMessage = (Database.attachments.query()..link(Attachment_.message, Message_.id.equals(messageId))).build();
+      try {
+        final found = byMessage.find();
+        if (found.isNotEmpty) return found;
+      } finally {
+        byMessage.close();
+      }
+    }
+    if (guids.isEmpty) return const [];
+    final byGuid = Database.attachments.query(Attachment_.guid.oneOf(guids)).build();
+    try {
+      return byGuid.find();
+    } finally {
+      byGuid.close();
+    }
+  }
 }

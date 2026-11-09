@@ -392,6 +392,26 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
   }
 
   @override
+  Future<List<Message>> searchMessages(String term,
+          {int? chatId, bool? isFromMe, int? senderRowId, DateTime? since, int limit = 50}) =>
+      MessageRepo(db).search(term,
+          chatIds: chatId == null ? null : [chatId],
+          isFromMe: isFromMe,
+          senderHandleId: senderRowId,
+          since: since,
+          limit: limit);
+
+  @override
+  Future<List<Chat>> chatsByGuids(List<String> guids) async {
+    final found = <String, Chat>{};
+    for (final guid in guids.toSet()) {
+      final chat = await ChatRepo(db).byGuid(guid);
+      if (chat != null) found[guid] = chat;
+    }
+    return [for (final guid in guids) ?found[guid]];
+  }
+
+  @override
   Future<List<Message>> linkMessages(int chatId) async {
     final rows = await db.select(
         'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? AND date_deleted_us IS NULL '

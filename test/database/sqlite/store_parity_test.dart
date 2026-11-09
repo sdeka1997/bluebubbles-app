@@ -136,8 +136,8 @@ void main() {
       r'\', r'x\y', '😀', 'b', 'B', ' ', 'ird', 'o w', 'nothing at all', "it's", '\t', '\n'];
 
     Future<void> same(String term, {Chat? chat, Handle? handle, bool fromMe = false, bool notFromMe = false, DateTime? since}) async {
-      final expected = SearchQueryHelper.findLocal(term: term, selectedChat: chat, selectedHandle: handle, isFromMe: fromMe,
-              isNotFromMe: notFromMe, sinceDate: since)
+      final expected = (await SearchQueryHelper.findLocal(term: term, selectedChat: chat, selectedHandle: handle,
+              isFromMe: fromMe, isNotFromMe: notFromMe, sinceDate: since))
           .map((m) => m.guid)
           .toList();
       final actual = (await MessageRepo(db).search(term,
@@ -154,8 +154,8 @@ void main() {
       var nonEmpty = 0;
       for (final term in terms.toSet()) {
         await same(term);
-        if (SearchQueryHelper.findLocal(term: term, selectedChat: null, selectedHandle: null, isFromMe: false,
-                isNotFromMe: false, sinceDate: null)
+        if ((await SearchQueryHelper.findLocal(term: term, selectedChat: null, selectedHandle: null, isFromMe: false,
+                isNotFromMe: false, sinceDate: null))
             .isNotEmpty) {
           nonEmpty++;
         }
