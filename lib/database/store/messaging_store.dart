@@ -373,6 +373,10 @@ abstract interface class ChatStore {
   /// formatted-address work. The first stored handle is returned.
   Future<Handle?> handleByAddress(String address);
 
+  /// The stored handles on [service] for each of [addresses] that has one,
+  /// keyed by address, with contacts (Find My names).
+  Future<Map<String, Handle>> handlesByAddresses(List<String> addresses, String service);
+
   /// Saves the prepared chats and handles in the former bulkSyncChats write.
   /// Address formatting has already happened outside this method.
   Future<({List<int> chatIds, List<int> brandNewHandleIds})> bulkSyncChats(

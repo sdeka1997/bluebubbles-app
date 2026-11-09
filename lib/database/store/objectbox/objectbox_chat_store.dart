@@ -303,6 +303,19 @@ mixin ObjectBoxChatStore implements ChatStore {
   }
 
   @override
+  Future<Map<String, Handle>> handlesByAddresses(List<String> addresses, String service) async {
+    if (addresses.isEmpty) return {};
+    final query = Database.handles
+        .query(Handle_.address.oneOf(addresses) & Handle_.service.equals(service))
+        .order(Handle_.id)
+        .build();
+    final found = query.find();
+    query.close();
+    // The first stored handle per address, as handleByAddress picks.
+    return {for (final h in found.reversed) h.address: h};
+  }
+
+  @override
   Future<({List<int> chatIds, List<int> brandNewHandleIds})> bulkSyncChats(
     List<Chat> inputChats,
     Map<String, Handle> inputHandles,

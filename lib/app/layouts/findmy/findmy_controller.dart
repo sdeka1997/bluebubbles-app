@@ -140,7 +140,7 @@ class FindMyController extends GetxController {
     // torn down and rebuilt on every restart (backgrounding, a server URL refresh),
     // and a listener bound to the old instance would just stop receiving updates.
     _findMyLocationListener = EventDispatcherSvc.stream.listen((event) {
-      if (event.type == 'new-findmy-location') _handleNewFindMyLocation(event.data);
+      if (event.type == 'new-findmy-location') unawaited(_handleNewFindMyLocation(event.data));
       if (event.type == 'findmy-devices-updated') _handleDevicesUpdated(event.data);
     });
 
@@ -525,10 +525,11 @@ class FindMyController extends GetxController {
     }
   }
 
-  void _handleNewFindMyLocation(dynamic data) {
+  Future<void> _handleNewFindMyLocation(dynamic data) async {
     if (!_isAlive) return;
     try {
-      onFriendLocation(FindMyFriend.fromJson(data));
+      final handles = await findMyHandlesFor([data]);
+      if (_isAlive) onFriendLocation(FindMyFriend.fromJson(data, handles: handles));
     } catch (e, s) {
       Logger.warn("Failed to fetch FindMy locations", error: e, trace: s, tag: 'FindMyController');
     }
@@ -592,7 +593,7 @@ class FindMyController extends GetxController {
   /// The opening load: shows what was saved last time at once, then reads
   /// the server's stored friends and devices side by side.
   void _open() {
-    _showSaved();
+    unawaited(_showSaved());
     _startSession();
   }
 
@@ -653,11 +654,14 @@ class FindMyController extends GetxController {
   /// The list a Find My response carries, or null when it carries none.
   List? _dataOf(Response response) => response.data is Map ? response.data['data'] as List? : null;
 
-  void _applyFriends(Response response) {
+  Future<void> _applyFriends(Response response) async {
+    final generation = _generation;
     try {
       final data = _dataOf(response);
       if (data != null) {
-        final roster = data.map((e) => FindMyFriend.fromJson(e)).toList();
+        final handles = await findMyHandlesFor(data.cast<Map<String, dynamic>>());
+        if (!_isAlive || generation != _generation) return;
+        final roster = data.map((e) => FindMyFriend.fromJson(e, handles: handles)).toList();
         _locationCache.rememberFriends(data.cast<Map<String, dynamic>>());
         _showFriends(roster);
         _saveCacheSoon();
@@ -703,12 +707,16 @@ class FindMyController extends GetxController {
 
   /// Puts the friends and devices saved last time on the map, before any
   /// network answer.
-  void _showSaved() {
+  Future<void> _showSaved() async {
     try {
-      final savedFriends = _locationCache.friends.map(FindMyFriend.fromJson).toList();
       final savedDevices = _locationCache.devices.map(FindMyDevice.fromJson).toList();
-      if (savedFriends.isNotEmpty) _showFriends(savedFriends);
       if (savedDevices.isNotEmpty) _showDevices(savedDevices);
+      final saved = _locationCache.friends;
+      final handles = await findMyHandlesFor(saved);
+      // The server's roster may have answered while the names loaded.
+      if (!_isAlive || friendsState.value.updatedAt != null) return;
+      final savedFriends = saved.map((e) => FindMyFriend.fromJson(e, handles: handles)).toList();
+      if (savedFriends.isNotEmpty) _showFriends(savedFriends);
     } catch (e, s) {
       Logger.warn("Failed to show saved Find My locations", error: e, trace: s, tag: 'FindMyController');
     }

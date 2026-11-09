@@ -9,7 +9,7 @@ import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
-import 'package:bluebubbles/database/store/messaging_store.dart' show MessagePageCursor;
+import 'package:bluebubbles/database/store/messaging_store.dart' show MessagePageCursor, MessagingStore;
 import 'package:dio/dio.dart';
 import 'package:faker/faker.dart';
 import 'package:flutter/foundation.dart';
@@ -100,12 +100,25 @@ class Chat {
     // The save sends only the message's local id, and a missing id reads as
     // "cleared". A message built from a server event has no local id, so it
     // is matched to its stored copy first.
-    final m = latestMessageToStore(message, (guid) => Message.findOne(guid: guid));
-    if (m == null) {
-      Logger.warn("$guid: latest message ${message.guid} is not stored yet, so it is not saved as latest",
-          tag: "ThreadCheck");
+    final stored = latestMessageToStore(message);
+    if (stored != null) {
+      _storeLatestMessage(stored);
       return;
     }
+    final guid = message.guid;
+    if (guid == null) return _latestNotStored(message);
+    unawaited(MessagingStore.current.messageByGuid(guid).then((m) {
+      final found = m == null ? null : latestMessageToStore(m);
+      found == null ? _latestNotStored(message) : _storeLatestMessage(found);
+    }));
+  }
+
+  void _latestNotStored(Message message) {
+    Logger.warn("$guid: latest message ${message.guid} is not stored yet, so it is not saved as latest",
+        tag: "ThreadCheck");
+  }
+
+  void _storeLatestMessage(Message m) {
     dbLatestMessage.target = m;
     dbOnlyLatestMessageDate = m.dateCreated;
     unawaited(saveAsync(updateLatestMessage: true));
@@ -482,7 +495,7 @@ class Chat {
       newMessage = result.message;
       isNewer = result.isNewer;
     } catch (ex, stacktrace) {
-      newMessage = Message.findOne(guid: message.guid);
+      newMessage = message.guid == null ? null : await MessagingStore.current.messageByGuid(message.guid!);
       if (newMessage == null) {
         Logger.error("Failed to add message (GUID: ${message.guid}) to chat (GUID: $guid)",
             error: ex, trace: stacktrace);
@@ -1077,13 +1090,6 @@ class Chat {
   }
 }
 
-/// The copy of [message] to store as a chat's latest message: [message] when
-/// it is already stored, else its stored copy found by [lookup] (by guid), or
-/// null when this phone hasn't stored it yet.
-Message? latestMessageToStore(Message message, Message? Function(String guid) lookup) {
-  if ((message.id ?? 0) > 0) return message;
-  final guid = message.guid;
-  if (guid == null) return null;
-  final stored = lookup(guid);
-  return (stored?.id ?? 0) > 0 ? stored : null;
-}
+/// [message] when it is stored (has a local id), else null: a message built
+/// from a server event is looked up by guid first ([Chat.setLatestMessage]).
+Message? latestMessageToStore(Message message) => (message.id ?? 0) > 0 ? message : null;

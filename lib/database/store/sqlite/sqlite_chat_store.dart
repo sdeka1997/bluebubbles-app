@@ -252,6 +252,19 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
   }
 
   @override
+  Future<Map<String, Handle>> handlesByAddresses(List<String> addresses, String service) async {
+    if (addresses.isEmpty) return {};
+    final rows = await db.select(
+        'SELECT id FROM handles WHERE service = ? AND address IN (${List.filled(addresses.length, '?').join(',')}) '
+        'ORDER BY id',
+        [service, ...addresses]);
+    final ids = [for (final r in rows) r['id'] as int];
+    final found = await HandleRepo(db).byIds(ids);
+    // The first stored handle per address, as handleByAddress picks.
+    return {for (final id in ids.reversed) found[id]!.address: found[id]!};
+  }
+
+  @override
   Future<({List<int> chatIds, List<int> brandNewHandleIds})> bulkSyncChats(
     List<Chat> inputChats,
     Map<String, Handle> inputHandles,

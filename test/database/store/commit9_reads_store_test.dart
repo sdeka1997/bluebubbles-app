@@ -76,6 +76,16 @@ void main() {
       expect(page.last.otherParticipant?.address, 'bob@example.com');
     });
 
+    test('handles by address on one service, for Find My names', () async {
+      await fixture().handle('mom@example.com');
+      await fixture().handle('mom@example.com', service: 'SMS');
+      await fixture().handle('dad@example.com');
+      final found = await fixture().store.handlesByAddresses(['mom@example.com', 'nobody@example.com'], 'iMessage');
+      expect(found.keys, ['mom@example.com']);
+      expect(found['mom@example.com']!.service, 'iMessage');
+      expect(await fixture().store.handlesByAddresses([], 'iMessage'), isEmpty);
+    });
+
     test('deleting one handle leaves the others', () async {
       final bob = await fixture().handle('bob@example.com');
       final carol = await fixture().handle('carol@example.com');

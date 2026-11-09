@@ -424,13 +424,13 @@ class Message {
 
   Message setPlayedDate({DateTime? timestamp}) {
     datePlayed = timestamp ?? DateTime.now().toUtc();
-    save();
+    unawaited(saveAsync());
     return this;
   }
 
   Message setEffectPlayed() {
     hasEffectPlayed = true;
-    save();
+    unawaited(saveAsync());
     return this;
   }
 

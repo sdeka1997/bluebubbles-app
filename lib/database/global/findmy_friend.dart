@@ -1,5 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:bluebubbles/database/models.dart';
-import 'package:bluebubbles/models/models.dart' show HandleLookupKey;
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:collection/collection.dart';
 import 'package:intl/intl.dart';
 
@@ -47,7 +48,13 @@ class FindMyFriend {
     return trimmed == null || trimmed.isEmpty ? null : trimmed;
   }
 
-  factory FindMyFriend.fromJson(Map<String, dynamic> json) => FindMyFriend(
+  /// The address a friend's handle is matched by: Apple's address for them,
+  /// else the title (Apple puts a bare address there for some friends).
+  static String? lookupAddress(Map<String, dynamic> json) => json["handle"] ?? json["title"];
+
+  /// [handles] maps [lookupAddress] to the stored iMessage handle, loaded
+  /// before parsing ([findMyHandlesFor]); a friend with none has no handle.
+  factory FindMyFriend.fromJson(Map<String, dynamic> json, {Map<String, Handle> handles = const {}}) => FindMyFriend(
         latitude: json["coordinates"]?[0].toDouble(),
         longitude: json["coordinates"]?[1].toDouble(),
         longAddress: json["long_address"],
@@ -55,9 +62,7 @@ class FindMyFriend {
         title: json["title"],
         subtitle: json["subtitle"],
         handleAddress: json["handle"],
-        handle: json["handle"] == null && json["title"] == null
-            ? null
-            : Handle.findOne(addressAndService: HandleLookupKey(json["handle"] ?? json["title"], "iMessage")),
+        handle: handles[lookupAddress(json)],
         lastUpdated:
             (json["last_updated"] ?? 0) == 0 ? null : DateTime.fromMillisecondsSinceEpoch(json["last_updated"]),
         status: LocationStatus.values.firstWhereOrNull((e) => e.name == json["status"]),
@@ -77,4 +82,13 @@ class FindMyFriend {
         "locating_in_progress": locatingInProgress,
         "favorite_order": favoriteOrder,
       };
+}
+
+/// The stored iMessage handles Find My [friends] JSON names, keyed by
+/// [FindMyFriend.lookupAddress], for [FindMyFriend.fromJson].
+/// Empty on web, which keeps no handles.
+Future<Map<String, Handle>> findMyHandlesFor(Iterable<Map<String, dynamic>> friends) async {
+  final addresses = friends.map(FindMyFriend.lookupAddress).whereType<String>().toSet().toList();
+  if (kIsWeb || addresses.isEmpty) return {};
+  return MessagingStore.current.handlesByAddresses(addresses, "iMessage");
 }

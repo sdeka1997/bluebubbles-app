@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/backend/interfaces/handle_interface.dart';
@@ -322,21 +324,15 @@ class Handle {
     });
   }
 
-  Handle updateColor(String? newColor) {
-    color = newColor;
-    save();
-    return this;
-  }
-
   Handle updateDefaultPhone(String newPhone) {
     defaultPhone = newPhone;
-    save();
+    unawaited(saveAsync());
     return this;
   }
 
   Handle updateDefaultEmail(String newEmail) {
     defaultEmail = newEmail;
-    save();
+    unawaited(saveAsync());
     return this;
   }
 
