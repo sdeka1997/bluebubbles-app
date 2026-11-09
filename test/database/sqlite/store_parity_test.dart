@@ -12,7 +12,7 @@ import 'package:bluebubbles/database/sqlite/chat_stats_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:bluebubbles/database/sqlite/message_repo.dart';
 import 'package:bluebubbles/database/sqlite/objectbox_sqlite_copy.dart';
-import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_queries.dart';
+import 'package:bluebubbles/database/store/objectbox/objectbox_chat_stats_queries.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 DateTime _ms(int ms) => DateTime.fromMillisecondsSinceEpoch(ms);

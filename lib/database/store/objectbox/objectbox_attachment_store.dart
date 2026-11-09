@@ -2,6 +2,7 @@ import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/services/backend/descriptors/attachment_query_descriptor.dart';
+import 'package:bluebubbles/database/store/objectbox/objectbox_attachment_query.dart';
 import 'package:collection/collection.dart';
 
 /// AttachmentActions' ObjectBox code.
