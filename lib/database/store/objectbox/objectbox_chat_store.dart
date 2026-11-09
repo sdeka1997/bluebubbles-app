@@ -5,7 +5,6 @@ import 'package:bluebubbles/database/store/objectbox/objectbox_thread_store_help
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart' show canonicalTwinFor;
-import 'package:bluebubbles/helpers/ui/async_task.dart';
 import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_models.dart';
 import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_queries.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -481,6 +480,54 @@ mixin ObjectBoxChatStore implements ChatStore {
       }
     }
     return result;
+  }
+
+  @override
+  Future<List<Message>> linkMessages(int chatId) async {
+    final query = (Database.messages.query(Message_.dateDeleted.isNull() &
+            Message_.dbPayloadData.notNull() &
+            Message_.balloonBundleId.contains("URLBalloonProvider"))
+          ..link(Message_.chat, Chat_.id.equals(chatId))
+          ..order(Message_.dateCreated, flags: Order.descending))
+        .build();
+    try {
+      return await query.findAsync();
+    } finally {
+      query.close();
+    }
+  }
+
+  @override
+  Future<List<Message>> bookmarkedMessages(int chatId) async {
+    final query = (Database.messages.query(Message_.isBookmarked.equals(true))
+          ..link(Message_.chat, Chat_.id.equals(chatId))
+          ..order(Message_.dateCreated, flags: Order.descending))
+        .build();
+    try {
+      final messages = query.find();
+      for (final m in messages) {
+        m.dbAttachments.length;
+      }
+      return messages;
+    } finally {
+      query.close();
+    }
+  }
+
+  /// Today's count: the index among the chat's live rows, newest created first,
+  /// as ObjectBox's page-by-position scrolling reaches them.
+  @override
+  Future<int?> timelinePosition(int chatId, int messageId) async {
+    final query = (Database.messages.query(Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull()))
+          ..link(Message_.chat, Chat_.id.equals(chatId))
+          ..order(Message_.dateCreated, flags: Order.descending))
+        .build();
+    try {
+      final pos = (await query.findIdsAsync()).indexOf(messageId);
+      return pos < 0 ? null : pos;
+    } finally {
+      query.close();
+    }
   }
 
   @override

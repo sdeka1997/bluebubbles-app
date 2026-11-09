@@ -7,7 +7,7 @@ import 'package:bluebubbles/app/layouts/conversation_view/widgets/message/messag
 import 'package:bluebubbles/app/layouts/conversation_view/widgets/messages_view_components.dart';
 import 'package:bluebubbles/app/wrappers/scrollbar_wrapper.dart';
 import 'package:bluebubbles/app/wrappers/theme_switcher.dart';
-import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/services.dart';
@@ -299,14 +299,9 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
       return;
     }
     // otherwise fetch until it is loaded
-    final message = Message.findOne(guid: guid);
-    final query = (Database.messages.query(Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull()))
-          ..link(Message_.chat, Chat_.id.equals(chat.id!))
-          ..order(Message_.dateCreated, flags: Order.descending))
-        .build();
-    final ids = await query.findIdsAsync();
-    final pos = ids.indexOf(message!.id!);
-    await _loadMoreMessages(limit: pos + 10);
+    final message = await MessagingStore.current.messageByGuid(guid);
+    final pos = message?.id == null ? null : await MessagingStore.current.timelinePosition(chat.id!, message!.id!);
+    if (pos != null) await _loadMoreMessages(limit: pos + 10);
     index = _messages.indexWhere((element) => element.guid == guid);
     if (index != -1) {
       await scrollController.scrollToIndex(index, preferPosition: AutoScrollPosition.middle);

@@ -110,6 +110,19 @@ mixin ObjectBoxHandleStore implements HandleStore {
   }
 
   @override
+  Future<int> handleCount() async => Database.handles.count();
+
+  @override
+  Future<List<Handle>> handlesWithoutRowId() async {
+    final query = (Database.handles.query(Handle_.originalROWID.isNull())..order(Handle_.id)).build();
+    try {
+      return query.find();
+    } finally {
+      query.close();
+    }
+  }
+
+  @override
   Future<List<Handle>> allHandles() async => Database.handles.getAll();
 
   @override

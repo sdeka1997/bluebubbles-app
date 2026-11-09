@@ -405,6 +405,7 @@ class ChatStatsController extends GetxController {
         id: id,
         displayName: handleState.displayName.value ?? handle.address,
         address: handle.address,
+        handle: handle,
       );
     }
     participants.value = resolved;

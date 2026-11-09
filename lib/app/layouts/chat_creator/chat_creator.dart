@@ -15,7 +15,7 @@ import 'package:bluebubbles/app/wrappers/theme_switcher.dart';
 import 'package:bluebubbles/app/wrappers/titlebar_wrapper.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/app/layouts/conversation_view/pages/messages_view.dart';
-import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/services/backend/interfaces/sync_interface.dart';
@@ -197,7 +197,7 @@ class ChatCreatorState extends State<ChatCreator> with ThemeHelpers {
     }
     // match each selected contact to a participant in a chat
     if (existingChat == null) {
-      for (Chat c in (checkDeleted ? Database.chats.getAll() : filteredChats)) {
+      for (Chat c in (checkDeleted ? await MessagingStore.current.allChats() : filteredChats)) {
         if (ChatCreatorUtils.chatMatchesSelectedContacts(c, selectedContacts.map((e) => e.address).toList())) {
           existingChat = c;
           break;

@@ -392,6 +392,26 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
   }
 
   @override
+  Future<List<Message>> linkMessages(int chatId) async {
+    final rows = await db.select(
+        'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? AND date_deleted_us IS NULL '
+        "AND payload_data_json IS NOT NULL AND balloon_bundle_id LIKE '%URLBalloonProvider%' "
+        'ORDER BY date_created_us DESC, id DESC',
+        [chatId]);
+    return rows.map(messageFromRow).toList();
+  }
+
+  @override
+  Future<List<Message>> bookmarkedMessages(int chatId) => MessageRepo(db).bookmarked(chatId);
+
+  @override
+  Future<int?> timelinePosition(int chatId, int messageId) async {
+    final message = await MessageRepo(db).row(messageId);
+    if (message == null || message.chat.targetId != chatId || message.dateDeleted != null) return null;
+    return MessageRepo(db).newerCount([chatId], MessageKey.of(message));
+  }
+
+  @override
   Future<List<int>> participantIds(int chatId) async {
     final chat = await ChatRepo(db).byId(chatId);
     return chat == null ? <int>[] : chat.handles.map((e) => e.id!).toList();

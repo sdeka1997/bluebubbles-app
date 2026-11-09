@@ -2,7 +2,7 @@ import 'package:bluebubbles/app/layouts/chat_creator/widgets/chat_creator_tile.d
 import 'package:bluebubbles/app/wrappers/bb_app_bar.dart';
 import 'package:bluebubbles/app/wrappers/bb_scaffold.dart';
 import 'package:bluebubbles/app/wrappers/theme_switcher.dart';
-import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/services.dart';
@@ -31,10 +31,7 @@ class _SoftDeletedChatsPanelState extends State<SoftDeletedChatsPanel> with Them
       if (mounted) setState(() => _loaded = true);
       return;
     }
-    final query =
-        (Database.chats.query(Chat_.dateDeleted.notNull())..order(Chat_.dateDeleted, flags: Order.descending)).build();
-    final results = await runAsync(() => query.find());
-    query.close();
+    final results = await MessagingStore.current.deletedChats();
     if (mounted) {
       setState(() {
         _deletedChats = results;

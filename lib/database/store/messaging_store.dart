@@ -87,6 +87,11 @@ abstract interface class HandleStore {
 
   Future<Handle?> handleById(int id);
 
+  Future<int> handleCount();
+
+  /// Handles never matched to a server row (no originalROWID), by id.
+  Future<List<Handle>> handlesWithoutRowId();
+
   /// The stored handles of [ids], in that order; missing ones are skipped.
   Future<List<Handle>> handlesByIds(List<int> ids);
 }
@@ -232,6 +237,9 @@ abstract interface class SyncStore {
   Future<List<Chat>> chatsByIds(List<int> ids);
 
   Future<List<Chat>> allChats();
+
+  /// Soft-deleted chats, most recently deleted first.
+  Future<List<Chat>> deletedChats();
 
   /// The chats not deleted that include any of [handleIds].
   Future<List<Chat>> liveChatsWithParticipants(List<int> handleIds);
@@ -380,6 +388,16 @@ abstract interface class ChatStore {
   /// message, newest first: what jumping to a search result loads. [next] is
   /// where scrolling up continues (on ObjectBox, today's position again).
   Future<MessagePage> messagePageAround(int chatId, List<Handle> participants, int aroundId, {required int limit});
+
+  /// Live link-preview messages of [chatId], newest created first.
+  Future<List<Message>> linkMessages(int chatId);
+
+  /// Bookmarked messages of [chatId] with attachments, newest created first.
+  Future<List<Message>> bookmarkedMessages(int chatId);
+
+  /// How many live timeline messages of [chatId] the chat screen shows above
+  /// [messageId] when scrolled from the newest, or null when it is not one.
+  Future<int?> timelinePosition(int chatId, int messageId);
 
   Future<List<int>> participantIds(int chatId);
 

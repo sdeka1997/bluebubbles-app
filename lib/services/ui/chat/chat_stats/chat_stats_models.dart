@@ -1,3 +1,5 @@
+import 'package:bluebubbles/database/models.dart';
+
 /// Sentinel participant id for the local user. Real participants use `Handle.id`,
 /// which ObjectBox always assigns > 0.
 const int kMeParticipantId = -1;
@@ -124,8 +126,11 @@ class ParticipantInfo {
   final String displayName;
   final String? address;
 
+  /// The participant's handle, for avatars; null for me.
+  final Handle? handle;
+
   bool get isMe => id == kMeParticipantId;
-  const ParticipantInfo({required this.id, required this.displayName, this.address});
+  const ParticipantInfo({required this.id, required this.displayName, this.address, this.handle});
 }
 
 class ParticipantCount {

@@ -98,6 +98,15 @@ mixin SqliteHandleStore implements HandleStore, SqliteStorePart {
       [for (final row in await db.select('SELECT id FROM handles ORDER BY id')) row['id'] as int];
 
   @override
+  Future<int> handleCount() async => (await db.select('SELECT count(*) AS n FROM handles')).first['n'] as int;
+
+  @override
+  Future<List<Handle>> handlesWithoutRowId() async {
+    final ids = [for (final row in await db.select('SELECT id FROM handles WHERE original_rowid IS NULL ORDER BY id')) row['id'] as int];
+    return inIdOrder(ids, await HandleRepo(db).byIds(ids));
+  }
+
+  @override
   Future<List<Handle>> allHandles() => HandleRepo(db).all();
 
   @override

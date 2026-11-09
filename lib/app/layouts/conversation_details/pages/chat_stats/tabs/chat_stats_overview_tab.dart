@@ -4,7 +4,6 @@ import 'package:bluebubbles/app/layouts/conversation_details/pages/chat_stats/wi
 import 'package:bluebubbles/app/layouts/conversation_details/pages/chat_stats/widgets/participant_bar.dart';
 import 'package:bluebubbles/app/components/charts/section_skeleton.dart';
 import 'package:bluebubbles/app/components/charts/stat_tile.dart';
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_models.dart';
@@ -215,7 +214,7 @@ class _LeaderboardRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final info = participants[count.participantId];
     final isMe = count.participantId == kMeParticipantId;
-    final handle = isMe ? null : Database.handles.get(count.participantId);
+    final handle = info?.handle;
     final share = maxCount == 0 ? 0.0 : count.count / maxCount;
 
     return Padding(

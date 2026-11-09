@@ -47,6 +47,7 @@ abstract class StoreFixture {
     String? text,
     int? rowId,
     int? deliveredMs,
+    void Function(Message m)? edit,
   });
 
   Future<Attachment> attachment(String guid, Message? message, {String? mimeType});
@@ -139,7 +140,8 @@ class ObjectBoxFixture extends StoreFixture {
       int? itemType,
       String? text,
       int? rowId,
-      int? deliveredMs}) async {
+      int? deliveredMs,
+      void Function(Message m)? edit}) async {
     final m = _message(
       guid,
       ms,
@@ -157,6 +159,7 @@ class ObjectBoxFixture extends StoreFixture {
     );
     if (chat != null) m.chat.target = chat;
     if (from != null) m.handleRelation.target = from;
+    edit?.call(m);
     obx.box<Message>().put(m);
     return m;
   }
@@ -245,7 +248,8 @@ class SqliteFixture extends StoreFixture {
       int? itemType,
       String? text,
       int? rowId,
-      int? deliveredMs}) async {
+      int? deliveredMs,
+      void Function(Message m)? edit}) async {
     final m = _message(
       guid,
       ms,
@@ -263,6 +267,7 @@ class SqliteFixture extends StoreFixture {
     );
     m.chat.targetId = chat?.id;
     m.handleRelation.targetId = from?.id;
+    edit?.call(m);
     m.id = await _insert('messages', messageToRow(m));
     return m;
   }

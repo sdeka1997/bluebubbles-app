@@ -1,7 +1,7 @@
 import 'package:bluebubbles/app/wrappers/bb_app_bar.dart';
 import 'package:bluebubbles/app/wrappers/bb_scaffold.dart';
 import 'package:bluebubbles/app/wrappers/theme_switcher.dart';
-import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/models/models.dart';
@@ -63,10 +63,8 @@ class _HandleAuditPanelState extends State<HandleAuditPanel> with ThemeHelpers {
 
     if (mounted) setState(() => _loading = true);
 
-    final total = await runAsync(() => Database.handles.count());
-    final query = Database.handles.query(Handle_.originalROWID.isNull()).build();
-    final missing = await runAsync(() => query.find());
-    query.close();
+    final total = await MessagingStore.current.handleCount();
+    final missing = await MessagingStore.current.handlesWithoutRowId();
 
     final results = missing
         .map((h) => HandleAuditResult(

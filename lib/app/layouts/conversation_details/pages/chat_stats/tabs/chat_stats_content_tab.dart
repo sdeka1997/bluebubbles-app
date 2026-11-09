@@ -5,7 +5,6 @@ import 'package:bluebubbles/app/components/charts/donut_chart.dart';
 import 'package:bluebubbles/app/layouts/conversation_details/pages/chat_stats/widgets/participant_bar.dart';
 import 'package:bluebubbles/app/components/charts/section_skeleton.dart';
 import 'package:bluebubbles/app/components/charts/stat_tile.dart';
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/services.dart';
@@ -309,7 +308,7 @@ class _LengthLeaderboardRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final info = participants[entry.participantId];
     final isMe = entry.participantId == kMeParticipantId;
-    final handle = isMe ? null : Database.handles.get(entry.participantId);
+    final handle = info?.handle;
     final share = maxAvg == 0 ? 0.0 : entry.avgLength / maxAvg;
 
     return Padding(

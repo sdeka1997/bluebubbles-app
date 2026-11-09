@@ -27,6 +27,13 @@ mixin SqliteSyncStore implements SyncStore, SqliteStorePart {
   Future<List<Chat>> allChats() => ChatRepo(db).all();
 
   @override
+  Future<List<Chat>> deletedChats() async {
+    final rows = await db.select('SELECT id FROM chats WHERE date_deleted_us IS NOT NULL ORDER BY date_deleted_us DESC, id DESC');
+    final ids = [for (final row in rows) row['id'] as int];
+    return inIdOrder(ids, await ChatRepo(db).byIds(ids));
+  }
+
+  @override
   Future<List<Chat>> liveChatsWithParticipants(List<int> handleIds) async {
     if (handleIds.isEmpty) return const [];
     final rows = await db.select(

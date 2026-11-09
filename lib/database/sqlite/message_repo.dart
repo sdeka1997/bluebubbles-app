@@ -93,6 +93,30 @@ class MessageRepo {
     });
   }
 
+  /// How many timeline messages of [chatIds] are newer than [key]: its index on
+  /// the chat screen scrolled from the newest.
+  Future<int> newerCount(List<int> chatIds, MessageKey key) async {
+    var count = 0;
+    for (final chatId in chatIds.toSet()) {
+      final rows = await db.select(
+          'SELECT count(*) AS n $_timeline AND (m.sort_at_us, m.id) > (?, ?)', [chatId, key.sortAtUs, key.id]);
+      count += rows.first['n'] as int;
+    }
+    return count;
+  }
+
+  /// Bookmarked messages of [chatId] (not reactions, not deleted) with
+  /// attachments, newest first.
+  Future<List<Message>> bookmarked(int chatId) async {
+    final rows = await db.select(
+        'SELECT * FROM messages INDEXED BY messages_bookmarked WHERE chat_id = ? AND is_bookmarked = 1 '
+        'ORDER BY sort_at_us DESC, id DESC',
+        [chatId]);
+    final page = rows.map(messageFromRow).toList();
+    await attachmentsFor(page);
+    return page;
+  }
+
   /// One keyset query per chat id (each stays on the index; `chat_id IN (...)`
   /// would sort every older row of all of them), merged by key, deduplicated.
   Future<List<Message>> _page(List<int> chatIds, int limit, bool includeDeleted,

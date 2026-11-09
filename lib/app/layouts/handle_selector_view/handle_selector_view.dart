@@ -5,7 +5,7 @@ import 'package:bluebubbles/app/wrappers/bb_app_bar.dart';
 import 'package:bluebubbles/app/wrappers/bb_scaffold.dart';
 import 'package:bluebubbles/app/wrappers/theme_switcher.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
-import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/string_utils.dart';
@@ -82,7 +82,7 @@ class HandleSelectorViewState extends State<HandleSelectorView> with ThemeHelper
   }
 
   Future<void> loadHandles() async {
-    handles = Database.handles.getAll();
+    handles = await MessagingStore.current.allHandles();
 
     // Sort alphabetically, prioritizing handles with contact associations
     handles.sort((a, b) {

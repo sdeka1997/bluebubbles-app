@@ -7,7 +7,7 @@ import 'package:bluebubbles/app/layouts/conversation_details/widgets/attachment_
 import 'package:bluebubbles/app/layouts/conversation_details/widgets/sections/links/links_search_helper.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/pages/search/conversation_search_field.dart';
 import 'package:bluebubbles/app/layouts/conversation_view/widgets/message/interactive/url_preview.dart';
-import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/services.dart';
@@ -95,14 +95,7 @@ class _LinksSectionState extends State<LinksSection> with ThemeHelpers {
     }
 
     try {
-      final query = (Database.messages.query(Message_.dateDeleted.isNull() &
-              Message_.dbPayloadData.notNull() &
-              Message_.balloonBundleId.contains("URLBalloonProvider"))
-            ..link(Message_.chat, Chat_.id.equals(widget.chat.id!))
-            ..order(Message_.dateCreated, flags: Order.descending))
-          .build();
-      final fetchedLinks = await query.findAsync();
-      query.close();
+      final fetchedLinks = await MessagingStore.current.linkMessages(widget.chat.id!);
 
       if (mounted) {
         setState(() {

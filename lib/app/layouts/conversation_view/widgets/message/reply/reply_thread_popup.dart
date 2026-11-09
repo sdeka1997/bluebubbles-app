@@ -4,7 +4,7 @@ import 'package:bluebubbles/app/layouts/conversation_view/widgets/message/messag
 import 'package:bluebubbles/app/state/chat_state_scope.dart';
 import 'package:bluebubbles/app/wrappers/bb_scaffold.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
-import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:collection/collection.dart';
@@ -23,16 +23,13 @@ void showReplyThread(BuildContext context, Message message, MessagePart part, Me
 }
 
 void showBookmarksThread(ConversationViewController cvController, BuildContext context) async {
-  final _messages = (Database.messages.query(Message_.isBookmarked.equals(true))
-        ..link(Message_.chat, Chat_.guid.equals(cvController.chat.guid))
-        ..order(Message_.dateCreated, flags: Order.descending))
-      .build()
-      .find();
+  final chatId = cvController.chat.id;
+  final _messages = chatId == null ? <Message>[] : await MessagingStore.current.bookmarkedMessages(chatId);
+  if (!context.mounted) return;
   if (_messages.isEmpty) {
     return showSnackbar("Error", "There are no bookmarked messages in this chat!", type: SnackbarType.error);
   }
   for (Message m in _messages) {
-    m.realAttachments;
     m.fetchAssociatedMessages();
   }
   _messages.sort((a, b) => Message.sort(a, b, descending: false));
