@@ -101,6 +101,7 @@ class Database {
         Database.themes.removeAll();
         Database.themeEntries.removeAll();
         themeObjects.removeAll();
+        StorageFiles(Directory(appDocPath)).deleteAll();
       }
     } catch (e, s) {
       Logger.error("Failed to setup ObjectBox boxes!", error: e, trace: s);
@@ -118,6 +119,11 @@ class Database {
     // The SQLite copy (storage_state.dart): main isolate only, in the
     // background while the app runs on ObjectBox.
     if (!isIsolate) await StorageStartup.start();
+    MessagingStore.select(await openSelectedStore(
+      read: () async => (await inspectStorage(StorageStartup.files)).state,
+      onMain: !isIsolate,
+      files: StorageStartup.files,
+    ));
 
     initComplete.complete();
   }

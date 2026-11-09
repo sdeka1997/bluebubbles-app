@@ -5,8 +5,11 @@ import 'dart:isolate';
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/app_database.dart';
+import 'package:bluebubbles/database/sqlite/db.dart';
+import 'package:bluebubbles/database/sqlite/db_change_events.dart';
 import 'package:bluebubbles/database/sqlite/objectbox_sqlite_copy.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_copy_check.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/services/backend/java_dart_interop/method_channel_handlers.dart';
 import 'package:bluebubbles/services/backend/sync/sync_marker.dart';
@@ -64,6 +67,37 @@ Future<void> waitForStorage({
   }
 }
 
+({Db db, StreamSubscription<DbChanges> changes})? _selected;
+
+/// The store this isolate runs on, per the startup plan for the files' state.
+/// SQLite: this isolate's own connection to `bluebubbles.db`, whose committed
+/// writes reach the main isolate's [DbChangeEvents] (directly on main, as
+/// `dbChanged` events from a spawned isolate). When no state selects SQLite the
+/// files are not read.
+Future<MessagingStore> openSelectedStore({
+  required Future<StorageState> Function() read,
+  required bool onMain,
+  required StorageFiles files,
+  StoragePlan Function(StorageState) decide = decideStorage,
+}) async {
+  if (StorageState.values.every((s) => decide(s).store == ActiveStore.objectBox)) {
+    return MessagingStore.forStore(ActiveStore.objectBox);
+  }
+  if (decide(await read()).store == ActiveStore.objectBox) return MessagingStore.forStore(ActiveStore.objectBox);
+  await closeSelectedStore();
+  final db = Db.file(files.ready);
+  _selected = (db: db, changes: onMain ? DbChangeEvents.main.attachLocal(db) : DbChangeEvents.postFrom(db));
+  return MessagingStore.forStore(ActiveStore.sqlite, db: db);
+}
+
+Future<void> closeSelectedStore() async {
+  final selected = _selected;
+  _selected = null;
+  if (selected == null) return;
+  await selected.changes.cancel();
+  await selected.db.close();
+}
+
 class StorageFiles {
   StorageFiles(Directory directory)
       : ready = File(join(directory.path, readyName)),
@@ -75,6 +109,12 @@ class StorageFiles {
   final File ready;
   final File partial;
   final File lock;
+
+  /// Removes both SQLite files (an unfinished setup starts from nothing).
+  void deleteAll() {
+    _deleteDatabase(ready);
+    _deleteDatabase(partial);
+  }
 }
 
 /// storage_meta of a file that exists but can't be opened or read.
@@ -330,7 +370,7 @@ class StorageStartup {
   /// The copy's progress, 0 to 1, for a progress screen once startup waits for it.
   static final ValueNotifier<double> progress = ValueNotifier(0);
 
-  static StorageFiles get _files => StorageFiles(Directory(Database.appDocPath));
+  static StorageFiles get files => StorageFiles(Directory(Database.appDocPath));
 
   /// Main isolate, from Database.init: runs the state machine once per process,
   /// in the background unless the plan makes startup wait for it.
@@ -340,11 +380,11 @@ class StorageStartup {
   }
 
   /// GlobalIsolate and IncrementalSyncIsolate: wait until the plan allows using storage.
-  static Future<void> waitUntilUsable() => waitForStorage(read: () async => (await inspectStorage(_files)).state);
+  static Future<void> waitUntilUsable() => waitForStorage(read: () async => (await inspectStorage(files)).state);
 
   /// DartWorker: pushes arriving while storage is not usable ask Android to retry.
   static void checkWorker() {
     if (storageNeverWaits()) return;
-    MethodChannelHandlers.storageUsable = () async => workerMayProceed((await inspectStorage(_files)).state);
+    MethodChannelHandlers.storageUsable = () async => workerMayProceed((await inspectStorage(files)).state);
   }
 }

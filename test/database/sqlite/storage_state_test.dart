@@ -43,7 +43,8 @@ void main() {
     });
 
     test('a ready file is ready, and a leftover partial next to it is discarded', () {
-      final c = classifyStorage(readyFile: _meta({'storage_state': 'ready', 'check_version': '1'}), partialFile: {});
+      final c = classifyStorage(
+          readyFile: _meta({'storage_state': 'ready', 'check_version': '1'}), partialFile: {});
       expect((c.state, c.discardReady, c.discardPartial), (StorageState.ready, false, true));
     });
 

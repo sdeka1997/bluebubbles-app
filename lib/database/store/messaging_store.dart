@@ -485,6 +485,9 @@ abstract class MessagingStore
   /// ActiveStore.objectBox in every state until then).
   static MessagingStore get current => _current ??= forStore(ActiveStore.objectBox);
 
+  /// Database.init, once per isolate, with the store the startup plan selected.
+  static void select(MessagingStore store) => _current = store;
+
   @visibleForTesting
   static void use(MessagingStore? store) => _current = store;
 }
