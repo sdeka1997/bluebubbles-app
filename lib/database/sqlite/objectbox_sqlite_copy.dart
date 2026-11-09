@@ -171,21 +171,6 @@ class ObjectBoxSqliteCopy {
     return CopyReport(mode: mode, completed: true, rows: rows, elapsed: clock.elapsed);
   }
 
-  /// A ready copy after ObjectBox grew (the app ran on an ObjectBox build after
-  /// a rollback): copies only the message and attachment ids above the copy's
-  /// checkpoints, the small tables and each chat's latest message; rows that
-  /// existed at copy time are not re-read. Reads ObjectBox ids from the id
-  /// index, never the whole message box. Returns the rows added per table.
-  Future<Map<String, int>> topUp() async {
-    final rows = <String, int>{};
-    await _copySmallTables();
-    for (final table in ['messages', 'attachments']) {
-      rows[table] = (await _copyById(table, onlyAbove: true))!;
-    }
-    await _refreshLatestMessages();
-    return rows;
-  }
-
   Future<void> _recopyMismatched(String? json) async {
     if (json == null) return;
     final byTable = (jsonDecode(json) as Map<String, dynamic>).map((k, v) => MapEntry(k, (v as List).cast<int>()));
@@ -229,17 +214,6 @@ class ObjectBoxSqliteCopy {
         b.customStatement('INSERT OR REPLACE INTO storage_meta (key, value) VALUES (?, ?)', [entry.key, entry.value]);
       }
     });
-  }
-
-  List<int> _idsAbove(String table, int from) {
-    final query = table == 'messages'
-        ? _messages.query(Message_.id.greaterThan(from)).build()
-        : _attachments.query(Attachment_.id.greaterThan(from)).build();
-    try {
-      return query.findIds();
-    } finally {
-      query.close();
-    }
   }
 
   static List<int> _allIds<T>(Box<T> box) {
@@ -382,11 +356,11 @@ class ObjectBoxSqliteCopy {
 
   /// Copies ObjectBox ids above the checkpoint in ascending batches; returns the
   /// rows copied, or null when stopped by [stopAfterBatches].
-  Future<int?> _copyById(String table, {bool onlyAbove = false}) async {
+  Future<int?> _copyById(String table) async {
     final box = table == 'messages' ? _messages : _attachments;
     final from = await _checkpoint(table);
     if (table == 'messages') _messagesCopiedUpTo = from;
-    final ids = ((onlyAbove ? _idsAbove(table, from) : _allIds(box).where((id) => id > from)).toList())..sort();
+    final ids = (_allIds(box).where((id) => id > from).toList())..sort();
     final clock = Stopwatch()..start();
     var copied = 0;
     var nextProgress = progressEvery;
@@ -401,7 +375,7 @@ class ObjectBoxSqliteCopy {
         await _ensureParents(entities.cast<Message>());
       } else if (entities.cast<Attachment>().any((a) => a.message.targetId > _messagesCopiedUpTo)) {
         // An attachment saved with a message newer than the message pass: copy that first.
-        await _copyById('messages', onlyAbove: onlyAbove);
+        await _copyById('messages');
       }
       final rows = entities.map((e) => _expectedRow(table, e)).toList();
       total += rows.length;

@@ -32,9 +32,9 @@ class SyncMarkerKeys {
 /// place of `lastIncrementalSync*` / `incrementalCatchUpTotal`.
 ///
 /// On SQLite an unset (0) timestamp or ROWID reads the ObjectBox one: the
-/// first SQLite run starts where ObjectBox stopped, which is right because the
-/// S1 copy (topped up with ids above its recorded max at switch time) holds
-/// everything ObjectBox had. A catch-up total is never carried over.
+/// first SQLite run after a copy starts where ObjectBox stopped, which is right
+/// because the copy holds everything ObjectBox had (a fresh copy resets these to
+/// 0, resetSqliteMarkers). A catch-up total is never carried over.
 class SyncMarker {
   SyncMarker.of(this.settings, this.store);
 

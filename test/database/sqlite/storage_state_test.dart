@@ -14,9 +14,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'objectbox_sqlite_copy_test.dart' show Fixture, dumpTables, expectFtsConsistent, ftsIds;
 import 'schema_v2_test.dart' show writeS1File;
 
-// The startup storage state machine (switch-plan commit 2): no file / partial /
-// ready / failed, the copy into bluebubbles.db.partial, the rename, the lock and
-// the top-up. ObjectBox stays the store the app runs on in every state.
+// The startup storage state machine (switch-plan commits 2 and 9): no file /
+// partial / ready / failed, the copy into bluebubbles.db.partial, the rename,
+// the lock, and a ready copy judged against ObjectBox (decisions 1-2, option A).
 
 Map<String, String?> _meta(Map<String, String?> values) => values;
 
@@ -26,11 +26,18 @@ void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
   group('decideStorage', () {
-    test('runs the app on ObjectBox in every state; copies, tops up or stops; nothing waits', () {
-      expect(decideStorage(StorageState.noFile), (store: ActiveStore.objectBox, step: CopyStep.copy, waitForCopy: false));
-      expect(decideStorage(StorageState.partial), (store: ActiveStore.objectBox, step: CopyStep.copy, waitForCopy: false));
-      expect(decideStorage(StorageState.ready), (store: ActiveStore.objectBox, step: CopyStep.topUp, waitForCopy: false));
+    test('SQLite once a copy is ready; until then startup waits for the copy; a failed copy stays on ObjectBox', () {
+      expect(decideStorage(StorageState.noFile), (store: ActiveStore.sqlite, step: CopyStep.copy, waitForCopy: true));
+      expect(decideStorage(StorageState.partial), (store: ActiveStore.sqlite, step: CopyStep.copy, waitForCopy: true));
+      expect(decideStorage(StorageState.ready), (store: ActiveStore.sqlite, step: CopyStep.none, waitForCopy: false));
       expect(decideStorage(StorageState.failed), (store: ActiveStore.objectBox, step: CopyStep.none, waitForCopy: false));
+    });
+
+    test('platforms without the switch stay on ObjectBox and never copy', () {
+      for (final s in StorageState.values) {
+        expect(objectBoxOnly(s), (store: ActiveStore.objectBox, step: CopyStep.none, waitForCopy: false));
+      }
+      expect(platformPlan, same(objectBoxOnly), reason: 'host tests are not Android');
     });
   });
 
@@ -53,6 +60,13 @@ void main() {
           readyFile: _meta({'check_version': '3', 'copy_state': 'verified', 'schema_version': '1'}), partialFile: null);
       expect((c.state, c.discardReady, c.discardPartial), (StorageState.noFile, true, false));
       expect(c.reason, contains('never marked ready'));
+    });
+
+    test('a ready file that is out of date is discarded, then noFile', () {
+      final c = classifyStorage(
+          readyFile: _meta({'storage_state': 'ready'}), partialFile: null, outOfDate: (_) => 'ObjectBox sync moved');
+      expect((c.state, c.discardReady, c.discardPartial), (StorageState.noFile, true, false));
+      expect(c.reason, 'out of date: ObjectBox sync moved');
     });
 
     test('an unreadable bluebubbles.db is never deleted: failed for this launch', () {
@@ -109,14 +123,19 @@ void main() {
 
     String dataHash() => sha256.convert(File('${obDir.path}/data.mdb').readAsBytesSync()).toString();
 
-    Future<StorageState> run(List<String> lines, {int? stopAfterBatches, void Function(double)? onProgress}) =>
+    const marker = '1700000000000:4000';
+
+    Future<StorageState> run(List<String> lines,
+            {int? stopAfterBatches, void Function(double)? onProgress, String objectBoxMarker = marker, void Function()? onCopied}) =>
         runStorageStartup(
           store: fixture.store,
           files: files,
           log: lines.add,
+          objectBoxMarker: objectBoxMarker,
           batchSize: 7,
           stopAfterBatches: stopAfterBatches,
           onProgress: onProgress,
+          onCopied: onCopied,
         );
 
     test('no file: copies into bluebubbles.db.partial with progress, verifies, renames; ObjectBox untouched', () async {
@@ -159,7 +178,8 @@ void main() {
       final otherDir = Directory.systemTemp.createTempSync('bb_state_other_');
       addTearDown(() => otherDir.deleteSync(recursive: true));
       final other = StorageFiles(otherDir);
-      expect(await runStorageStartup(store: fixture.store, files: other, log: (_) {}, batchSize: 7), StorageState.ready);
+      expect(await runStorageStartup(store: fixture.store, files: other, log: (_) {}, objectBoxMarker: marker, batchSize: 7),
+          StorageState.ready);
 
       final a = AppDatabase.file(files.ready);
       final b = AppDatabase.file(other.ready);
@@ -175,7 +195,8 @@ void main() {
       final lines = <String>[];
       fixture.store.close();
       // A closed store throws on any read: the verified partial must not be copied again.
-      expect(await runStorageStartup(store: fixture.store, files: files, log: lines.add), StorageState.ready);
+      expect(await runStorageStartup(store: fixture.store, files: files, log: lines.add, objectBoxMarker: marker),
+          StorageState.ready);
       expect(lines.where((l) => l.startsWith('BBSQL skip: copy verified')), hasLength(1));
       fixture.store = Store(getObjectBoxModel(), directory: obDir.path);
     });
@@ -195,40 +216,69 @@ void main() {
       expect((await readStorageMeta(db))['storage_state'], 'ready');
     });
 
-    test('ready and ObjectBox grew (after a rollback): tops up only the ids above the copy', () async {
-      expect(await run([]), StorageState.ready);
-      final quiet = <String>[];
-      expect(await run(quiet), StorageState.ready);
-      expect(quiet, contains('BBSQL topup none'));
+    test('a fresh copy records the ObjectBox position; the next start keeps it and copies nothing', () async {
+      var copied = 0;
+      expect(await run([], onCopied: () => copied++), StorageState.ready);
+      expect(copied, 1);
+      final db = AppDatabase.file(files.ready);
+      expect((await readStorageMeta(db))[CopyFingerprint.metaKey], marker);
+      await db.close();
 
-      final newer = Message(guid: 'rolled-back', text: 'arrived on the ObjectBox build', dateCreated: DateTime.utc(2027));
-      newer.chat.target = fixture.alice;
-      fixture.store.box<Message>().put(newer);
-      final attachment = Attachment(guid: 'att-new', mimeType: 'image/jpeg');
-      attachment.message.target = newer;
-      fixture.store.box<Attachment>().put(attachment);
-      fixture.alice.dbLatestMessage.target = newer;
-      fixture.store.box<Chat>().put(fixture.alice);
-      // An old row changed in ObjectBox is not re-read by a top-up (only new ids are).
-      final old = fixture.store.box<Message>().query(Message_.guid.equals('m4')).build().findFirst()!;
+      final before = files.ready.lastModifiedSync();
+      final lines = <String>[];
+      expect(await run(lines, onCopied: () => copied++), StorageState.ready);
+      expect(lines, contains('BBSQL storage current'));
+      expect(copied, 1);
+      expect(files.ready.lastModifiedSync(), before);
+    });
+
+    test("decision 1: a ready copy with no recorded position (seq.42d's) is discarded and copied fresh", () async {
+      expect(await run([]), StorageState.ready);
+      final db = AppDatabase.file(files.ready);
+      await db.customStatement("DELETE FROM storage_meta WHERE key = '${CopyFingerprint.metaKey}'");
+      await db.close();
+
+      final lines = <String>[];
+      expect(await run(lines), StorageState.ready);
+      expect(lines.first, 'BBSQL discard bluebubbles.db: out of date: no ObjectBox position recorded');
+      expect(lines.singleWhere((l) => l.startsWith('BBSQL start')), contains('mode=new'));
+    });
+
+    test('decision 2: an ObjectBox build ran since (its sync moved): the whole copy is redone, edits included', () async {
+      expect(await run([]), StorageState.ready);
+      // On the undo build: an old message edited, one deleted, and the sync moved.
+      final messages = fixture.store.box<Message>();
+      final old = messages.query(Message_.guid.equals('m4')).build().findFirst()!;
       old.text = 'edited while rolled back';
-      fixture.store.box<Message>().put(old);
+      messages.put(old);
 
       final before = dataHash();
       final lines = <String>[];
-      expect(await run(lines), StorageState.ready);
-      expect(lines, contains('BBSQL topup messages=1 attachments=1'));
+      var copied = 0;
+      expect(await run(lines, objectBoxMarker: '1700000999000:4100', onCopied: () => copied++), StorageState.ready);
+      expect(lines.first, 'BBSQL discard bluebubbles.db: out of date: ObjectBox sync moved');
+      expect(copied, 1);
       expect(dataHash(), before);
 
       final db = AppDatabase.file(files.ready);
       addTearDown(db.close);
-      expect(await ftsIds(db, 'ObjectBox build'), [newer.id]);
-      final chat = await db.customSelect('SELECT latest_message_id FROM chats WHERE id = ${fixture.alice.id}').getSingle();
-      expect(chat.read<int>('latest_message_id'), newer.id);
-      final att = await db.customSelect("SELECT message_id FROM attachments WHERE guid = 'att-new'").getSingle();
-      expect(att.read<int>('message_id'), newer.id);
-      expect(await ftsIds(db, 'edited while'), isEmpty);
+      expect(await ftsIds(db, 'edited while'), [old.id]);
+      expect((await readStorageMeta(db))[CopyFingerprint.metaKey], '1700000999000:4100');
       await expectFtsConsistent(db);
+    });
+
+    test('decision 2: ObjectBox holding messages the copy lacks, at the same position, is out of date too', () async {
+      expect(await run([]), StorageState.ready);
+      final newer = Message(guid: 'rolled-back', text: 'arrived on the ObjectBox build', dateCreated: DateTime.utc(2027));
+      newer.chat.target = fixture.alice;
+      fixture.store.box<Message>().put(newer);
+
+      final lines = <String>[];
+      expect(await run(lines), StorageState.ready);
+      expect(lines.first, 'BBSQL discard bluebubbles.db: out of date: ObjectBox has newer messages');
+      final db = AppDatabase.file(files.ready);
+      addTearDown(db.close);
+      expect(await ftsIds(db, 'ObjectBox build'), [newer.id]);
     });
 
     test('failed: no copy, the app stays on ObjectBox, and it is logged', () async {
@@ -240,7 +290,8 @@ void main() {
       fixture.store.close();
 
       final lines = <String>[];
-      expect(await runStorageStartup(store: fixture.store, files: files, log: lines.add), StorageState.failed);
+      expect(await runStorageStartup(store: fixture.store, files: files, log: lines.add, objectBoxMarker: marker),
+          StorageState.failed);
       expect(decideStorage(StorageState.failed).store, ActiveStore.objectBox);
       expect(lines, contains('BBSQL storage state=failed'));
       expect(lines.where((l) => l.startsWith('BBSQL storage failed: staying on ObjectBox')), hasLength(1));
@@ -270,13 +321,17 @@ void main() {
 
     test('the copy runs on its own isolate attached to the open store and reports progress', () async {
       final progress = <double>[];
+      var copied = 0;
       final state = await runStorageStartupInIsolate(
         objectBoxPath: obDir.path,
         directoryPath: appDir.path,
+        objectBoxMarker: marker,
         onProgress: progress.add,
+        onCopied: () => copied++,
         log: (_) {},
       );
       expect(state, StorageState.ready);
+      expect(copied, 1);
       expect(progress.last, 1.0);
       expect(files.ready.existsSync(), isTrue);
       // The app's store is still open and usable.
@@ -289,9 +344,9 @@ void main() {
         (store: ActiveStore.sqlite, step: CopyStep.copy, waitForCopy: s != StorageState.ready);
 
     test('with ObjectBox active nothing ever waits, so nothing reads the files', () async {
-      expect(storageNeverWaits(), isTrue);
+      expect(storageNeverWaits(decide: objectBoxOnly), isTrue);
       var reads = 0;
-      await waitForStorage(read: () async {
+      await waitForStorage(decide: objectBoxOnly, read: () async {
         reads++;
         return StorageState.partial;
       }, poll: const Duration(hours: 1));
@@ -308,7 +363,8 @@ void main() {
 
     test('the DartWorker proceeds unless the plan says wait (ObjectBox active: always proceeds)', () {
       for (final s in StorageState.values) {
-        expect(workerMayProceed(s), isTrue, reason: s.name);
+        expect(workerMayProceed(s, decide: objectBoxOnly), isTrue, reason: s.name);
+        expect(workerMayProceed(s), s == StorageState.ready || s == StorageState.failed, reason: s.name);
         expect(workerMayProceed(s, decide: waitUntilReady), s == StorageState.ready, reason: s.name);
       }
     });

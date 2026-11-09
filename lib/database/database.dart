@@ -116,8 +116,8 @@ class Database {
 
     await seedThemes();
 
-    // The SQLite copy (storage_state.dart): main isolate only, in the
-    // background while the app runs on ObjectBox.
+    // The SQLite copy (storage_state.dart): main isolate only. On Android a
+    // missing or out-of-date copy is made now, behind the progress screen.
     if (!isIsolate) await StorageStartup.start();
     MessagingStore.select(await openSelectedStore(
       read: () async => (await inspectStorage(StorageStartup.files)).state,

@@ -34,18 +34,21 @@ enum StorageState {
   failed,
 }
 
-enum CopyStep { copy, topUp, none }
+enum CopyStep { copy, none }
 
 typedef StoragePlan = ({ActiveStore store, CopyStep step, bool waitForCopy});
 
-/// The store the app runs on and the copy work for [state]. Until the switch
-/// (S2 switch plan, commit 9) ObjectBox is the store in every state and nothing
-/// waits for the copy: it runs in the background.
+/// The store the app runs on and the copy work for [state] (S2 switch plan,
+/// commit 9): SQLite once a current copy is ready; until then startup waits for
+/// the copy. A copy that gave up leaves the app on ObjectBox.
 StoragePlan decideStorage(StorageState state) => switch (state) {
-      StorageState.noFile || StorageState.partial => (store: ActiveStore.objectBox, step: CopyStep.copy, waitForCopy: false),
-      StorageState.ready => (store: ActiveStore.objectBox, step: CopyStep.topUp, waitForCopy: false),
+      StorageState.noFile || StorageState.partial => (store: ActiveStore.sqlite, step: CopyStep.copy, waitForCopy: true),
+      StorageState.ready => (store: ActiveStore.sqlite, step: CopyStep.none, waitForCopy: false),
       StorageState.failed => (store: ActiveStore.objectBox, step: CopyStep.none, waitForCopy: false),
     };
+
+/// Platforms without the SQLite switch (desktop, host tests) stay on ObjectBox.
+StoragePlan objectBoxOnly(StorageState state) => (store: ActiveStore.objectBox, step: CopyStep.none, waitForCopy: false);
 
 /// Whether no state makes startup wait for the copy (then nothing reads the files to find out).
 bool storageNeverWaits({StoragePlan Function(StorageState) decide = decideStorage}) =>
@@ -78,12 +81,18 @@ Future<MessagingStore> openSelectedStore({
   required Future<StorageState> Function() read,
   required bool onMain,
   required StorageFiles files,
-  StoragePlan Function(StorageState) decide = decideStorage,
+  StoragePlan Function(StorageState)? decide,
 }) async {
-  if (StorageState.values.every((s) => decide(s).store == ActiveStore.objectBox)) {
+  decide ??= platformPlan;
+  if (StorageState.values.every((s) => decide!(s).store == ActiveStore.objectBox)) {
     return MessagingStore.forStore(ActiveStore.objectBox);
   }
-  if (decide(await read()).store == ActiveStore.objectBox) return MessagingStore.forStore(ActiveStore.objectBox);
+  final plan = decide(await read());
+  // Waiting for the copy (a worker isolate before main has copied): nothing
+  // may be opened, and the DartWorker refuses pushes meanwhile. ObjectBox is
+  // the inert stand-in; anything written there makes the copy stale, so the
+  // next copy takes it along.
+  if (plan.store == ActiveStore.objectBox || plan.waitForCopy) return MessagingStore.forStore(ActiveStore.objectBox);
   await closeSelectedStore();
   final db = Db.file(files.ready);
   _selected = (db: db, changes: onMain ? DbChangeEvents.main.attachLocal(db) : DbChangeEvents.postFrom(db));
@@ -142,20 +151,27 @@ class StorageClassification {
 /// was never marked: it is discarded and copied afresh rather than migrated, so
 /// every ready file comes out of this one path. A `bluebubbles.db` that can't be
 /// read is never deleted: the app stays on ObjectBox and logs it.
+///
+/// [outOfDate] says why a ready file no longer matches ObjectBox (null: it
+/// does); such a file is discarded and copied afresh ([CopyFingerprint]).
 StorageClassification classifyStorage({
   required Map<String, String?>? readyFile,
   required Map<String, String?>? partialFile,
   int checkVersion = copyCheckVersion,
+  String? Function(Map<String, String?> readyMeta)? outOfDate,
 }) {
   var discardReady = false;
   var reason = '';
   if (readyFile != null) {
     if (_unreadable(readyFile)) return StorageClassification(StorageState.failed, reason: 'bluebubbles.db unreadable');
-    if (readyFile['storage_state'] == 'ready') {
+    final stale = readyFile['storage_state'] == 'ready' ? outOfDate?.call(readyFile) : null;
+    if (readyFile['storage_state'] == 'ready' && stale == null) {
       return StorageClassification(StorageState.ready, discardPartial: partialFile != null, reason: 'leftover partial');
     }
     discardReady = true;
-    reason = 'never marked ready (check v${readyFile['check_version']}, schema v${readyFile['schema_version']})';
+    reason = stale != null
+        ? 'out of date: $stale'
+        : 'never marked ready (check v${readyFile['check_version']}, schema v${readyFile['schema_version']})';
   }
   if (partialFile == null) return StorageClassification(StorageState.noFile, discardReady: discardReady, reason: reason);
   if (_unreadable(partialFile) || partialFile['check_version'] != '$checkVersion') {
@@ -189,8 +205,70 @@ Map<String, String?>? _readMeta(File file) {
   }
 }
 
-Future<StorageClassification> inspectStorage(StorageFiles files) async =>
-    classifyStorage(readyFile: _readMeta(files.ready), partialFile: _readMeta(files.partial));
+Future<StorageClassification> inspectStorage(StorageFiles files, {CopyFingerprint? current}) async {
+  final ready = _readMeta(files.ready);
+  return classifyStorage(
+    readyFile: ready,
+    partialFile: _readMeta(files.partial),
+    outOfDate: current == null ? null : (meta) => current.differenceFrom(meta, files.ready),
+  );
+}
+
+/// What a copy was taken from, decision 1-2 (option A): the ObjectBox build's
+/// incremental-sync position at copy time. A SQLite build never moves it and
+/// never writes messages to ObjectBox, so a ready file whose recorded position
+/// differs, or ObjectBox holding message/attachment ids above what was copied,
+/// means an ObjectBox build ran since (an undo): the copy is out of date and
+/// is redone in full. A file with no record (copied before this rule) is out
+/// of date too.
+class CopyFingerprint {
+  CopyFingerprint({required this.objectBoxMarker, required this.store});
+
+  /// `lastIncrementalSync:lastIncrementalSyncRowId` of the ObjectBox build.
+  final String objectBoxMarker;
+  final Store store;
+
+  static const metaKey = 'objectbox_marker';
+
+  static String markerOf(int timestamp, int rowId) => '$timestamp:$rowId';
+
+  /// Why the copy in [file] (its storage_meta is [meta]) no longer matches
+  /// ObjectBox, or null when it does. Reads ObjectBox ids from the id index only.
+  String? differenceFrom(Map<String, String?> meta, File file) {
+    final recorded = meta[metaKey];
+    if (recorded == null) return 'no ObjectBox position recorded';
+    if (recorded != objectBoxMarker) return 'ObjectBox sync moved';
+    final copied = _copiedUpTo(file);
+    if (_anyAbove(store.box<Message>().query(Message_.id.greaterThan(copied['messages'] ?? 0)).build())) {
+      return 'ObjectBox has newer messages';
+    }
+    if (_anyAbove(store.box<Attachment>().query(Attachment_.id.greaterThan(copied['attachments'] ?? 0)).build())) {
+      return 'ObjectBox has newer attachments';
+    }
+    return null;
+  }
+
+  static bool _anyAbove<T>(Query<T> query) {
+    try {
+      query.limit = 1;
+      return query.findIds().isNotEmpty;
+    } finally {
+      query.close();
+    }
+  }
+
+  static Map<String, int> _copiedUpTo(File file) {
+    final db = raw.sqlite3.open(file.path, mode: raw.OpenMode.readOnly);
+    try {
+      return {
+        for (final row in db.select('SELECT entity, last_source_id FROM copy_checkpoints'))
+          row['entity'] as String: row['last_source_id'] as int,
+      };
+    } finally {
+      db.dispose();
+    }
+  }
+}
 
 void _deleteDatabase(File file) {
   for (final suffix in ['', '-wal', '-shm', '-journal']) {
@@ -201,9 +279,11 @@ void _deleteDatabase(File file) {
 
 /// Marks the verified partial file ready and renames it into place. Killed in
 /// between, the next start finds a verified partial and only repeats this.
-Future<void> _promote(StorageFiles files) async {
+Future<void> _promote(StorageFiles files, String objectBoxMarker) async {
   final database = AppDatabase.file(files.partial);
   try {
+    await database.customStatement(
+        'INSERT OR REPLACE INTO storage_meta (key, value) VALUES (?, ?)', [CopyFingerprint.metaKey, objectBoxMarker]);
     await database.customStatement("INSERT OR REPLACE INTO storage_meta (key, value) VALUES ('storage_state', 'ready')");
     await database.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
   } finally {
@@ -214,19 +294,26 @@ Future<void> _promote(StorageFiles files) async {
   _deleteDatabase(files.partial);
 }
 
-/// One startup step of the state machine: classify the files, discard stale
-/// ones, then copy into `bluebubbles.db.partial` (resuming), verify and rename,
-/// or top up a ready file, or stay put after a failure. Holds
+/// One startup step of the state machine: classify the files, discard stale or
+/// out-of-date ones, then copy into `bluebubbles.db.partial` (resuming), verify
+/// and rename, or keep a current ready file, or stay put after a failure. Holds
 /// `sqlite-copy.lock` throughout, so two engines never copy at once. ObjectBox
 /// is only read. Returns the state it leaves behind; never throws.
+///
+/// [objectBoxMarker] is the ObjectBox build's sync position now
+/// ([CopyFingerprint]); a copy records it, and a ready file taken at another
+/// position is discarded first. [onCopied] runs once a fresh copy is in place.
 Future<StorageState> runStorageStartup({
   required Store store,
   required StorageFiles files,
   required void Function(String line) log,
+  required String objectBoxMarker,
   int batchSize = 1000,
   int? stopAfterBatches,
   void Function(double fraction)? onProgress,
+  void Function()? onCopied,
 }) async {
+  final current = CopyFingerprint(objectBoxMarker: objectBoxMarker, store: store);
   RandomAccessFile? lock;
   try {
     lock = files.lock.openSync(mode: FileMode.append);
@@ -234,10 +321,10 @@ Future<StorageState> runStorageStartup({
       lock.lockSync(FileLock.exclusive);
     } on FileSystemException {
       log('BBSQL storage busy: sqlite-copy.lock is held by another process');
-      return (await inspectStorage(files)).state;
+      return (await inspectStorage(files, current: current)).state;
     }
 
-    final found = await inspectStorage(files);
+    final found = await inspectStorage(files, current: current);
     if (found.discardReady) {
       log('BBSQL discard bluebubbles.db: ${found.reason}');
       _deleteDatabase(files.ready);
@@ -264,23 +351,17 @@ Future<StorageState> runStorageStartup({
           if (after.state == StorageState.failed) log('BBSQL storage failed: staying on ObjectBox (${after.reason})');
           return after.state;
         }
-        await _promote(files);
+        await _promote(files, objectBoxMarker);
         onProgress?.call(1.0);
         log('BBSQL storage ready');
-        return StorageState.ready;
-      case CopyStep.topUp:
-        final database = AppDatabase.file(files.ready);
-        try {
-          final rows = await ObjectBoxSqliteCopy(source: store, target: database, batchSize: batchSize, log: log).topUp();
-          log(rows.values.every((n) => n == 0)
-              ? 'BBSQL topup none'
-              : 'BBSQL topup ${rows.entries.map((e) => '${e.key}=${e.value}').join(' ')}');
-        } finally {
-          await database.close();
-        }
+        onCopied?.call();
         return StorageState.ready;
       case CopyStep.none:
-        log('BBSQL storage failed: staying on ObjectBox (${found.reason})');
+        if (state == StorageState.ready) {
+          log('BBSQL storage current');
+        } else {
+          log('BBSQL storage failed: staying on ObjectBox (${found.reason})');
+        }
         return state;
     }
   } catch (e) {
@@ -298,12 +379,15 @@ Future<StorageState> runStorageStartup({
 
 /// [runStorageStartup] on its own isolate attached to the ObjectBox store
 /// already open at [objectBoxPath], so the UI isolate only waits on a port.
-/// Progress and log lines come back as they happen.
+/// Progress and log lines come back as they happen; [onCopied] when a fresh
+/// copy was put in place.
 Future<StorageState> runStorageStartupInIsolate({
   required String objectBoxPath,
   required String directoryPath,
+  required String objectBoxMarker,
   required void Function(String line) log,
   void Function(double fraction)? onProgress,
+  void Function()? onCopied,
 }) async {
   final port = ReceivePort();
   final done = Completer<StorageState>();
@@ -312,13 +396,16 @@ Future<StorageState> runStorageStartupInIsolate({
       onProgress?.call(message);
     } else if (message is String) {
       log(message);
+    } else if (message is bool) {
+      onCopied?.call();
     } else if (message is int) {
       done.complete(StorageState.values[message]);
     }
   });
   final send = port.sendPort;
   try {
-    await Isolate.run(_storageIsolateTask(send, objectBoxPath, directoryPath), debugName: 'sqlite-storage');
+    await Isolate.run(_storageIsolateTask(send, objectBoxPath, directoryPath, objectBoxMarker),
+        debugName: 'sqlite-storage');
     return await done.future;
   } finally {
     port.close();
@@ -327,10 +414,11 @@ Future<StorageState> runStorageStartupInIsolate({
 
 /// Built here so the closure captures only these sendable values (a closure
 /// created inside [runStorageStartupInIsolate] would carry its Completer).
-Future<void> Function() _storageIsolateTask(SendPort send, String objectBoxPath, String directoryPath) =>
-    () => _storageIsolateBody(send, objectBoxPath, directoryPath);
+Future<void> Function() _storageIsolateTask(
+        SendPort send, String objectBoxPath, String directoryPath, String objectBoxMarker) =>
+    () => _storageIsolateBody(send, objectBoxPath, directoryPath, objectBoxMarker);
 
-Future<void> _storageIsolateBody(SendPort send, String objectBoxPath, String directoryPath) async {
+Future<void> _storageIsolateBody(SendPort send, String objectBoxPath, String directoryPath, String objectBoxMarker) async {
   var state = StorageState.failed;
   try {
     final store = Store.attach(getObjectBoxModel(), objectBoxPath);
@@ -339,7 +427,9 @@ Future<void> _storageIsolateBody(SendPort send, String objectBoxPath, String dir
         store: store,
         files: StorageFiles(Directory(directoryPath)),
         log: send.send,
+        objectBoxMarker: objectBoxMarker,
         onProgress: send.send,
+        onCopied: () => send.send(true),
       );
     } finally {
       store.close();
@@ -350,41 +440,77 @@ Future<void> _storageIsolateBody(SendPort send, String objectBoxPath, String dir
   send.send(state.index);
 }
 
+/// The plan this platform runs: Android switches to SQLite; desktop, web and
+/// host tests stay on ObjectBox and never copy.
+StoragePlan Function(StorageState) get platformPlan => !kIsWeb && Platform.isAndroid ? decideStorage : objectBoxOnly;
+
 /// The state machine wired into the app's startup.
 class StorageStartup {
   static final SqliteCopyCheckRunner _runner = SqliteCopyCheckRunner(
-    enabled: () =>
-        !kIsWeb &&
-        Platform.isAndroid &&
-        !isIsolate &&
-        GetIt.I.isRegistered<SettingsService>() &&
-        SettingsSvc.settings.finishedSetup.value,
-    body: () => runStorageStartupInIsolate(
-      objectBoxPath: join(Database.appDocPath, 'objectbox'),
-      directoryPath: Database.appDocPath,
-      onProgress: (fraction) => progress.value = fraction,
-      log: debugPrint,
-    ),
+    // Also before setup finishes: Database.init has just emptied both stores,
+    // so the copy is instant and setup's sync goes straight into SQLite.
+    enabled: () => !identical(platformPlan, objectBoxOnly) && !isIsolate && GetIt.I.isRegistered<SettingsService>(),
+    body: () async {
+      final settings = SettingsSvc.settings;
+      await runStorageStartupInIsolate(
+        objectBoxPath: join(Database.appDocPath, 'objectbox'),
+        directoryPath: Database.appDocPath,
+        objectBoxMarker: CopyFingerprint.markerOf(settings.lastIncrementalSync.value, settings.lastIncrementalSyncRowId.value),
+        onProgress: (fraction) => progress.value = fraction,
+        onCopied: () => unawaited(resetSqliteMarkers(settings)),
+        log: debugPrint,
+      );
+    },
   );
 
-  /// The copy's progress, 0 to 1, for a progress screen once startup waits for it.
+  /// Shows the progress screen; set by startup before Database.init.
+  static void Function()? onWait;
+
+  /// The copy's progress, 0 to 1, for the progress screen while startup waits for it.
   static final ValueNotifier<double> progress = ValueNotifier(0);
 
   static StorageFiles get files => StorageFiles(Directory(Database.appDocPath));
 
-  /// Main isolate, from Database.init: runs the state machine once per process,
-  /// in the background unless the plan makes startup wait for it.
+  /// Main isolate, from Database.init: runs the state machine once per process
+  /// and, when the plan makes startup wait for the copy, shows [onWait] (the
+  /// progress screen) once a copy is under way, and waits for it.
   static Future<void> start() async {
+    if (storageNeverWaits(decide: platformPlan)) return _runner.start();
+    final before = await inspectStorage(files);
     final run = _runner.start();
-    if (!storageNeverWaits()) await run;
+    // A ready file may still turn out stale once the copy isolate compares it
+    // with ObjectBox; that case shows the bar from its first progress report.
+    if (platformPlan(before.state).waitForCopy) {
+      onWait?.call();
+    } else {
+      void show() {
+        progress.removeListener(show);
+        onWait?.call();
+      }
+      progress.addListener(show);
+      run.whenComplete(() => progress.removeListener(show));
+    }
+    await run;
   }
 
   /// GlobalIsolate and IncrementalSyncIsolate: wait until the plan allows using storage.
-  static Future<void> waitUntilUsable() => waitForStorage(read: () async => (await inspectStorage(files)).state);
+  static Future<void> waitUntilUsable() =>
+      waitForStorage(read: () async => (await inspectStorage(files)).state, decide: platformPlan);
 
   /// DartWorker: pushes arriving while storage is not usable ask Android to retry.
   static void checkWorker() {
-    if (storageNeverWaits()) return;
-    MethodChannelHandlers.storageUsable = () async => workerMayProceed((await inspectStorage(files)).state);
+    if (storageNeverWaits(decide: platformPlan)) return;
+    MethodChannelHandlers.storageUsable =
+        () async => workerMayProceed((await inspectStorage(files)).state, decide: platformPlan);
   }
+}
+
+/// After a fresh copy the SQLite build's own sync markers start over, so its
+/// next sync resumes from the ObjectBox position the copy was taken at
+/// ([SyncMarker] reads ObjectBox's marker while its own is 0).
+Future<void> resetSqliteMarkers(Settings settings) async {
+  settings.sqliteLastIncrementalSync.value = 0;
+  settings.sqliteLastIncrementalSyncRowId.value = 0;
+  settings.sqliteIncrementalCatchUpTotal.value = 0;
+  await settings.saveManyAsync(SyncMarkerKeys.sqlite.all);
 }

@@ -55,6 +55,13 @@ void main() {
     await closeSelectedStore();
   });
 
+  test('while the copy is still running, a worker isolate opens nothing: ObjectBox stand-in', () async {
+    final store = await openSelectedStore(
+        read: () async => StorageState.partial, onMain: false, files: files, decide: sqliteWhenReady);
+    expect(store.kind, ActiveStore.objectBox);
+    expect(files.ready.existsSync(), isFalse);
+  });
+
   test('a failed copy stays on ObjectBox even under a SQLite plan', () async {
     final store = await openSelectedStore(
         read: () async => StorageState.failed, onMain: true, files: files, decide: sqliteWhenReady);
