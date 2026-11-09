@@ -50,7 +50,9 @@ class KeyboardShortcutHandler {
           SettingsSvc.serverDetails.supportsEditAndUnsend) {
         final chat = controller.chat;
         final service = maybeFindMessagesSvc(chat.guid);
-        final message = service?.mostRecentSent;
+        // Only while the newest rows are held: the window may otherwise hold
+        // older ones, and the message to edit has no bubble on screen.
+        final message = (service?.atNewestEdge ?? false) ? service!.mostRecentSent : null;
         if (message != null) {
           final messageController = service!.getOrCreateState(message);
           final isSending = messageController.isSending.value;

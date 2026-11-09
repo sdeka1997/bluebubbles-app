@@ -60,6 +60,31 @@ class ChatMessages {
     }
   }
 
+  /// Drops [guids] from the chat screen's window (S3): the messages, their
+  /// reactions and attachments, and every thread no longer needed, i.e. one
+  /// whose originator is gone and that no message still held replies to.
+  void dropMessages(Iterable<String> guids) {
+    final drop = guids.toSet();
+    if (drop.isEmpty) return;
+    for (final guid in drop) {
+      final m = _messages.remove(guid);
+      _edits.remove(guid);
+      if (m != null) removeAttachments(m.dbAttachments.map((e) => e.guid).whereType<String>());
+    }
+    _reactions.removeWhere((guid, r) => drop.contains(guid) || drop.contains(r.associatedMessageGuid));
+    final needed = {..._messages.keys, ..._messages.values.map((m) => m.threadOriginatorGuid).whereType<String>()};
+    _threads.removeWhere((originator, _) => !needed.contains(originator));
+  }
+
+  /// Files [replies] under their threads without making them timeline rows:
+  /// the replies of the window's messages, read from the database (S3).
+  void addThreadReplies(Iterable<Message> replies) {
+    for (final m in replies) {
+      if (m.guid == null || m.threadOriginatorGuid == null) continue;
+      (_threads[m.threadOriginatorGuid!] ??= {})[m.guid!] = m;
+    }
+  }
+
   void removeAttachments(Iterable<String> guids) {
     for (String s in guids) {
       _attachments.remove(s);

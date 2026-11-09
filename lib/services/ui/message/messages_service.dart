@@ -8,6 +8,7 @@ import 'package:bluebubbles/helpers/types/extensions/extensions.dart';
 import 'package:bluebubbles/helpers/types/constants.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
+import 'package:bluebubbles/database/sqlite/message_repo.dart' show MessageKey;
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/services/backend/interfaces/sync_interface.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -108,6 +109,162 @@ class MessagesService extends GetxController {
   Message? get mostRecentReceived =>
       (struct.messages.where((e) => !e.isFromMe!).toList()..sort(Message.sort)).firstOrNull;
 
+  /// The chat's newest message (only mine / only theirs with [fromMe]): from
+  /// the rows held while they include the newest, otherwise from the database,
+  /// since the window may hold only older ones.
+  Future<Message?> newestMessage({bool? fromMe}) async {
+    if (atNewestEdge || chat.id == null) {
+      return fromMe == null ? mostRecent : (fromMe ? mostRecentSent : mostRecentReceived);
+    }
+    return MessagingStore.current.newestTimelineMessage(chat.id!, fromMe: fromMe);
+  }
+
+  // ========== Chat window (S3, SQLITE-PLAN-2.md section 5) ==========
+
+  /// Most timeline rows held at once; a page past it drops rows at the far end.
+  static const windowRows = 150;
+
+  /// Only SQLite pages back down, so only SQLite drops rows; ObjectBox
+  /// (desktop and host tests) keeps everything it loaded, as before.
+  bool get windowed => MessagingStore.current.kind == ActiveStore.sqlite;
+
+  /// The rows held include the chat's newest message.
+  bool atNewestEdge = true;
+
+  /// No older rows exist below the oldest held (an older page came back empty).
+  bool atOldestEdge = false;
+
+  /// Told about rows the window dropped (the view removes them from its list;
+  /// [newest] says which end).
+  void Function(List<Message> dropped, {required bool newest})? droppedFunc;
+
+  /// Loads the newest page again, dropping everything held (the view rebuilds
+  /// its list). Set by the view; used when a send or "scroll to bottom" needs
+  /// the newest rows while the window holds older ones.
+  Future<void> Function()? resetToNewestFunc;
+
+  /// The held timeline rows, newest first.
+  List<Message> get timeline => struct.messages..sort(Message.sort);
+
+  /// Releases [dropped]: rows, their reactions, attachments and threads no
+  /// longer needed, and their MessageStates (with attachment states).
+  void _release(List<Message> dropped) {
+    final guids = dropped.map((m) => m.guid).whereType<String>().toList();
+    struct.dropMessages(guids);
+    for (final guid in guids) {
+      messageStates.remove(guid)?.onClose();
+      messageUpdateTrigger.remove(guid);
+    }
+  }
+
+  /// After an older page: drops the newest rows past [windowRows]. Messages
+  /// still sending are kept (their bubble and upload state live on).
+  void _trimNewest() {
+    if (!windowed) return;
+    final rows = timeline;
+    if (rows.length <= windowRows) return;
+    final dropped = rows.take(rows.length - windowRows).where((m) => !m.isSending).toList();
+    if (dropped.isEmpty) return;
+    _release(dropped);
+    atNewestEdge = false;
+    droppedFunc?.call(dropped, newest: true);
+  }
+
+  /// After a newer page: drops the oldest rows past [windowRows], and older
+  /// paging continues from the new oldest row.
+  void _trimOldest() {
+    if (!windowed) return;
+    final rows = timeline;
+    if (rows.length <= windowRows) return;
+    final dropped = rows.skip(windowRows).toList();
+    _release(dropped);
+    atOldestEdge = false;
+    final oldest = rows[windowRows - 1];
+    if (oldest.id != null) _olderCursor = MessagePageCursor.sqlite(MessageKey.of(oldest));
+    droppedFunc?.call(dropped, newest: false);
+  }
+
+  /// Whether a message saved now belongs outside the window: newer than the
+  /// held rows while they don't reach the newest, or older than them while
+  /// older rows remain to page through. Paging reaches either in order.
+  bool _outsideWindow(Message message) {
+    if (!windowed || message.dateCreated == null) return false;
+    final rows = timeline.where((m) => m.dateCreated != null && m.guid != message.guid).toList();
+    if (rows.isEmpty) return false;
+    if (!atNewestEdge && Message.sort(message, rows.first) < 0) return true;
+    if (!atOldestEdge && Message.sort(message, rows.last) > 0) return true;
+    return false;
+  }
+
+  /// Files the replies of [page] under their threads, so reply counts, reply
+  /// lines and "View thread" see every reply, not only those the window holds.
+  Future<void> _loadReplies(List<Message> page) async {
+    final guids = page.where((m) => m.associatedMessageGuid == null).map((m) => m.guid).whereType<String>().toList();
+    if (guids.isEmpty || !windowed) return;
+    struct.addThreadReplies(await MessagingStore.current.repliesOf(guids));
+  }
+
+  /// Loads the page just newer than the newest held row (scrolling back down)
+  /// and drops the oldest rows past [windowRows]. Returns the new rows.
+  Future<List<Message>> loadNewerPage(ConversationViewController? controller, {int limit = 25}) async {
+    if (atNewestEdge) return const <Message>[];
+    final from = timeline.firstWhereOrNull((m) => m.id != null && !m.isSending);
+    if (from == null) return const <Message>[];
+    late final List<Message> page;
+    page = await Chat.getNewerMessagesAsync(chat, from.id!, limit: limit, onSupplementalDataLoaded: () {
+      _syncReactions(page);
+    });
+    if (page.length < limit) atNewestEdge = true;
+    struct.addMessages(page);
+    _ensureMessageStates(page);
+    if (controller != null) {
+      for (final m in page) {
+        getOrCreateState(m).cvController = controller;
+      }
+    }
+    _reapplyIndicators();
+    if (atNewestEdge) _recomputeDeliveredIndicators();
+    await _loadReplies(page);
+    _trimOldest();
+    return page;
+  }
+
+  /// Copies reactions loaded in the background into the page's MessageStates.
+  void _syncReactions(List<Message> page) {
+    _ensureMessageStates(page);
+    for (final message in page) {
+      if (message.guid == null || message.associatedMessages.isEmpty) continue;
+      final state = messageStates[message.guid];
+      if (state == null) continue;
+      state.associatedMessages
+        ..clear()
+        ..addAll(message.associatedMessages);
+      state.hasReactions.value = true;
+    }
+  }
+
+  /// Re-applies the read / delivered owners' flags to their (possibly new)
+  /// MessageStates: a row dropped and loaded again gets a fresh state.
+  void _reapplyIndicators() {
+    if (_lastReadInfo != null) messageStates[_lastReadInfo!.guid]?.updateShowReadIndicatorInternal(true);
+    if (_lastDeliveredInfo != null) {
+      messageStates[_lastDeliveredInfo!.guid]?.updateShowDeliveredIndicatorInternal(true);
+      _normalizeDeliveredVsRead();
+    }
+  }
+
+  /// Drops every held row and pages from the newest again.
+  void resetWindow() {
+    final dropped = struct.messages;
+    _release(dropped);
+    _olderCursor = null;
+    atNewestEdge = true;
+    atOldestEdge = false;
+    messagesLoaded = false;
+  }
+
+  // ========== End chat window ==========
+
   // ========== MessageState Management ==========
 
   /// Get or create a MessageState for a specific message GUID
@@ -164,6 +321,7 @@ class MessagesService extends GetxController {
       // hiding the in-progress send overlay.  This call corrects that.
       _restoreInFlightAttachmentStates(message);
     }
+    _reapplyIndicators();
   }
 
   /// For each temp-GUID attachment on [message] that is actively tracked in
@@ -722,6 +880,8 @@ class MessagesService extends GetxController {
 
     struct.flush();
     _olderCursor = null;
+    atNewestEdge = true;
+    atOldestEdge = false;
     messagesLoaded = false;
     messageUpdateTrigger.clear();
     for (final state in messageStates.values) {
@@ -746,6 +906,19 @@ class MessagesService extends GetxController {
   }
 
   Future<void> _handleNewMessage(Message message) async {
+    // A send needs its bubble on screen (the send animation lands on it).
+    if (message.isSending && !atNewestEdge && resetToNewestFunc != null) await resetToNewestFunc!();
+    if (message.associatedMessageGuid == null && _outsideWindow(message)) {
+      // Not shown until paging reaches it; a reply still counts toward the
+      // thread of a held originator.
+      if (message.threadOriginatorGuid != null) {
+        struct.addThreadReplies([message]);
+        final originatorState = messageStates[message.threadOriginatorGuid!];
+        originatorState?.updateThreadReplyCountInternal(originatorState.threadReplyCount.value + 1);
+        triggerMessageUpdate(message.threadOriginatorGuid!);
+      }
+      return;
+    }
     // Add to struct first to ensure it's available for lookups
     struct.addMessages([message]);
 
@@ -1054,6 +1227,9 @@ class MessagesService extends GetxController {
   /// when the removed message may have been an indicator owner.  Prefer
   /// [_updateIndicatorsForMessage] for add/update events.
   void _recomputeDeliveredIndicators() {
+    // Away from the newest rows the window holds only older messages, which
+    // never own the newest read / delivered state: keep the current owners.
+    if (!atNewestEdge) return;
     final outgoing = struct.messages.where((e) => e.isFromMe == true).toList()..sort(Message.sort);
 
     // ---- Read tier: find message with newest dateRead ----
@@ -1510,14 +1686,26 @@ class MessagesService extends GetxController {
   @visibleForTesting
   Future<List<Message>> loadAroundPage(Message around, {int limit = 25}) async {
     final page = await Chat.getMessagesAroundAsync(chat, around, limit: limit);
+    if (windowed && page.messages.isNotEmpty) {
+      // The window becomes these rows: what it held may not join up with them.
+      final held = struct.messages;
+      final keep = page.messages.map((m) => m.guid).toSet();
+      final dropped = held.where((m) => !keep.contains(m.guid) && !m.isSending).toList();
+      _release(dropped);
+      final newest = await MessagingStore.current.newestTimelineMessage(chat.id!);
+      atNewestEdge = newest == null || page.messages.any((m) => m.guid == newest.guid);
+      atOldestEdge = false;
+      if (dropped.isNotEmpty) droppedFunc?.call(dropped, newest: true);
+    }
     _olderCursor = page.next ?? _olderCursor;
     struct.addMessages(page.messages);
+    await _loadReplies(page.messages);
     return page.messages;
   }
 
   /// Loads the next older page of the chat (the newest page the first time,
   /// and after [close]/[reload]). Returns whether it found any messages.
-  Future<bool> loadChunk(ConversationViewController controller, {int limit = 25}) async {
+  Future<bool> loadChunk(ConversationViewController? controller, {int limit = 25}) async {
     List<Message> _messages = [];
     // Rows of this chat on screen: the server fallback below pages by position.
     final offset = struct.messages.length + struct.reactions.length;
@@ -1618,6 +1806,7 @@ class MessagesService extends GetxController {
     }
 
     struct.addMessages(_messages);
+    if (_messages.isEmpty) atOldestEdge = true;
 
     // Create MessageStates for all loaded messages
     _ensureMessageStates(_messages);
@@ -1625,6 +1814,9 @@ class MessagesService extends GetxController {
 
     // Compute initial delivered indicator ownership after messages are loaded.
     _recomputeDeliveredIndicators();
+
+    await _loadReplies(_messages);
+    _trimNewest();
 
     // get thread originators
     for (Message m in _messages.where((e) => e.threadOriginatorGuid != null)) {
@@ -1636,7 +1828,7 @@ class MessagesService extends GetxController {
       if (threadOriginator != null) {
         // create the state so it can be rendered in a reply bubble
         final c = getOrCreateState(threadOriginator);
-        c.cvController = controller;
+        if (controller != null) c.cvController = controller;
         struct.addThreadOriginator(threadOriginator);
       }
     }

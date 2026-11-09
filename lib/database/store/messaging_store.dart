@@ -407,6 +407,20 @@ abstract interface class ChatStore {
     required int limit,
   });
 
+  /// Ids of the at most [limit] timeline rows of [chatId] just newer than the
+  /// message [fromId], newest first: what scrolling back down loads once the
+  /// chat screen has dropped its newest rows (SQLite only; ObjectBox keeps every
+  /// loaded row, so it never asks).
+  Future<List<int>> newerMessagePage(int chatId, List<Handle> participants, int fromId, {required int limit});
+
+  /// The live replies (not reactions) of the messages [originatorGuids], in no
+  /// particular order: reply counts and threads of the rows the chat screen holds.
+  Future<List<Message>> repliesOf(List<String> originatorGuids);
+
+  /// The newest live timeline message of [chatId] (not a reaction), only mine
+  /// or only theirs with [fromMe]: what keyboard shortcuts act on.
+  Future<Message?> newestTimelineMessage(int chatId, {bool? fromMe});
+
   /// [limit] messages of [chatId] either side of the message [aroundId] and that
   /// message, newest first: what jumping to a search result loads. [next] is
   /// where scrolling up continues (on ObjectBox, today's position again).

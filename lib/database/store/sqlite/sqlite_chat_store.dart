@@ -391,6 +391,43 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
     );
   }
 
+  @override
+  Future<List<int>> newerMessagePage(int chatId, List<Handle> participants, int fromId, {required int limit}) async {
+    final repo = MessageRepo(db);
+    final from = await repo.row(fromId);
+    if (from == null) return const <int>[];
+    final page = await repo.newerThan([chatId], MessageKey.of(from), limit: limit);
+    return [for (final m in page) m.id!];
+  }
+
+  @override
+  Future<List<Message>> repliesOf(List<String> originatorGuids) async {
+    final result = <Message>[];
+    for (final chunk in originatorGuids.toSet().toList().slices(500)) {
+      final rows = await db.select(
+          'SELECT * FROM messages INDEXED BY messages_thread WHERE thread_originator_guid IN (${sqlPlaceholders(chunk.length)}) '
+          'AND associated_message_guid IS NULL AND date_deleted_us IS NULL',
+          chunk);
+      result.addAll(rows.map(messageFromRow));
+    }
+    await MessageRepo(db).attachmentsFor(result);
+    return result;
+  }
+
+  @override
+  Future<Message?> newestTimelineMessage(int chatId, {bool? fromMe}) async {
+    final rows = await db.select(
+        'SELECT * FROM messages INDEXED BY messages_timeline WHERE chat_id = ? '
+        'AND associated_message_guid IS NULL AND date_deleted_us IS NULL AND date_created_us IS NOT NULL '
+        '${fromMe == null ? '' : fromMe ? 'AND is_from_me = 1 ' : 'AND is_from_me IS NOT 1 '}'
+        'ORDER BY sort_at_us DESC, id DESC LIMIT 1',
+        [chatId]);
+    if (rows.isEmpty) return null;
+    final message = messageFromRow(rows.single);
+    await MessageRepo(db).attachmentsFor([message]);
+    return message;
+  }
+
   /// The keyset neighbours of the message's (sort_at, id) key, so ties and
   /// delivered-before-created messages land where the screen shows them.
   @override

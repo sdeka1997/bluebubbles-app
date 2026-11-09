@@ -725,6 +725,21 @@ class Chat {
     return page;
   }
 
+  /// The [limit] messages of [chat] just newer than the message [fromId],
+  /// newest first, with attachments; reactions load in the background. Read
+  /// on this isolate: only SQLite pages newer, and it reads from any isolate.
+  static Future<List<Message>> getNewerMessagesAsync(Chat chat, int fromId,
+      {int limit = 25, Function? onSupplementalDataLoaded}) async {
+    if (kIsWeb || chat.id == null) return <Message>[];
+    final totalStopwatch = Stopwatch()..start();
+    final ids = await MessagingStore.current.newerMessagePage(chat.id!, chat.handles, fromId, limit: limit);
+    final messages = await MessagingStore.current.messagesByIds(ids);
+    if (messages.isNotEmpty) {
+      _loadSupplementalDataAsync(messages, messages.map((e) => e.guid!).toList(), totalStopwatch, onSupplementalDataLoaded);
+    }
+    return messages;
+  }
+
   /// [limit] messages of [chat] either side of [around] and [around] itself,
   /// newest first, with attachments; reactions load in the background.
   static Future<({List<Message> messages, MessagePageCursor? next})> getMessagesAroundAsync(Chat chat, Message around,
