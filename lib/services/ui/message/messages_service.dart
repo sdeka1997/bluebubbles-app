@@ -8,6 +8,7 @@ import 'package:bluebubbles/app/state/message_state.dart';
 import 'package:bluebubbles/helpers/types/extensions/extensions.dart';
 import 'package:bluebubbles/helpers/types/constants.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart' show MessagePageCursor;
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/services/backend/interfaces/sync_interface.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -739,6 +740,7 @@ class MessagesService extends GetxController {
     }
 
     struct.flush();
+    _olderCursor = null;
     messagesLoaded = false;
     messageUpdateTrigger.clear();
     for (final state in messageStates.values) {
@@ -1497,20 +1499,43 @@ class MessagesService extends GetxController {
     }
   }
 
-  Future<bool> loadChunk(int offset, ConversationViewController controller, {int limit = 25}) async {
-    List<Message> _messages = [];
+  /// Where the next older page of this chat starts; null until the newest
+  /// page loaded. Reset with the struct.
+  MessagePageCursor? _olderCursor;
 
-    // Adjust offset because reactions _are_ messages. We just separate them out in the struct.
-    offset = offset + struct.reactions.length;
+  @visibleForTesting
+  MessagePageCursor? get olderCursor => _olderCursor;
+
+  /// Reads the next older page of the chat from the store into [struct] and
+  /// advances the cursor (the newest page the first time, and after [close]).
+  /// Returns the page, newest first.
+  @visibleForTesting
+  Future<List<Message>> loadOlderPage({int limit = 25, Function? onSupplementalDataLoaded}) async {
+    final page = await Chat.getOlderMessagesAsync(
+      chat,
+      after: _olderCursor,
+      loadedRows: struct.messages.length + struct.reactions.length,
+      limit: limit,
+      onSupplementalDataLoaded: onSupplementalDataLoaded,
+    );
+    _olderCursor = page.next ?? _olderCursor;
+    struct.addMessages(page.messages);
+    return page.messages;
+  }
+
+  /// Loads the next older page of the chat (the newest page the first time,
+  /// and after [close]/[reload]). Returns whether it found any messages.
+  Future<bool> loadChunk(ConversationViewController controller, {int limit = 25}) async {
+    List<Message> _messages = [];
+    // Rows of this chat on screen: the server fallback below pages by position.
+    final offset = struct.messages.length + struct.reactions.length;
 
     try {
       Logger.debug("[loadChunk] Starting to load messages (offset: $offset, limit: $limit)", tag: "MessageReactivity");
 
       final traceClock = Stopwatch()..start();
       MemTrace.mark('chat ${chat.id} page at $offset: loading');
-      _messages = await Chat.getMessagesAsync(
-        chat,
-        offset: offset,
+      _messages = await loadOlderPage(
         limit: limit,
         onSupplementalDataLoaded: () {
           MemTrace.mark('chat ${chat.id} page at $offset: reactions loaded after ${traceClock.elapsedMilliseconds}ms');
@@ -1558,7 +1583,7 @@ class MessagesService extends GetxController {
           if (syncResult.messages.isNotEmpty) {
             _messages = syncResult.messages;
           } else {
-            _messages = await Chat.getMessagesAsync(chat, offset: offset, limit: limit);
+            _messages = await loadOlderPage(limit: limit);
           }
 
           // Sync the chat's latestMessage into ChatState after the server fetch.

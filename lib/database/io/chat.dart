@@ -9,6 +9,7 @@ import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart' show MessagePageCursor;
 import 'package:dio/dio.dart';
 import 'package:faker/faker.dart';
 import 'package:flutter/foundation.dart';
@@ -690,6 +691,27 @@ class Chat {
 
     // Return messages immediately (reactions/attachments will be added later)
     return messages;
+  }
+
+  /// The page of [chat]'s timeline just older than [after] (the newest page
+  /// when null), with attachments; reactions load in the background as in
+  /// [getMessagesAsync].
+  static Future<({List<Message> messages, MessagePageCursor? next})> getOlderMessagesAsync(Chat chat,
+      {MessagePageCursor? after, int loadedRows = 0, int limit = 25, Function? onSupplementalDataLoaded}) async {
+    if (kIsWeb || chat.id == null) return (messages: <Message>[], next: after);
+    final totalStopwatch = Stopwatch()..start();
+    final page = await ChatInterface.getOlderMessagePage(
+      chatId: chat.id!,
+      participantsData: chat.handles.map((e) => e.toMap()).toList(),
+      after: after,
+      loadedRows: loadedRows,
+      limit: limit,
+    );
+    if (page.messages.isNotEmpty) {
+      _loadSupplementalDataAsync(
+          page.messages, page.messages.map((e) => e.guid!).toList(), totalStopwatch, onSupplementalDataLoaded);
+    }
+    return page;
   }
 
   /// Load reactions in background and append to messages

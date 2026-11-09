@@ -395,49 +395,83 @@ mixin ObjectBoxChatStore implements ChatStore {
     int? searchAround,
   }) async {
     return Database.runInTransaction(TxMode.read, () {
-      final messages = <Message>[];
       if (searchAround == null) {
-        final query = (Database.messages.query(includeDeleted
-                ? Message_.dateCreated.notNull().and(Message_.dateDeleted.isNull().or(Message_.dateDeleted.notNull()))
-                : Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull()))
-              ..link(Message_.chat, Chat_.id.equals(chatId))
-              ..order(Message_.dateCreated, flags: Order.descending))
-            .build()
-          ..limit = limit
-          ..offset = offset;
-        messages.addAll(query.find());
-        query.close();
-      } else {
-        final before = (Database.messages.query(Message_.dateCreated.lessThan(searchAround).and(includeDeleted
-                ? Message_.dateCreated.notNull().and(Message_.dateDeleted.isNull().or(Message_.dateDeleted.notNull()))
-                : Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull())))
-              ..link(Message_.chat, Chat_.id.equals(chatId))
-              ..order(Message_.dateCreated, flags: Order.descending))
-            .build()
-          ..limit = limit;
-        messages.addAll(before.find());
-        before.close();
-        final after = (Database.messages.query(Message_.dateCreated.greaterThan(searchAround).and(includeDeleted
-                ? Message_.dateCreated.notNull().and(Message_.dateDeleted.isNull().or(Message_.dateDeleted.notNull()))
-                : Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull())))
-              ..link(Message_.chat, Chat_.id.equals(chatId))
-              ..order(Message_.dateCreated))
-            .build()
-          ..limit = limit;
-        messages.addAll(after.find());
-        after.close();
+        return _messagePage(chatId, participants, offset: offset, limit: limit, includeDeleted: includeDeleted).ids;
       }
-      for (var i = 0; i < messages.length; i++) {
-        final message = messages[i];
-        if (participants.isNotEmpty && !message.isFromMe! && message.handleId != null && message.handleId != 0) {
-          final handle = participants.firstWhereOrNull((e) => e.originalROWID == message.handleId) ?? message.getHandle();
-          if (handle == null && message.originalROWID != null) {
-            messages.removeAt(i--);
-          }
+      final messages = <Message>[];
+      final before = (Database.messages.query(Message_.dateCreated.lessThan(searchAround).and(includeDeleted
+              ? Message_.dateCreated.notNull().and(Message_.dateDeleted.isNull().or(Message_.dateDeleted.notNull()))
+              : Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull())))
+            ..link(Message_.chat, Chat_.id.equals(chatId))
+            ..order(Message_.dateCreated, flags: Order.descending))
+          .build()
+        ..limit = limit;
+      messages.addAll(before.find());
+      before.close();
+      final after = (Database.messages.query(Message_.dateCreated.greaterThan(searchAround).and(includeDeleted
+              ? Message_.dateCreated.notNull().and(Message_.dateDeleted.isNull().or(Message_.dateDeleted.notNull()))
+              : Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull())))
+            ..link(Message_.chat, Chat_.id.equals(chatId))
+            ..order(Message_.dateCreated))
+          .build()
+        ..limit = limit;
+      messages.addAll(after.find());
+      after.close();
+      return _placeable(messages, participants).map((e) => e.id!).toList();
+    });
+  }
+
+  @override
+  Future<MessagePage> olderMessagePage(
+    int chatId,
+    List<Handle> participants, {
+    MessagePageCursor? after,
+    required int loadedRows,
+    required int limit,
+  }) async {
+    final page = Database.runInTransaction(
+      TxMode.read,
+      () => _messagePage(chatId, participants, offset: after == null ? 0 : loadedRows, limit: limit, includeDeleted: false),
+    );
+    return (ids: page.ids, next: page.rows == 0 ? after : const MessagePageCursor.objectBox());
+  }
+
+  /// Today's chat-screen query: [limit] rows of [chatId] from [offset], newest
+  /// created first, reactions included; [rows] counts them before
+  /// [_placeable] drops any.
+  ({List<int> ids, int rows}) _messagePage(
+    int chatId,
+    List<Handle> participants, {
+    required int offset,
+    required int limit,
+    required bool includeDeleted,
+  }) {
+    final query = (Database.messages.query(includeDeleted
+            ? Message_.dateCreated.notNull().and(Message_.dateDeleted.isNull().or(Message_.dateDeleted.notNull()))
+            : Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull()))
+          ..link(Message_.chat, Chat_.id.equals(chatId))
+          ..order(Message_.dateCreated, flags: Order.descending))
+        .build()
+      ..limit = limit
+      ..offset = offset;
+    final messages = query.find();
+    query.close();
+    return (ids: _placeable(messages, participants).map((e) => e.id!).toList(), rows: messages.length);
+  }
+
+  /// [messages] without those from a sender this chat can't place.
+  List<Message> _placeable(List<Message> messages, List<Handle> participants) {
+    final result = [...messages];
+    for (var i = 0; i < result.length; i++) {
+      final message = result[i];
+      if (participants.isNotEmpty && !message.isFromMe! && message.handleId != null && message.handleId != 0) {
+        final handle = participants.firstWhereOrNull((e) => e.originalROWID == message.handleId) ?? message.getHandle();
+        if (handle == null && message.originalROWID != null) {
+          result.removeAt(i--);
         }
       }
-      return messages.map((e) => e.id!).toList();
-    });
+    }
+    return result;
   }
 
   @override

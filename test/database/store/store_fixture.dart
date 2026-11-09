@@ -46,6 +46,7 @@ abstract class StoreFixture {
     int? itemType,
     String? text,
     int? rowId,
+    int? deliveredMs,
   });
 
   Future<Attachment> attachment(String guid, Message? message, {String? mimeType});
@@ -74,12 +75,14 @@ Message _message(
   bool deleted,
   int? itemType,
   String? text,
-  int? rowId,
-) =>
+  int? rowId, [
+  int? deliveredMs,
+]) =>
     Message(
       guid: guid,
       text: text ?? 'text of $guid',
       dateCreated: ms(msValue),
+      dateDelivered: deliveredMs == null ? null : ms(deliveredMs),
       isFromMe: from == null && handleId == null,
       handleId: handleId ?? from?.originalROWID ?? 0,
       associatedMessageGuid: reactsTo,
@@ -135,7 +138,8 @@ class ObjectBoxFixture extends StoreFixture {
       bool deleted = false,
       int? itemType,
       String? text,
-      int? rowId}) async {
+      int? rowId,
+      int? deliveredMs}) async {
     final m = _message(
       guid,
       ms,
@@ -149,6 +153,7 @@ class ObjectBoxFixture extends StoreFixture {
       itemType,
       text,
       rowId,
+      deliveredMs,
     );
     if (chat != null) m.chat.target = chat;
     if (from != null) m.handleRelation.target = from;
@@ -239,7 +244,8 @@ class SqliteFixture extends StoreFixture {
       bool deleted = false,
       int? itemType,
       String? text,
-      int? rowId}) async {
+      int? rowId,
+      int? deliveredMs}) async {
     final m = _message(
       guid,
       ms,
@@ -253,6 +259,7 @@ class SqliteFixture extends StoreFixture {
       itemType,
       text,
       rowId,
+      deliveredMs,
     );
     m.chat.targetId = chat?.id;
     m.handleRelation.targetId = from?.id;

@@ -154,7 +154,7 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
         // ready so pendingSend can fire and handleNewMessage works correctly.
         try {
           if (!service.messagesLoaded) {
-            await service.loadChunk(0, controller);
+            await service.loadChunk(controller);
           }
         } catch (e, s) {
           Logger.error('MessagesView: loadChunk failed, continuing with empty state',

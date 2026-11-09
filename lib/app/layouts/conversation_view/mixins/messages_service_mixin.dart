@@ -117,11 +117,7 @@ mixin MessagesServiceMixin<T extends StatefulWidget> on State<T> {
     assert(_messageService != null, 'MessagesService not initialized');
 
     // Load the next chunk using the service
-    final hasMore = await _messageService!.loadChunk(
-      currentMessages.length,
-      cvController,
-      limit: limit,
-    );
+    final hasMore = await _messageService!.loadChunk(cvController, limit: limit);
 
     return hasMore;
   }

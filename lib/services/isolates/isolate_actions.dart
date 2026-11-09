@@ -79,6 +79,7 @@ class IsolateActons {
     IsolateRequestType.syncLatestMessages: ChatActions.syncLatestMessages,
     IsolateRequestType.bulkSyncChats: ChatActions.bulkSyncChats,
     IsolateRequestType.getMessagesAsync: ChatActions.getMessagesAsync,
+    IsolateRequestType.getOlderMessagePage: ChatActions.getOlderMessagePage,
     IsolateRequestType.getParticipantsAsync: ChatActions.getParticipantsAsync,
     IsolateRequestType.clearTranscriptAsync: ChatActions.clearTranscriptAsync,
     IsolateRequestType.getChatsAsync: ChatActions.getChatsAsync,

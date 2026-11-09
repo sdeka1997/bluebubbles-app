@@ -742,6 +742,7 @@ enum IsolateRequestType {
   syncLatestMessages,
   bulkSyncChats,
   getMessagesAsync,
+  getOlderMessagePage,
   getParticipantsAsync,
   clearTranscriptAsync,
   getChatsAsync,

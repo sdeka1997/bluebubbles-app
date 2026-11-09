@@ -1,5 +1,6 @@
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
+import 'package:bluebubbles/database/sqlite/message_repo.dart' show MessageKey;
 import 'package:bluebubbles/database/store/objectbox/objectbox_messaging_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_messaging_store.dart';
 import 'package:bluebubbles/services/backend/descriptors/attachment_query_descriptor.dart';
@@ -242,6 +243,43 @@ abstract interface class SyncStore {
   Future<ChatMetadataRefreshResult> refreshChatMetadata(List<Map<String, dynamic>> remoteChats);
 }
 
+/// Where the next older page of a chat's timeline starts, sendable between
+/// isolates as [toMap]. SQLite pages by the (sort_at, id) key of the last row
+/// it returned, the order the screen shows (Message.sort), so arrivals,
+/// deletes and late-saved history can't shift a page. ObjectBox can't order
+/// by that without scanning the whole box, so it keeps today's query by
+/// position (see [ChatStore.olderMessagePage]); switch plan commit 9 retires it.
+class MessagePageCursor {
+  const MessagePageCursor.objectBox() : key = null;
+
+  const MessagePageCursor.sqlite(MessageKey this.key);
+
+  final MessageKey? key;
+
+  Map<String, int> toMap() => key == null ? const {} : {'sortAtUs': key!.sortAtUs, 'id': key!.id};
+
+  static MessagePageCursor? fromMap(Object? map) {
+    if (map is! Map) return null;
+    if (map['sortAtUs'] is int && map['id'] is int) {
+      return MessagePageCursor.sqlite(MessageKey(map['sortAtUs'] as int, map['id'] as int));
+    }
+    return const MessagePageCursor.objectBox();
+  }
+
+  @override
+  bool operator ==(Object other) => other is MessagePageCursor && other.key == key;
+
+  @override
+  int get hashCode => key.hashCode;
+
+  @override
+  String toString() => 'MessagePageCursor(${key ?? 'by position'})';
+}
+
+/// One page of a chat's timeline: message ids newest first, and where the next
+/// older page starts ([next] is the request's cursor when nothing came back).
+typedef MessagePage = ({List<int> ids, MessagePageCursor? next});
+
 /// Chat action reads and writes (ChatActions, ChatInterface).
 abstract interface class ChatStore {
   Future<List<Chat>> markChatsRead(List<int> chatIds);
@@ -293,6 +331,18 @@ abstract interface class ChatStore {
     required int limit,
     required bool includeDeleted,
     int? searchAround,
+  });
+
+  /// The page of [chatId]'s timeline just older than [after] (the newest page
+  /// when null), at most [limit] rows: what scrolling up in a chat loads.
+  /// [loadedRows] is how many rows of the chat the screen holds (messages and
+  /// reactions); only ObjectBox uses it, as today's offset.
+  Future<MessagePage> olderMessagePage(
+    int chatId,
+    List<Handle> participants, {
+    MessagePageCursor? after,
+    required int loadedRows,
+    required int limit,
   });
 
   Future<List<int>> participantIds(int chatId);

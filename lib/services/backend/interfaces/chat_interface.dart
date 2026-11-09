@@ -268,6 +268,33 @@ class ChatInterface {
     return MessagingStore.current.messagesByIds(messageIds);
   }
 
+  /// The page of the chat's timeline just older than [after] (the newest
+  /// page when null), hydrated on this isolate.
+  static Future<({List<Message> messages, MessagePageCursor? next})> getOlderMessagePage({
+    required int chatId,
+    required List<Map<String, dynamic>> participantsData,
+    MessagePageCursor? after,
+    int loadedRows = 0,
+    int limit = 25,
+  }) async {
+    final data = {
+      'chatId': chatId,
+      'participantsData': participantsData,
+      'after': after?.toMap(),
+      'loadedRows': loadedRows,
+      'limit': limit,
+    };
+
+    final result = isIsolate
+        ? await ChatActions.getOlderMessagePage(data)
+        : await GetIt.I<GlobalIsolate>().send<Map<String, dynamic>>(IsolateRequestType.getOlderMessagePage, input: data);
+    final ids = (result['ids'] as List).cast<int>();
+    return (
+      messages: await MessagingStore.current.messagesByIds(ids),
+      next: MessagePageCursor.fromMap(result['next']),
+    );
+  }
+
   static Future<List<Handle>> getParticipantsAsync({
     required int chatId,
     required String chatGuid,
