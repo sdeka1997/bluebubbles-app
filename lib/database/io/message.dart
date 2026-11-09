@@ -84,6 +84,15 @@ class Message {
   String? threadOriginatorPart;
 
   List<Message> associatedMessages = [];
+
+  /// The message a reaction points at, when the store loaded it
+  /// ([MessagingStore.fillLinkedMessages]); its preview text reads this.
+  @Transient()
+  Message? reactionTarget;
+
+  /// The handle [otherHandle] names (added/removed person), when loaded.
+  @Transient()
+  Handle? otherParticipant;
   bool? bigEmoji;
   List<AttributedBody> attributedBody;
   List<MessageSummaryInfo> messageSummaryInfo;
@@ -456,9 +465,7 @@ class Message {
     // Phase 2: Prefer ToOne relationship if available
     if (handleRelation.target != null) return handleRelation.target;
 
-    // Fallback to manual lookup for backward compatibility
-    if (kIsWeb || handleId == 0 || handleId == null) return null;
-    return Handle.findOne(originalROWID: handleId!);
+    return handle;
   }
 
   static Message? findOne({String? guid, String? associatedMessageGuid}) {
@@ -619,8 +626,8 @@ class Message {
 
     String? other = "someone";
     if (otherHandle != null && isParticipantEvent) {
-      // Keep the "someone" fallback if the handle isn't in the DB yet.
-      other = Handle.findOne(originalROWID: otherHandle)?.displayName ?? other;
+      // Keep the "someone" fallback if the handle isn't loaded (or stored) yet.
+      other = otherParticipant?.displayName ?? other;
     }
 
     if (itemType == 1) {

@@ -36,6 +36,46 @@ void main() {
       expect(found.firstWhere((a) => a.guid == 'a2').message.target?.guid, 'm2');
     });
 
+    test('linked messages: a reaction gets the message it reacts to (with attachments), a group event its other person',
+        () async {
+      final chat = await fixture().chat('c');
+      final bob = await fixture().handle('bob@example.com', rowId: 7);
+      await fixture().contact('n1', 'Bob Builder', handles: [bob]);
+      final target = await fixture().message('target', chat, t0);
+      await fixture().attachment('pic', target);
+      final reaction = await fixture().message('r', chat, t0 + 1000, reactsTo: 'target');
+      final added = await fixture().message('added', chat, t0 + 2000,
+          itemType: 1, edit: (m) => m..groupActionType = 0..otherHandle = 7);
+      final plain = await fixture().message('plain', chat, t0 + 3000);
+
+      final loaded = [
+        (await fixture().store.messageById(reaction.id!))!,
+        (await fixture().store.messageById(added.id!))!,
+        (await fixture().store.messageById(plain.id!))!,
+      ];
+      await fixture().store.fillLinkedMessages(loaded);
+      expect(loaded[0].reactionTarget?.guid, 'target');
+      expect(loaded[0].reactionTarget!.dbAttachments.map((a) => a.guid), ['pic']);
+      expect(loaded[1].otherParticipant?.address, 'bob@example.com');
+      expect(loaded[1].otherParticipant!.displayName, 'Bob Builder');
+      expect(loaded[2].reactionTarget, isNull);
+      expect(loaded[2].otherParticipant, isNull);
+    });
+
+    test('every message read by id or guid comes with its linked rows', () async {
+      final chat = await fixture().chat('c');
+      await fixture().handle('bob@example.com', rowId: 7);
+      await fixture().message('target', chat, t0);
+      final reaction = await fixture().message('r', chat, t0 + 1000, reactsTo: 'target');
+      final added = await fixture().message('added', chat, t0 + 2000,
+          itemType: 1, edit: (m) => m..groupActionType = 0..otherHandle = 7);
+      expect((await fixture().store.messageById(reaction.id!))!.reactionTarget?.guid, 'target');
+      expect((await fixture().store.messageByGuid('r'))!.reactionTarget?.guid, 'target');
+      final page = await fixture().store.messagesByIds([reaction.id!, added.id!]);
+      expect(page.first.reactionTarget?.guid, 'target');
+      expect(page.last.otherParticipant?.address, 'bob@example.com');
+    });
+
     test('deleting one handle leaves the others', () async {
       final bob = await fixture().handle('bob@example.com');
       final carol = await fixture().handle('carol@example.com');

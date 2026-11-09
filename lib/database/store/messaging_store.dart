@@ -161,6 +161,10 @@ abstract interface class MessageStore {
 
   Future<Message?> messageByGuid(String guid);
 
+  /// Sets [Message.reactionTarget] (with attachments) and
+  /// [Message.otherParticipant] (with contacts) on [messages] that have one.
+  Future<void> fillLinkedMessages(Iterable<Message> messages);
+
   /// Messages created after [millisecondsSinceEpoch], matching
   /// MessageActions.getMessages' legacy ObjectBox query.
   Future<List<Message>> messagesCreatedAfter(int millisecondsSinceEpoch);

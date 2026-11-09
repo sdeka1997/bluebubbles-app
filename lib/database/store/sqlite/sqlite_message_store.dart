@@ -7,6 +7,7 @@ import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_messaging_store.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
+import 'package:collection/collection.dart';
 
 /// MessageActions on SQLite.
 mixin SqliteMessageStore implements MessageStore, SqliteStorePart {
@@ -118,7 +119,38 @@ mixin SqliteMessageStore implements MessageStore, SqliteStorePart {
   }
 
   @override
-  Future<Message?> messageByGuid(String guid) => MessageRepo(db).byGuid(guid);
+  Future<Message?> messageByGuid(String guid) async => _linked(await MessageRepo(db).byGuid(guid));
+
+  @override
+  Future<void> fillLinkedMessages(Iterable<Message> messages) => db.snapshot((reader) async {
+        final reactions = messages.where((m) => m.associatedMessageGuid != null).toList();
+        final events = messages.where((m) => m.otherHandle != null && m.isParticipantEvent).toList();
+        final targets = <String, Message>{};
+        final guids = reactions.map((m) => m.associatedMessageGuid!).toSet().toList();
+        for (final chunk in guids.slices(500)) {
+          for (final row in await reader.select('SELECT * FROM messages WHERE guid IN (${sqlPlaceholders(chunk.length)})', chunk)) {
+            final m = messageFromRow(row);
+            targets[m.guid!] = m;
+          }
+        }
+        await RelationFill(reader).messages(targets.values);
+        for (final m in reactions) {
+          m.reactionTarget = targets[m.associatedMessageGuid];
+        }
+        final people = <int, Handle>{};
+        final rowIds = events.map((m) => m.otherHandle!).toSet().toList();
+        for (final chunk in rowIds.slices(500)) {
+          for (final row in await reader.select(
+              'SELECT * FROM handles WHERE original_rowid IN (${sqlPlaceholders(chunk.length)}) ORDER BY id', chunk)) {
+            final h = handleFromRow(row);
+            people.putIfAbsent(h.originalROWID!, () => h);
+          }
+        }
+        await RelationFill(reader).handles(people.values);
+        for (final m in events) {
+          m.otherParticipant = people[m.otherHandle];
+        }
+      });
 
   @override
   Future<int> relinkMessagesToHandle(int serverHandleId, int localHandleId) {
@@ -132,14 +164,23 @@ mixin SqliteMessageStore implements MessageStore, SqliteStorePart {
   }
 
   @override
-  Future<Message?> messageById(int id) => MessageRepo(db).byId(id);
+  Future<Message?> messageById(int id) async => _linked(await MessageRepo(db).byId(id));
+
+  Future<Message?> _linked(Message? m) async {
+    if (m != null) await fillLinkedMessages([m]);
+    return m;
+  }
 
   @override
   Future<List<Message>> messagesCreatedAfter(int millisecondsSinceEpoch) =>
       MessageRepo(db).createdAfter(millisecondsSinceEpoch);
 
   @override
-  Future<List<Message>> messagesByIds(List<int> ids) async => inIdOrder(ids, await MessageRepo(db).byIds(ids));
+  Future<List<Message>> messagesByIds(List<int> ids) async {
+    final found = inIdOrder(ids, await MessageRepo(db).byIds(ids));
+    await fillLinkedMessages(found);
+    return found;
+  }
 }
 
 /// The attachments of [ids] with their messages filled.

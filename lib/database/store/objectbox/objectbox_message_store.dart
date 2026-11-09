@@ -235,14 +235,43 @@ mixin ObjectBoxMessageStore implements MessageStore {
   }
 
   @override
+  Future<void> fillLinkedMessages(Iterable<Message> messages) async {
+    final reactions = messages.where((m) => m.associatedMessageGuid != null).toList();
+    if (reactions.isNotEmpty) {
+      final query = Database.messages
+          .query(Message_.guid.oneOf(reactions.map((m) => m.associatedMessageGuid!).toSet().toList()))
+          .build();
+      final targets = {for (final t in query.find()) t.guid: t};
+      query.close();
+      for (final m in reactions) {
+        m.reactionTarget = targets[m.associatedMessageGuid];
+      }
+    }
+    final events = messages.where((m) => m.otherHandle != null && m.isParticipantEvent).toList();
+    if (events.isNotEmpty) {
+      final query = (Database.handles.query(Handle_.originalROWID.oneOf(events.map((m) => m.otherHandle!).toSet().toList()))
+            ..order(Handle_.id))
+          .build();
+      final people = <int, Handle>{};
+      for (final h in query.find()) {
+        people.putIfAbsent(h.originalROWID!, () => h);
+      }
+      query.close();
+      for (final m in events) {
+        m.otherParticipant = people[m.otherHandle];
+      }
+    }
+  }
+
+  @override
   Future<Message?> messageByGuid(String guid) async {
-    return Database.runInTransaction(TxMode.read, () {
+    return _linked(Database.runInTransaction(TxMode.read, () {
       final originatorQuery = Database.messages.query(Message_.guid.equals(guid)).build();
       originatorQuery.limit = 1;
       final message = originatorQuery.findFirst();
       originatorQuery.close();
       return message;
-    });
+    }));
   }
 
   @override
@@ -277,9 +306,17 @@ mixin ObjectBoxMessageStore implements MessageStore {
   }
 
   @override
-  Future<Message?> messageById(int id) async => Database.messages.get(id);
+  Future<Message?> messageById(int id) async => _linked(Database.messages.get(id));
+
+  Future<Message?> _linked(Message? m) async {
+    if (m != null) await fillLinkedMessages([m]);
+    return m;
+  }
 
   @override
-  Future<List<Message>> messagesByIds(List<int> ids) async =>
-      Database.messages.getMany(ids).whereType<Message>().toList();
+  Future<List<Message>> messagesByIds(List<int> ids) async {
+    final found = Database.messages.getMany(ids).whereType<Message>().toList();
+    await fillLinkedMessages(found);
+    return found;
+  }
 }
