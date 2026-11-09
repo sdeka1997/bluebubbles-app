@@ -442,7 +442,7 @@ class ChatsService {
         if (uri == null) return;
 
         final address = uri.path;
-        final handle = Handle.findOne(addressAndService: HandleLookupKey(address, "iMessage"));
+        final handle = await Handle.findOneAsync(addressAndService: HandleLookupKey(address, "iMessage"));
         NavigationSvc.closeSettings(Get.context!);
         await NavigationSvc.pushAndRemoveUntil(
           Get.context!,
@@ -1222,7 +1222,7 @@ class ChatsService {
 
     // Perform the actual DB soft delete
     await ChatInterface.softDeleteChat(chatData: chat.toMap());
-    chat.clearTranscript();
+    await chat.clearTranscriptAsync();
 
     // Propagate dateDeleted to ChatState before removing it so any live
     // listeners (e.g. ConversationTileController) can react reactively.

@@ -485,7 +485,7 @@ class ExpressiveChatOptions extends StatelessWidget {
                   isDefault: true,
                   onPressed: () async {
                     Navigator.of(context, rootNavigator: true).pop();
-                    chat.clearTranscript();
+                    await chat.clearTranscriptAsync();
                     EventDispatcherSvc.emit("refresh-messagebloc", {"chatGuid": chat.guid});
                   },
                 ),

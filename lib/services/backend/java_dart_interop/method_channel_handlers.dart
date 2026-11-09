@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/helpers/backend/settings_helpers.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/services.dart';
@@ -171,7 +172,7 @@ class MethodChannelHandlers {
 
         if (payload.data['chats'] == null || payload.data['chats'].isEmpty) {
           Logger.info('No chat data found, attempting to find chat from message guid: ${payload.data['guid']}...');
-          final existingMsg = Message.findOne(guid: payload.data['guid']);
+          final existingMsg = await MessagingStore.current.messageByGuid(payload.data['guid']);
           if (existingMsg != null && existingMsg.chat.target != null) {
             Logger.info('Found chat from message guid, adding to payload');
             payload.data['chats'] = [existingMsg.chat.target!.toMap()];
@@ -237,7 +238,7 @@ class MethodChannelHandlers {
       if (!isNullOrEmpty(data)) {
         final payload = ServerPayload.fromJson(data!);
         final guid = payload.data['chats'].first['guid'];
-        final chat = Chat.findOne(guid: guid);
+        final chat = await MessagingStore.current.chatByGuid(guid);
         if (chat != null) {
           await Chat.getIcon(chat);
         }
@@ -260,7 +261,7 @@ class MethodChannelHandlers {
       await GetIt.I.isReady<NotificationsService>();
       if (arguments == null) return await _ok();
       final payload = ServerPayload.fromJson(arguments);
-      final Chat? chat = Chat.findOne(guid: payload.data['payload']['chatGuid']);
+      final Chat? chat = await MessagingStore.current.chatByGuid(payload.data['payload']['chatGuid']);
       if (chat != null) {
         await NotificationsSvc.createFailedToSend(chat, scheduled: true);
       }
@@ -289,7 +290,7 @@ class MethodChannelHandlers {
       return _ok();
     }
 
-    final Chat? chat = Chat.findOne(guid: data['chatGuid']);
+    final Chat? chat = await MessagingStore.current.chatByGuid(data['chatGuid']);
     if (chat == null) return _retry();
 
     // Held so the temp GUID assigned during queueing can be used to check the
@@ -319,7 +320,7 @@ class MethodChannelHandlers {
     // says nothing about success. Re-read the queued message to find out. On success
     // the temp GUID is swapped for the real one and this lookup finds nothing.
     final tempGuid = replyMessage.guid;
-    final sent = tempGuid == null ? null : Message.findOne(guid: tempGuid);
+    final sent = tempGuid == null ? null : await MessagingStore.current.messageByGuid(tempGuid);
     if (sent != null && sent.error != 0) {
       Logger.error('Reply failed to send (error ${sent.error}); requesting retry');
       return _retry();
@@ -345,7 +346,7 @@ class MethodChannelHandlers {
 
     try {
       if (arguments != null) {
-        final Chat? chat = Chat.findOne(guid: arguments['chatGuid']);
+        final Chat? chat = await MessagingStore.current.chatByGuid(arguments['chatGuid']);
         if (chat != null) {
           await chat.toggleHasUnreadAsync(false, clearLocalNotifications: false);
           ChatsSvc.getChatState(chat.guid)?.updateHasUnreadInternal(false);
@@ -437,7 +438,7 @@ class MethodChannelHandlers {
       final payload = ServerPayload.fromJson(arguments!);
       final messageGuid = payload.data['messageGuid'];
       if (messageGuid is! String || messageGuid.isEmpty) return await _retry();
-      if (Message.findOne(guid: messageGuid) == null) return await _ok();
+      if (await MessagingStore.current.messageByGuid(messageGuid) == null) return await _ok();
 
       if (call.method == MethodChannelInboundMethods.messageDeleted) {
         await Message.softDelete(messageGuid);

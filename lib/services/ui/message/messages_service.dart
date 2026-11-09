@@ -146,24 +146,6 @@ class MessagesService extends GetxController {
     return messageStates[guid];
   }
 
-  /// Sync a MessageState from the database
-  /// Call this after any external DB update that doesn't go through MessagesService
-  /// This ensures MessageState stays in sync with DB changes
-  void syncMessageStateFromDB(String guid) {
-    final message = Message.findOne(guid: guid);
-    if (message != null) {
-      final state = messageStates[guid];
-      if (state != null) {
-        state.updateFromMessage(message);
-        Logger.debug("Synced MessageState from DB for message $guid", tag: "MessageState");
-      } else {
-        // State doesn't exist, create it
-        messageStates[guid] = MessageState(message);
-        Logger.debug("Created MessageState from DB sync for message $guid", tag: "MessageState");
-      }
-    }
-  }
-
   /// Ensure MessageStates exist for a list of messages
   /// Creates states for messages that don't have them yet
   void _ensureMessageStates(List<Message> messages) {
@@ -1135,7 +1117,7 @@ class MessagesService extends GetxController {
     // Delete old errored message from DB and save with new temp GUID
     await Message.delete(guidToDelete);
     message.id = null;
-    message.save(chat: chat);
+    await message.saveAsync(chat: chat);
 
     // Update struct using the proper map API (struct.messages returns a copy, not the backing map)
     struct.removeMessage(guidToDelete);
@@ -1324,7 +1306,7 @@ class MessagesService extends GetxController {
   /// Updates DB and MessageState
   void toggleBookmark(Message message) {
     message.isBookmarked = !message.isBookmarked;
-    message.save(updateIsBookmarked: true);
+    unawaited(message.saveAsync(updateIsBookmarked: true));
 
     // Update MessageState if it exists
     final messageState = getMessageStateIfExists(message.guid!);
@@ -1650,7 +1632,7 @@ class MessagesService extends GetxController {
       final guid = m.threadOriginatorGuid!;
       if (struct.getMessage(guid) != null) continue;
       // if not, fetch local and add to data
-      final threadOriginator = Message.findOne(guid: guid);
+      final threadOriginator = await MessagingStore.current.messageByGuid(guid);
       if (threadOriginator != null) {
         // create the state so it can be rendered in a reply bubble
         final c = getOrCreateState(threadOriginator);

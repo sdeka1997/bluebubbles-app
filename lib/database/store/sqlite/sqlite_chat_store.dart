@@ -11,6 +11,7 @@ import 'package:bluebubbles/database/sqlite/handle_repo.dart';
 import 'package:bluebubbles/database/sqlite/message_repo.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_message_store.dart' show attachmentsWithMessages;
 import 'package:bluebubbles/database/store/sqlite/sqlite_messaging_store.dart';
 import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart' show canonicalTwinFor, guidsToMarkRead, threadName;
 import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_models.dart';
@@ -435,6 +436,17 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
   Future<List<int>> participantIds(int chatId) async {
     final chat = await ChatRepo(db).byId(chatId);
     return chat == null ? <int>[] : chat.handles.map((e) => e.id!).toList();
+  }
+
+  @override
+  Future<List<Attachment>> chatAttachments(int chatId) async {
+    final rows = await db.select(
+        'SELECT a.id FROM attachments a JOIN messages m ON m.id = a.message_id '
+        'WHERE m.chat_id = ? AND m.date_deleted_us IS NULL AND m.date_created_us IS NOT NULL AND a.mime_type IS NOT NULL',
+        [chatId]);
+    final found = await attachmentsWithMessages(db, rows.map((r) => r['id'] as int));
+    final guids = <String?>{};
+    return found.values.where((a) => guids.add(a.guid)).toList();
   }
 
   @override

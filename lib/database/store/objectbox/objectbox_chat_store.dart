@@ -573,6 +573,23 @@ mixin ObjectBoxChatStore implements ChatStore {
   }
 
   @override
+  Future<List<Attachment>> chatAttachments(int chatId) async {
+    final messageQuery = (Database.messages.query(Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull()))
+          ..link(Message_.chat, Chat_.id.equals(chatId)))
+        .build();
+    final messageIds = messageQuery.findIds();
+    messageQuery.close();
+    if (messageIds.isEmpty) return [];
+    final attachmentQuery = (Database.attachments.query(Attachment_.mimeType.notNull())
+          ..link(Attachment_.message, Message_.id.oneOf(messageIds)))
+        .build();
+    final attachments = attachmentQuery.find();
+    attachmentQuery.close();
+    final guids = <String?>{};
+    return attachments.where((a) => guids.add(a.guid)).toList();
+  }
+
+  @override
   Future<void> clearTranscript(int chatId) async {
     Database.runInTransaction(TxMode.write, () {
       final query = Database.chats.query(Chat_.id.equals(chatId)).build();

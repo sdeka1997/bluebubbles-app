@@ -1,4 +1,5 @@
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -32,7 +33,7 @@ class _AttachmentsLoaderState extends State<AttachmentsLoader> {
 
   Future<void> _fetchAttachments() async {
     try {
-      final attachments = await widget.chat.getAttachmentsAsync();
+      final attachments = await MessagingStore.current.chatAttachments(widget.chat.id!);
 
       if (!mounted) return;
 

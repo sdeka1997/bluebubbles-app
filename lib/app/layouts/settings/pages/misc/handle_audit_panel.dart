@@ -191,7 +191,7 @@ class _HandleAuditPanelState extends State<HandleAuditPanel> with ThemeHelpers {
     if (confirmed != true) return;
 
     try {
-      Handle.delete(result.handleId);
+      await MessagingStore.current.deleteHandle(result.handleId);
       if (!mounted) return;
       setState(() {
         _results.remove(result);

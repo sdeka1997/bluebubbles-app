@@ -12,6 +12,7 @@ import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/app/layouts/chat_creator/chat_creator.dart';
 import 'package:bluebubbles/app/layouts/conversation_view/pages/conversation_view.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Intent;
@@ -107,7 +108,7 @@ class IntentsService {
               Uri.tryParse(intent.data!.replaceFirst("imessage://", "imessage:").replaceFirst("&body=", "?body="));
           if (uri != null) {
             final address = uri.path;
-            final handle = Handle.findOne(addressAndService: HandleLookupKey(address, "iMessage"));
+            final handle = await Handle.findOneAsync(addressAndService: HandleLookupKey(address, "iMessage"));
             NavigationSvc.pushAndRemoveUntil(
               Get.context!,
               NewChatCreator(
@@ -218,7 +219,7 @@ class IntentsService {
     } else {
       Logger.debug("Opening existing chat (Attachments: ${attachments.length}; Text: ${text?.shorten(10) ?? 'N/A'})",
           tag: "IntentsService");
-      final chat = Chat.findOne(guid: guid);
+      final chat = await MessagingStore.current.chatByGuid(guid);
       if (chat == null) {
         Logger.debug("Chat not found with guid: $guid", tag: "IntentsService");
         return;

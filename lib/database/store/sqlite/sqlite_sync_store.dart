@@ -21,6 +21,9 @@ mixin SqliteSyncStore implements SyncStore, SqliteStorePart {
   Future<Chat?> chatByGuid(String guid) => ChatRepo(db).byGuid(guid);
 
   @override
+  Future<Chat?> chatByIdentifier(String identifier) => ChatRepo(db).byIdentifier(identifier);
+
+  @override
   Future<List<Chat>> chatsByIds(List<int> ids) async => inIdOrder(ids, await ChatRepo(db).byIds(ids));
 
   @override

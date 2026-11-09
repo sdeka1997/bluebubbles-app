@@ -4,6 +4,7 @@ import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:bluebubbles/app/components/custom_text_editing_controllers.dart';
 import 'package:bluebubbles/app/wrappers/stateful_boilerplate.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/services/backend/interfaces/prefs_interface.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:flutter/material.dart';
@@ -300,7 +301,7 @@ class ConversationViewController extends StatefulController with GetSingleTicker
     if (data != null) {
       final messageGuid = data['messageGuid'] as String;
       final messagePart = data['messagePart'] as int;
-      final message = Message.findOne(guid: messageGuid);
+      final message = await MessagingStore.current.messageByGuid(messageGuid);
       if (message != null) {
         replyToMessage = MessageReplyContext(message, messagePart);
       }

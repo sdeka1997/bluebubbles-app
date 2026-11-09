@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bluebubbles/helpers/ui/facetime_helpers.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/services/backend/sync/apple_state_catch_up.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
@@ -27,7 +28,7 @@ class ActionHandler extends GetxService {
   /// already built keeps showing the message until it is removed from it.
   Future<void> handleRecoverableMessageEvent(RecoverableMessageEvent? event) async {
     if (event == null) return;
-    if (Message.findOne(guid: event.messageGuid) == null) return;
+    if (await MessagingStore.current.messageByGuid(event.messageGuid) == null) return;
 
     await RecoverableMessages.apply(event.messageGuid, hide: event.deleted);
   }
@@ -161,7 +162,7 @@ class ActionHandler extends GetxService {
         }
         return;
       case "chat-read-status-changed":
-        Chat? chat = Chat.findOne(guid: data["chatGuid"]);
+        Chat? chat = await MessagingStore.current.chatByGuid(data["chatGuid"]);
         if (chat != null && (data["read"] == true || data["read"] == false)) {
           // Route through ChatsService so the ChatState the conversation list
           // renders from is updated too. Writing only to the DB row leaves the
@@ -176,7 +177,7 @@ class ActionHandler extends GetxService {
           return;
         }
 
-        final deletedChat = Chat.findOne(guid: chatGuid);
+        final deletedChat = await MessagingStore.current.chatByGuid(chatGuid);
         if (deletedChat == null) {
           Logger.warn("Ignoring chat-deleted event for unknown chat $chatGuid", tag: "ActionHandler");
           return;

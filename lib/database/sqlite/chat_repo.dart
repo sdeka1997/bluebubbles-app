@@ -35,6 +35,9 @@ class ChatRepo {
 
   Future<Chat?> byGuid(String guid) => _one('SELECT * FROM chats WHERE guid = ?', [guid]);
 
+  Future<Chat?> byIdentifier(String identifier) =>
+      _one('SELECT * FROM chats WHERE chat_identifier = ? ORDER BY id LIMIT 1', [identifier]);
+
   Future<Map<int, Chat>> byIds(Iterable<int> ids) {
     return db.snapshot((reader) async {
       final chats = <Chat>[];

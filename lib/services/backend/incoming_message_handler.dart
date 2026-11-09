@@ -324,8 +324,8 @@ class IncomingMessageHandler {
     //    saved it before the socket event arrived, or a duplicate delivery),
     //    redirect to the updated-message pipeline for a clean GUID swap or
     //    field refresh.
-    final existsByTempGuid = tempGuid != null ? Message.findOne(guid: tempGuid) : null;
-    final existsByRealGuid = m.guid != null ? Message.findOne(guid: m.guid) : null;
+    final existsByTempGuid = tempGuid != null ? await MessagingStore.current.messageByGuid(tempGuid) : null;
+    final existsByRealGuid = m.guid != null ? await MessagingStore.current.messageByGuid(m.guid!) : null;
     if (existsByTempGuid != null || existsByRealGuid != null) {
       Logger.debug('[new-message] ${m.guid} already in DB — routing to updated-message pipeline', tag: _tag);
       await _processUpdatedMessage(payload.copyWith(type: MessageEventType.updatedMessage));
@@ -462,8 +462,8 @@ class IncomingMessageHandler {
     //    Try tempGuid first (outgoing echo), then fall back to the real GUID
     //    (read-receipt, edit, or a re-delivery of an already-saved message).
     Message? existing;
-    if (tempGuid != null) existing = Message.findOne(guid: tempGuid);
-    if (existing == null && m.guid != null) existing = Message.findOne(guid: m.guid);
+    if (tempGuid != null) existing = await MessagingStore.current.messageByGuid(tempGuid);
+    if (existing == null && m.guid != null) existing = await MessagingStore.current.messageByGuid(m.guid!);
 
     // 3. Out-of-order buffering.
     //    The new-message event hasn't arrived yet — park this payload and
@@ -524,7 +524,7 @@ class IncomingMessageHandler {
       partial = (await ChatsSvc.fetchChat(partial.guid)) ?? partial;
     } else {
       // If we have a local copy and the local copy has participants, use it — no need to fetch.
-      final local = Chat.findOne(guid: partial.guid);
+      final local = await MessagingStore.current.chatByGuid(partial.guid);
       // A chat stored before the app kept group ids is fetched once more so a
       // service twin can be recognised (notification payloads omit the group id).
       if (local != null && local.handles.isNotEmpty && local.groupId != null) {
@@ -562,7 +562,7 @@ class IncomingMessageHandler {
     Message existing,
     Message replacement,
   ) async {
-    final alreadyPresent = Message.findOne(guid: replacement.guid);
+    final alreadyPresent = replacement.guid == null ? null : await MessagingStore.current.messageByGuid(replacement.guid!);
 
     if (alreadyPresent != null) {
       // The replacement record already exists (parallel delivery).
@@ -573,7 +573,7 @@ class IncomingMessageHandler {
 
       // Clean up the stale temp record when the real one is now present.
       if (existingGuid != replacement.guid) {
-        final stale = Message.findOne(guid: existingGuid);
+        final stale = await MessagingStore.current.messageByGuid(existingGuid);
         if (stale != null) Message.delete(stale.guid!);
       }
     } else {
@@ -675,7 +675,7 @@ class IncomingMessageHandler {
     // for this message gets the updated attachment list (real GUIDs replacing temp ones).
     if (replacementAttachments.isNotEmpty && Get.isRegistered<MessagesService>(tag: chat.guid)) {
       // Re-fetch from DB so the attachment relations reflect the post-swap state.
-      final freshMessage = Message.findOne(guid: replacement.guid!);
+      final freshMessage = await MessagingStore.current.messageByGuid(replacement.guid!);
       if (freshMessage != null) {
         MessagesSvc(chat.guid).updateMessage(
           freshMessage,
@@ -774,7 +774,7 @@ class IncomingMessageHandler {
 
     // Final safety check: re-query the DB in case the new-message landed
     // between the check in _processUpdatedMessage and now.
-    final raceCheck = Message.findOne(guid: guid);
+    final raceCheck = await MessagingStore.current.messageByGuid(guid);
     if (raceCheck != null) {
       Logger.debug(
         'Race resolved: $guid appeared in DB before parking — processing immediately',

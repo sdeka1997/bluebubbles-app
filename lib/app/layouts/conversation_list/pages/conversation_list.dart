@@ -15,6 +15,7 @@ import 'package:bluebubbles/app/wrappers/bb_scaffold.dart';
 import 'package:bluebubbles/app/wrappers/stateful_boilerplate.dart';
 import 'package:bluebubbles/app/wrappers/tablet_mode_wrapper.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -172,7 +173,7 @@ class _ConversationListState extends CustomState<ConversationList, void, Convers
           NavigationSvc.pushAndRemoveUntil(
             context,
             ConversationView(
-                chat: kIsWeb ? (await Chat.findOneWeb(guid: lastOpenedChat))! : Chat.findOne(guid: lastOpenedChat)!),
+                chat: kIsWeb ? (await Chat.findOneWeb(guid: lastOpenedChat))! : (await MessagingStore.current.chatByGuid(lastOpenedChat))!),
             (route) => route.isFirst,
           );
         });

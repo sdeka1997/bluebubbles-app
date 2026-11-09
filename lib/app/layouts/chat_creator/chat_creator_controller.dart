@@ -6,6 +6,7 @@ import 'package:bluebubbles/app/layouts/conversation_view/pages/conversation_vie
 import 'package:bluebubbles/app/wrappers/stateful_boilerplate.dart';
 import 'package:bluebubbles/app/wrappers/titlebar_wrapper.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/services/backend/interfaces/sync_interface.dart';
@@ -346,7 +347,7 @@ class ChatCreatorController extends StatefulController {
         if (kIsWeb) {
           existingChat = await Chat.findOneWeb(chatIdentifier: slugify(address, delimiter: ''));
         } else {
-          existingChat = Chat.findOne(chatIdentifier: slugify(address, delimiter: ''));
+          existingChat = await MessagingStore.current.chatByIdentifier(slugify(address, delimiter: ''));
         }
       } catch (_) {}
     }

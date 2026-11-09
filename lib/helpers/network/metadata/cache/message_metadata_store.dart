@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/network/metadata/models/url_metadata.dart';
 import 'package:flutter/foundation.dart';
@@ -189,7 +191,7 @@ abstract final class MessageMetadataStore {
   static void _save(Message message, Map<String, dynamic> map) {
     message.metadata = map;
     if (kIsWeb || message.id == null) return;
-    message.save();
+    unawaited(message.saveAsync());
   }
 
   static String? _string(dynamic value) => value is String && value.isNotEmpty ? value : null;

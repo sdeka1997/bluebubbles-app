@@ -189,7 +189,7 @@ class ChatCreatorState extends State<ChatCreator> with ThemeHelpers {
         if (kIsWeb) {
           existingChat = await Chat.findOneWeb(chatIdentifier: slugify(address, delimiter: ''));
         } else {
-          existingChat = Chat.findOne(chatIdentifier: slugify(address, delimiter: ''));
+          existingChat = await MessagingStore.current.chatByIdentifier(slugify(address, delimiter: ''));
         }
       } catch (e, s) {
         Logger.warn("Failed to find existing chat by identifier", error: e, trace: s, tag: 'ChatCreator');

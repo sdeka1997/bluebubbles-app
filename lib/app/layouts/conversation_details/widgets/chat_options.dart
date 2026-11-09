@@ -717,7 +717,7 @@ class _ChatOptionsState extends State<ChatOptions> with ThemeHelpers {
                   isDefault: true,
                   onPressed: () async {
                     Navigator.of(context, rootNavigator: true).pop();
-                    chat.clearTranscript();
+                    await chat.clearTranscriptAsync();
                     EventDispatcherSvc.emit("refresh-messagebloc", {"chatGuid": chat.guid});
                   },
                 ),

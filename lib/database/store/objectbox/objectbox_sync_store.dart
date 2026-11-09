@@ -430,6 +430,15 @@ mixin ObjectBoxSyncStore implements SyncStore {
   Future<Chat?> chatById(int id) async => Database.chats.get(id);
 
   @override
+  Future<Chat?> chatByIdentifier(String identifier) async {
+    final query = Database.chats.query(Chat_.chatIdentifier.equals(identifier)).build();
+    query.limit = 1;
+    final chat = query.findFirst();
+    query.close();
+    return chat;
+  }
+
+  @override
   Future<Chat?> chatByGuid(String guid) async {
     final query = Database.chats.query(Chat_.guid.equals(guid)).build();
     query.limit = 1;

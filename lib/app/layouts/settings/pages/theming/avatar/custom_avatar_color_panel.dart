@@ -5,6 +5,7 @@ import 'package:bluebubbles/app/layouts/settings/widgets/settings_widgets.dart';
 import 'package:bluebubbles/app/wrappers/stateful_boilerplate.dart';
 import 'package:bluebubbles/app/components/avatars/contact_avatar_widget.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -18,7 +19,7 @@ class CustomAvatarColorPanelController extends StatefulController {
   }
 
   Future<void> getCustomHandles({bool force = false}) async {
-    List<Handle> handles = Handle.find();
+    List<Handle> handles = await MessagingStore.current.allHandles();
     if (isNullOrEmpty(handles)) return;
 
     // Filter handles down by ones with colors

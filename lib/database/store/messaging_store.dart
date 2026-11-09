@@ -87,6 +87,9 @@ abstract interface class HandleStore {
 
   Future<Handle?> handleById(int id);
 
+  /// Removes the handle [id] (the handle audit's delete).
+  Future<void> deleteHandle(int id);
+
   Future<int> handleCount();
 
   /// The server panel's local totals: live `messages` and `chats`, `handles`,
@@ -241,6 +244,9 @@ abstract interface class SyncStore {
   Future<Chat?> chatById(int id);
 
   Future<Chat?> chatByGuid(String guid);
+
+  /// The chat whose chatIdentifier is [identifier], with participants.
+  Future<Chat?> chatByIdentifier(String identifier);
 
   /// The stored chats of [ids], in that order; missing ones are skipped.
   Future<List<Chat>> chatsByIds(List<int> ids);
@@ -421,6 +427,10 @@ abstract interface class ChatStore {
   Future<List<int>> participantIds(int chatId);
 
   Future<void> clearTranscript(int chatId);
+
+  /// The attachments with a mime type of [chatId]'s live messages, each with
+  /// its message (the chat details media, documents and locations).
+  Future<List<Attachment>> chatAttachments(int chatId);
 
   Future<List<int>> chatPageIds({required int limit, required int offset, required List<int> ids});
 

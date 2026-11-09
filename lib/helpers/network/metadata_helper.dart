@@ -221,7 +221,7 @@ abstract final class MetadataHelper {
       map[slot.imageHashKey] = downloaded.hash;
     }
     message.metadata = map;
-    if (!kIsWeb && message.id != null) message.save();
+    if (!kIsWeb && message.id != null) await message.saveAsync();
 
     return downloaded;
   }

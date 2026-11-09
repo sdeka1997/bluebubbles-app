@@ -130,5 +130,8 @@ mixin SqliteHandleStore implements HandleStore, SqliteStorePart {
   Future<Handle?> handleById(int id) => HandleRepo(db).byId(id);
 
   @override
+  Future<void> deleteHandle(int id) => db.write((tx) => tx.execute('DELETE FROM handles WHERE id = ?', [id]));
+
+  @override
   Future<List<Handle>> handlesByIds(List<int> ids) async => inIdOrder(ids, await HandleRepo(db).byIds(ids));
 }

@@ -9,6 +9,7 @@ import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/helpers/ui/facetime_helpers.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
@@ -608,7 +609,7 @@ class NotificationsService {
 
   Future<void> _handleDesktopMessageInteraction(DesktopMessageInteraction interaction) async {
     final DesktopMessageData data = interaction.data;
-    final Chat? chat = ChatsSvc.findChatByGuid(data.chatGuid) ?? Chat.findOne(guid: data.chatGuid);
+    final Chat? chat = ChatsSvc.findChatByGuid(data.chatGuid) ?? await MessagingStore.current.chatByGuid(data.chatGuid);
     if (chat == null) {
       Logger.warn(
         'Cannot handle desktop notification: chat ${data.chatGuid} no longer exists',
@@ -637,7 +638,7 @@ class NotificationsService {
     }
 
     if (interaction.action != null) {
-      final Message? selectedMessage = data.messageGuid == null ? null : Message.findOne(guid: data.messageGuid);
+      final Message? selectedMessage = data.messageGuid == null ? null : await MessagingStore.current.messageByGuid(data.messageGuid!);
       if (selectedMessage == null) {
         Logger.warn(
           'Cannot react from desktop notification: message ${data.messageGuid} no longer exists',

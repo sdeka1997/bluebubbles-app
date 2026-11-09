@@ -31,6 +31,7 @@ abstract class StoreFixture {
     DateTime? deleted,
     bool unread = false,
     String? groupTitle,
+    String? identifier,
   });
 
   Future<Message> message(
@@ -51,7 +52,7 @@ abstract class StoreFixture {
     void Function(Message m)? edit,
   });
 
-  Future<Attachment> attachment(String guid, Message? message, {String? mimeType});
+  Future<Attachment> attachment(String guid, Message? message, {String? mimeType, void Function(Attachment)? edit});
 
   Future<ContactV2> contact(String nativeId, String name, {List<Handle> handles = const []});
 
@@ -123,9 +124,11 @@ class ObjectBoxFixture extends StoreFixture {
     DateTime? deleted,
     bool unread = false,
     String? groupTitle,
+    String? identifier,
   }) async {
     final c = Chat(guid: guid, threadKey: threadKey, dateDeleted: deleted, hasUnreadMessage: unread)
       ..latestGroupTitle = groupTitle
+      ..chatIdentifier = identifier
       ..handles.addAll(handles);
     obx.box<Chat>().put(c);
     return c;
@@ -168,8 +171,9 @@ class ObjectBoxFixture extends StoreFixture {
   }
 
   @override
-  Future<Attachment> attachment(String guid, Message? message, {String? mimeType}) async {
+  Future<Attachment> attachment(String guid, Message? message, {String? mimeType, void Function(Attachment)? edit}) async {
     final a = Attachment(guid: guid, mimeType: mimeType ?? 'image/jpeg', transferName: '$guid.jpg', isOutgoing: false);
+    edit?.call(a);
     if (message != null) a.message.target = message;
     obx.box<Attachment>().put(a);
     return a;
@@ -228,9 +232,11 @@ class SqliteFixture extends StoreFixture {
     DateTime? deleted,
     bool unread = false,
     String? groupTitle,
+    String? identifier,
   }) async {
     final c = Chat(guid: guid, threadKey: threadKey, dateDeleted: deleted, hasUnreadMessage: unread)
-      ..latestGroupTitle = groupTitle;
+      ..latestGroupTitle = groupTitle
+      ..chatIdentifier = identifier;
     c.id = await _insert('chats', chatToRow(c));
     await db.write((tx) async {
       for (final h in handles) {
@@ -278,8 +284,9 @@ class SqliteFixture extends StoreFixture {
   }
 
   @override
-  Future<Attachment> attachment(String guid, Message? message, {String? mimeType}) async {
+  Future<Attachment> attachment(String guid, Message? message, {String? mimeType, void Function(Attachment)? edit}) async {
     final a = Attachment(guid: guid, mimeType: mimeType ?? 'image/jpeg', transferName: '$guid.jpg', isOutgoing: false);
+    edit?.call(a);
     a.message.targetId = message?.id;
     a.id = await _insert('attachments', attachmentToRow(a));
     return a;
