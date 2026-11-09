@@ -245,7 +245,6 @@ class ChatInterface {
     int offset = 0,
     int limit = 25,
     bool includeDeleted = false,
-    int? searchAround,
     bool hydrateAttachments = true,
   }) async {
     final data = {
@@ -255,7 +254,6 @@ class ChatInterface {
       'offset': offset,
       'limit': limit,
       'includeDeleted': includeDeleted,
-      'searchAround': searchAround,
     };
 
     late List<int> messageIds;
@@ -288,6 +286,31 @@ class ChatInterface {
     final result = isIsolate
         ? await ChatActions.getOlderMessagePage(data)
         : await GetIt.I<GlobalIsolate>().send<Map<String, dynamic>>(IsolateRequestType.getOlderMessagePage, input: data);
+    final ids = (result['ids'] as List).cast<int>();
+    return (
+      messages: await MessagingStore.current.messagesByIds(ids),
+      next: MessagePageCursor.fromMap(result['next']),
+    );
+  }
+
+  /// [limit] messages either side of [aroundId] and that message, hydrated on
+  /// this isolate, and where scrolling up continues.
+  static Future<({List<Message> messages, MessagePageCursor? next})> getMessagePageAround({
+    required int chatId,
+    required List<Map<String, dynamic>> participantsData,
+    required int aroundId,
+    int limit = 25,
+  }) async {
+    final data = {
+      'chatId': chatId,
+      'participantsData': participantsData,
+      'aroundId': aroundId,
+      'limit': limit,
+    };
+
+    final result = isIsolate
+        ? await ChatActions.getMessagePageAround(data)
+        : await GetIt.I<GlobalIsolate>().send<Map<String, dynamic>>(IsolateRequestType.getMessagePageAround, input: data);
     final ids = (result['ids'] as List).cast<int>();
     return (
       messages: await MessagingStore.current.messagesByIds(ids),

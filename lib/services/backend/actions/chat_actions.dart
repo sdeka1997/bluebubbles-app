@@ -153,7 +153,6 @@ class ChatActions {
       offset: data['offset'] as int? ?? 0,
       limit: data['limit'] as int? ?? 25,
       includeDeleted: data['includeDeleted'] as bool? ?? false,
-      searchAround: data['searchAround'] as int?,
     );
   }
 
@@ -168,6 +167,21 @@ class ChatActions {
       participants,
       after: MessagePageCursor.fromMap(data['after']),
       loadedRows: data['loadedRows'] as int? ?? 0,
+      limit: data['limit'] as int? ?? 25,
+    );
+    return {'ids': page.ids, 'next': page.next?.toMap()};
+  }
+
+  /// `{'ids': [...], 'next': MessagePageCursor.toMap() or null}`.
+  static Future<Map<String, dynamic>> getMessagePageAround(dynamic data) async {
+    final participants = (data['participantsData'] as List)
+        .cast<Map<String, dynamic>>()
+        .map(Handle.fromMap)
+        .toList();
+    final page = await MessagingStore.current.messagePageAround(
+      data['chatId'] as int,
+      participants,
+      data['aroundId'] as int,
       limit: data['limit'] as int? ?? 25,
     );
     return {'ids': page.ids, 'next': page.next?.toMap()};

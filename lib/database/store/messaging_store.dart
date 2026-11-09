@@ -362,7 +362,6 @@ abstract interface class ChatStore {
     required int offset,
     required int limit,
     required bool includeDeleted,
-    int? searchAround,
   });
 
   /// The page of [chatId]'s timeline just older than [after] (the newest page
@@ -376,6 +375,11 @@ abstract interface class ChatStore {
     required int loadedRows,
     required int limit,
   });
+
+  /// [limit] messages of [chatId] either side of the message [aroundId] and that
+  /// message, newest first: what jumping to a search result loads. [next] is
+  /// where scrolling up continues (on ObjectBox, today's position again).
+  Future<MessagePage> messagePageAround(int chatId, List<Handle> participants, int aroundId, {required int limit});
 
   Future<List<int>> participantIds(int chatId);
 

@@ -659,7 +659,6 @@ class Chat {
       {int offset = 0,
       int limit = 25,
       bool includeDeleted = false,
-      int? searchAround,
       Function? onSupplementalDataLoaded}) async {
     if (kIsWeb || chat.id == null) return [];
 
@@ -673,7 +672,6 @@ class Chat {
       offset: offset,
       limit: limit,
       includeDeleted: includeDeleted,
-      searchAround: searchAround,
     );
 
     if (messages.isEmpty) {
@@ -705,6 +703,25 @@ class Chat {
       participantsData: chat.handles.map((e) => e.toMap()).toList(),
       after: after,
       loadedRows: loadedRows,
+      limit: limit,
+    );
+    if (page.messages.isNotEmpty) {
+      _loadSupplementalDataAsync(
+          page.messages, page.messages.map((e) => e.guid!).toList(), totalStopwatch, onSupplementalDataLoaded);
+    }
+    return page;
+  }
+
+  /// [limit] messages of [chat] either side of [around] and [around] itself,
+  /// newest first, with attachments; reactions load in the background.
+  static Future<({List<Message> messages, MessagePageCursor? next})> getMessagesAroundAsync(Chat chat, Message around,
+      {int limit = 25, Function? onSupplementalDataLoaded}) async {
+    if (kIsWeb || chat.id == null || around.id == null) return (messages: <Message>[], next: null);
+    final totalStopwatch = Stopwatch()..start();
+    final page = await ChatInterface.getMessagePageAround(
+      chatId: chat.id!,
+      participantsData: chat.handles.map((e) => e.toMap()).toList(),
+      aroundId: around.id!,
       limit: limit,
     );
     if (page.messages.isNotEmpty) {

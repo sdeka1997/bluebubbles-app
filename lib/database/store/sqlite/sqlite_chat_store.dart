@@ -326,33 +326,15 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
     required int offset,
     required int limit,
     required bool includeDeleted,
-    int? searchAround,
   }) {
     return db.read((reader) async {
       final deleted = includeDeleted ? '' : 'AND date_deleted_us IS NULL ';
-      final rows = <Map<String, Object?>>[];
-      if (searchAround == null) {
-        rows.addAll(await reader.select(
-          'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? '
-          'AND date_created_us IS NOT NULL $deleted'
-          'ORDER BY date_created_us DESC, id DESC LIMIT ? OFFSET ?',
-          [chatId, limit, offset],
-        ));
-      } else {
-        final aroundUs = searchAround * 1000;
-        rows.addAll(await reader.select(
-          'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? '
-          'AND date_created_us < ? AND date_created_us IS NOT NULL $deleted'
-          'ORDER BY date_created_us DESC, id DESC LIMIT ?',
-          [chatId, aroundUs, limit],
-        ));
-        rows.addAll(await reader.select(
-          'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? '
-          'AND date_created_us > ? AND date_created_us IS NOT NULL $deleted'
-          'ORDER BY date_created_us ASC, id ASC LIMIT ?',
-          [chatId, aroundUs, limit],
-        ));
-      }
+      final rows = await reader.select(
+        'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? '
+        'AND date_created_us IS NOT NULL $deleted'
+        'ORDER BY date_created_us DESC, id DESC LIMIT ? OFFSET ?',
+        [chatId, limit, offset],
+      );
       final messages = rows.map(messageFromRow).toList();
       await MessageRepo(reader).attachmentsFor(messages);
       final unresolved = <int>{
@@ -392,6 +374,20 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
     return (
       ids: [for (final m in page) m.id!],
       next: page.isEmpty ? after : MessagePageCursor.sqlite(MessageKey.of(page.last)),
+    );
+  }
+
+  /// The keyset neighbours of the message's (sort_at, id) key, so ties and
+  /// delivered-before-created messages land where the screen shows them.
+  @override
+  Future<MessagePage> messagePageAround(int chatId, List<Handle> participants, int aroundId, {required int limit}) async {
+    final repo = MessageRepo(db);
+    final target = (await repo.byIds([aroundId]))[aroundId];
+    if (target == null) return (ids: <int>[], next: null);
+    final page = await repo.around([chatId], MessageKey.of(target), before: limit, after: limit);
+    return (
+      ids: [for (final m in page) m.id!],
+      next: page.isEmpty ? null : MessagePageCursor.sqlite(MessageKey.of(page.last)),
     );
   }
 

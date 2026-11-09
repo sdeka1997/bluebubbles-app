@@ -417,7 +417,7 @@ class Chat {
   }
 
   static Future<List<Message>> getMessagesAsync(Chat chat,
-      {int offset = 0, int limit = 25, bool includeDeleted = false, int? searchAround}) async {
+      {int offset = 0, int limit = 25, bool includeDeleted = false}) async {
     return [];
   }
 

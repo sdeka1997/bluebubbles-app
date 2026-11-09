@@ -743,6 +743,7 @@ enum IsolateRequestType {
   bulkSyncChats,
   getMessagesAsync,
   getOlderMessagePage,
+  getMessagePageAround,
   getParticipantsAsync,
   clearTranscriptAsync,
   getChatsAsync,

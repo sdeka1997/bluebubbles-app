@@ -395,33 +395,39 @@ mixin ObjectBoxChatStore implements ChatStore {
     required int offset,
     required int limit,
     required bool includeDeleted,
-    int? searchAround,
   }) async {
-    return Database.runInTransaction(TxMode.read, () {
-      if (searchAround == null) {
-        return _messagePage(chatId, participants, offset: offset, limit: limit, includeDeleted: includeDeleted).ids;
-      }
-      final messages = <Message>[];
-      final before = (Database.messages.query(Message_.dateCreated.lessThan(searchAround).and(includeDeleted
-              ? Message_.dateCreated.notNull().and(Message_.dateDeleted.isNull().or(Message_.dateDeleted.notNull()))
-              : Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull())))
+    return Database.runInTransaction(TxMode.read,
+        () => _messagePage(chatId, participants, offset: offset, limit: limit, includeDeleted: includeDeleted).ids);
+  }
+
+  /// Today's search-result query: [limit] messages created before and after
+  /// the target's created date, with the target itself.
+  @override
+  Future<MessagePage> messagePageAround(int chatId, List<Handle> participants, int aroundId, {required int limit}) async {
+    final ids = Database.runInTransaction(TxMode.read, () {
+      final target = Database.messages.get(aroundId);
+      final created = target?.dateCreated?.millisecondsSinceEpoch;
+      if (target == null || created == null) return <int>[];
+      final live = Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull());
+      final before = (Database.messages.query(Message_.dateCreated.lessThan(created).and(live))
             ..link(Message_.chat, Chat_.id.equals(chatId))
             ..order(Message_.dateCreated, flags: Order.descending))
           .build()
         ..limit = limit;
-      messages.addAll(before.find());
-      before.close();
-      final after = (Database.messages.query(Message_.dateCreated.greaterThan(searchAround).and(includeDeleted
-              ? Message_.dateCreated.notNull().and(Message_.dateDeleted.isNull().or(Message_.dateDeleted.notNull()))
-              : Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull())))
+      final after = (Database.messages.query(Message_.dateCreated.greaterThan(created).and(live))
             ..link(Message_.chat, Chat_.id.equals(chatId))
             ..order(Message_.dateCreated))
           .build()
         ..limit = limit;
-      messages.addAll(after.find());
-      after.close();
-      return _placeable(messages, participants).map((e) => e.id!).toList();
+      try {
+        final messages = [...after.find(), target, ...before.find()]..sort(Message.sort);
+        return _placeable(messages, participants).map((e) => e.id!).toList();
+      } finally {
+        before.close();
+        after.close();
+      }
     });
+    return (ids: ids, next: const MessagePageCursor.objectBox());
   }
 
   @override

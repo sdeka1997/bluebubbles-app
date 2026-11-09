@@ -1523,6 +1523,17 @@ class MessagesService extends GetxController {
     return page.messages;
   }
 
+  /// Reads [limit] messages either side of [around] into [struct] and points the
+  /// cursor below them, so scrolling up continues from the oldest. Returns them
+  /// with [around], newest first.
+  @visibleForTesting
+  Future<List<Message>> loadAroundPage(Message around, {int limit = 25}) async {
+    final page = await Chat.getMessagesAroundAsync(chat, around, limit: limit);
+    _olderCursor = page.next ?? _olderCursor;
+    struct.addMessages(page.messages);
+    return page.messages;
+  }
+
   /// Loads the next older page of the chat (the newest page the first time,
   /// and after [close]/[reload]). Returns whether it found any messages.
   Future<bool> loadChunk(ConversationViewController controller, {int limit = 25}) async {
@@ -1666,10 +1677,7 @@ class MessagesService extends GetxController {
   Future<void> loadSearchChunk(Message around, SearchMethod method) async {
     List<Message> _messages = [];
     if (method == SearchMethod.local) {
-      _messages = await Chat.getMessagesAsync(chat, searchAround: around.dateCreated!.millisecondsSinceEpoch);
-      _messages.add(around);
-      _messages.sort(Message.sort);
-      struct.addMessages(_messages);
+      _messages = await loadAroundPage(around);
       // Create MessageStates for loaded messages
       _ensureMessageStates(_messages);
     } else {

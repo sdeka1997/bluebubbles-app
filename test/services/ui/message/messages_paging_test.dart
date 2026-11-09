@@ -142,5 +142,36 @@ void main() {
       expect(cursors.toSet(), hasLength(cursors.length));
       expect(service.olderCursor, cursors.last);
     });
+
+    test('jumping to a message loads both sides in screen order, ties included, and scrolling up continues below', () async {
+      final chat = await fixture().chat('c');
+      for (var i = 0; i < 100; i++) {
+        await fixture().message('m$i', chat, t0 + (i ~/ 4) * 1000);
+      }
+      final target = (await fixture().store.messageByGuid('m50'))!;
+      final service = serviceFor(chat);
+
+      final around = await service.loadAroundPage(target, limit: 10);
+      final older = await service.loadOlderPage(limit: 10);
+
+      expect(around.map((m) => m.guid), [for (var i = 60; i >= 40; i--) 'm$i']);
+      expect(older.map((m) => m.guid), [for (var i = 39; i >= 30; i--) 'm$i']);
+    });
   }, only: {ActiveStore.sqlite});
+
+  forEachStore((fixture) {
+    test('jumping to a message loads the message and its neighbours', () async {
+      final chat = await fixture().chat('c');
+      for (var i = 0; i < 60; i++) {
+        await fixture().message('m$i', chat, t0 + i * 1000);
+      }
+      final target = (await fixture().store.messageByGuid('m30'))!;
+      final service = serviceFor(chat);
+
+      final around = await service.loadAroundPage(target, limit: 5);
+
+      expect(around.map((m) => m.guid), [for (var i = 35; i >= 25; i--) 'm$i']);
+      expect(service.struct.messages, hasLength(11));
+    });
+  });
 }
