@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
 import 'package:bluebubbles/database/sqlite/chat_repo.dart';
+import 'package:bluebubbles/database/sqlite/chat_stats_repo.dart';
 import 'package:bluebubbles/database/sqlite/contact_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:bluebubbles/database/sqlite/db_change_events.dart';
@@ -12,6 +13,7 @@ import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_messaging_store.dart';
 import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart' show canonicalTwinFor;
+import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_models.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:collection/collection.dart';
 
@@ -443,6 +445,9 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
   }
 
   @override
+  ChatStatsReader chatStats(Chat chat) => _SqliteChatStats(ChatStatsRepo(db), chat);
+
+  @override
   Future<int> chatCount() async => (await db.select('SELECT count(*) AS n FROM chats')).first['n'] as int;
 
   @override
@@ -488,4 +493,96 @@ void _applyChatUpdates(Chat chat, Chat input, Map<String, bool> flags) {
     chat.dynamicWallpaperConfig = input.dynamicWallpaperConfig;
   }
   if (flags['updateIsFilteredAsSpam'] == true) chat.isFilteredAsSpam = input.isFilteredAsSpam;
+}
+
+/// [ChatStatsReader] over ChatStatsRepo.
+class _SqliteChatStats implements ChatStatsReader {
+  _SqliteChatStats(this.repo, this.chat);
+
+  final ChatStatsRepo repo;
+  final Chat chat;
+
+  @override
+  Future<int> messageCountForTier() =>
+      repo.messageCountForTier(chat.id!);
+
+  @override
+  Future<({int count, int latestMillis})> cacheKey() =>
+      repo.cacheKey(chat.id!);
+
+  @override
+  Future<Map<int, List<int>>> timestampsByParticipant({int? sinceMillis}) =>
+      repo.timestampsByParticipant(chat.id!, sinceMillis: sinceMillis);
+
+  @override
+  Future<int> attachmentMessageCount({int? sinceMillis}) =>
+      repo.attachmentMessageCount(chat.id!, sinceMillis: sinceMillis);
+
+  @override
+  Future<int> unattributedCount({int? sinceMillis}) =>
+      repo.unattributedCount(chat.id!, sinceMillis: sinceMillis);
+
+  @override
+  Future<int?> firstMessageMillis() =>
+      repo.firstMessageMillis(chat.id!);
+
+  @override
+  Future<List<int>> readTimestamps({int? sinceMillis}) =>
+      repo.readTimestamps(chat.id!, sinceMillis: sinceMillis);
+
+  @override
+  Future<double> textCoverage() =>
+      repo.textCoverage(chat.id!);
+
+  @override
+  Future<List<String>> recentTexts({required bool fromMe, int? limit, int? participantId}) =>
+      repo.recentTexts(chat.id!, fromMe: fromMe, limit: limit, participantId: participantId);
+
+  @override
+  Future<Map<int, List<int>>> textLengthsByParticipant({int? sinceMillis, int? limitPerParticipant}) =>
+      repo.textLengthsByParticipant(chat.id!, sinceMillis: sinceMillis, limitPerParticipant: limitPerParticipant);
+
+  @override
+  Future<List<({String type, int participantId})>> reactions() =>
+      repo.reactions(chat.id!);
+
+  @override
+  Future<List<String>> attachmentMimeTypes() =>
+      repo.attachmentMimeTypes(chat.id!);
+
+  @override
+  Future<List<String>> expressiveSendStyleIds() =>
+      repo.expressiveSendStyleIds(chat.id!);
+
+  @override
+  Future<int> editedCount({bool? fromMe, int? participantId}) =>
+      repo.editedCount(chat.id!, fromMe: fromMe, participantId: participantId);
+
+  @override
+  Future<int> unsentCount({bool? fromMe, int? participantId}) =>
+      repo.unsentCount(chat.id!, fromMe: fromMe, participantId: participantId);
+
+  @override
+  Future<int> sentCount() =>
+      repo.sentCount(chat.id!);
+
+  @override
+  Future<int> receivedCount({int? participantId}) =>
+      repo.receivedCount(chat.id!, participantId: participantId);
+
+  @override
+  Future<({int sent, int received, double? playedOfReceived})> audioStats() =>
+      repo.audioStats(chat.id!);
+
+  @override
+  Future<List<GroupEventRecord>> groupEvents() =>
+      repo.groupEvents(chat.id!);
+
+  @override
+  Future<({List<ReactionMatrixRow> reactionRows, Map<String, int> guidToSender})> reactionMatrixData({required int sinceMillis}) =>
+      repo.reactionMatrixData(chat.id!, sinceMillis: sinceMillis);
+
+  @override
+  Future<List<int>> participantHandleIds({int? sinceMillis}) =>
+      repo.participantHandleIds(chat.id!, sinceMillis: sinceMillis);
 }

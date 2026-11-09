@@ -5,6 +5,7 @@ import 'package:bluebubbles/database/store/objectbox/objectbox_messaging_store.d
 import 'package:bluebubbles/database/store/sqlite/sqlite_messaging_store.dart';
 import 'package:bluebubbles/services/backend/descriptors/attachment_query_descriptor.dart';
 import 'package:bluebubbles/services/backend/sync/sync_marker.dart';
+import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_models.dart';
 import 'package:flutter/foundation.dart';
 
 export 'package:bluebubbles/services/backend/sync/sync_marker.dart' show ActiveStore;
@@ -232,6 +233,9 @@ abstract interface class SyncStore {
 
   Future<List<Chat>> allChats();
 
+  /// The chats not deleted that include any of [handleIds].
+  Future<List<Chat>> liveChatsWithParticipants(List<int> handleIds);
+
   /// Replaces every listed chat's participant links in one write.
   Future<void> setChatHandleIds(Map<int, List<int>> handleIdsByChat);
 
@@ -279,6 +283,34 @@ class MessagePageCursor {
 /// One page of a chat's timeline: message ids newest first, and where the next
 /// older page starts ([next] is the request's cursor when nothing came back).
 typedef MessagePage = ({List<int> ids, MessagePageCursor? next});
+
+/// The chat-stats screen's reads for one chat (ChatStatsQueries on ObjectBox,
+/// ChatStatsRepo on SQLite). Timestamps are epoch milliseconds; participants
+/// are local handle ids, [kMeParticipantId] for me.
+abstract interface class ChatStatsReader {
+  Future<int> messageCountForTier();
+  Future<({int count, int latestMillis})> cacheKey();
+  Future<Map<int, List<int>>> timestampsByParticipant({int? sinceMillis});
+  Future<int> attachmentMessageCount({int? sinceMillis});
+  Future<int> unattributedCount({int? sinceMillis});
+  Future<int?> firstMessageMillis();
+  Future<List<int>> readTimestamps({int? sinceMillis});
+  Future<double> textCoverage();
+  Future<List<String>> recentTexts({required bool fromMe, int? limit, int? participantId});
+  Future<Map<int, List<int>>> textLengthsByParticipant({int? sinceMillis, int? limitPerParticipant});
+  Future<List<({String type, int participantId})>> reactions();
+  Future<List<String>> attachmentMimeTypes();
+  Future<List<String>> expressiveSendStyleIds();
+  Future<int> editedCount({bool? fromMe, int? participantId});
+  Future<int> unsentCount({bool? fromMe, int? participantId});
+  Future<int> sentCount();
+  Future<int> receivedCount({int? participantId});
+  Future<({int sent, int received, double? playedOfReceived})> audioStats();
+  Future<List<GroupEventRecord>> groupEvents();
+  Future<({List<ReactionMatrixRow> reactionRows, Map<String, int> guidToSender})> reactionMatrixData(
+      {required int sinceMillis});
+  Future<List<int>> participantHandleIds({int? sinceMillis});
+}
 
 /// Chat action reads and writes (ChatActions, ChatInterface).
 abstract interface class ChatStore {
@@ -365,6 +397,9 @@ abstract interface class ChatStore {
 
   /// The live chat [chat] is folded into, or null when [chat] is its own thread.
   Future<Chat?> canonicalTwinOf(Chat chat);
+
+  /// The chat-stats reads of [chat].
+  ChatStatsReader chatStats(Chat chat);
 }
 
 abstract class MessagingStore

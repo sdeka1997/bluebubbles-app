@@ -1,13 +1,11 @@
 import 'dart:async';
 import 'dart:isolate';
 
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
-import 'package:bluebubbles/helpers/ui/async_task.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_computer.dart';
 import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_models.dart';
-import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_queries.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:get/get.dart';
 
@@ -44,6 +42,8 @@ class ChatStatsCache {
 class ChatStatsController extends GetxController {
   ChatStatsController(this.chat);
   final Chat chat;
+
+  late final ChatStatsReader _stats = MessagingStore.current.chatStats(chat);
 
   final Rxn<ChatStats> stats = Rxn<ChatStats>();
   final Rx<ChatStatsProgress> progress = ChatStatsProgress.idle.obs;
@@ -126,7 +126,7 @@ class ChatStatsController extends GetxController {
 
   Future<void> init() async {
     // Cheap size probe decides how the whole page behaves.
-    final count = await runAsync(() => ChatStatsQueries.messageCountForTier(chat));
+    final count = await _stats.messageCountForTier();
     tier = tierFor(count);
     if (tier == StatsDetailTier.large) {
       bucketSize.value = StatsBucketSize.month; // coarser default
@@ -168,14 +168,12 @@ class ChatStatsController extends GetxController {
       // `??=` on both makes this safe no matter which caller (a tab's
       // `initState`, or `init()`'s small-tier kickoff) reaches it first, and
       // never clobbers data another in-flight call already produced.
-      _cacheKey ??= await runAsync(() => ChatStatsQueries.cacheKey(chat));
+      _cacheKey ??= await _stats.cacheKey();
       stats.value ??= ChatStatsCache.get(_cacheEntryKey, _cacheKey!);
       final currentTimeframe = timeframe.value;
       if (_byParticipant == null || _byParticipantTimeframe != currentTimeframe) {
         final fetchWatch = Stopwatch()..start();
-        _byParticipant = await runAsync(
-          () => ChatStatsQueries.timestampsByParticipant(chat, sinceMillis: currentTimeframe.cutoffMillis()),
-        );
+        _byParticipant = await _stats.timestampsByParticipant(sinceMillis: currentTimeframe.cutoffMillis());
         _byParticipantTimeframe = currentTimeframe;
         Logger.debug(
           'Fetched timestampsByParticipant for ${chat.guid} (${currentTimeframe.label}, ${_byParticipant!.values.fold<int>(0, (a, b) => a + b.length)} messages) in ${fetchWatch.elapsedMilliseconds}ms',
@@ -244,10 +242,10 @@ class ChatStatsController extends GetxController {
     // necessarily `timeframe.value` — the two could momentarily diverge if
     // `timeframe` changes again while this section is still computing.
     final sinceMillis = _byParticipantTimeframe!.cutoffMillis();
-    final attachments = await runAsync(() => ChatStatsQueries.attachmentMessageCount(chat, sinceMillis: sinceMillis));
-    final unattributed = await runAsync(() => ChatStatsQueries.unattributedCount(chat, sinceMillis: sinceMillis));
+    final attachments = await _stats.attachmentMessageCount(sinceMillis: sinceMillis);
+    final unattributed = await _stats.unattributedCount(sinceMillis: sinceMillis);
     if (!_firstTrackedMessageMillisResolved) {
-      _firstTrackedMessageMillis = await runAsync(() => ChatStatsQueries.firstMessageMillis(chat));
+      _firstTrackedMessageMillis = await _stats.firstMessageMillis();
       _firstTrackedMessageMillisResolved = true;
     }
 
@@ -269,7 +267,7 @@ class ChatStatsController extends GetxController {
     final group = isGroup;
     final sinceMillis = _byParticipantTimeframe!.cutoffMillis();
     final readMillis =
-        group ? <int>[] : await runAsync(() => ChatStatsQueries.readTimestamps(chat, sinceMillis: sinceMillis));
+        group ? <int>[] : await _stats.readTimestamps(sinceMillis: sinceMillis);
     return _isolateEngagement(
       byParticipant: byParticipant,
       readMillis: readMillis,
@@ -303,37 +301,32 @@ class ChatStatsController extends GetxController {
 
   Future<ContentStats> _computeContent() async {
     final comparisonId = comparisonParticipantId.value;
-    final coverage = await runAsync(() => ChatStatsQueries.textCoverage(chat));
+    final coverage = await _stats.textCoverage();
     final cap = tier == StatsDetailTier.large ? kContentMessageCapLarge : kContentMessageCap;
-    final myTexts = await runAsync(() => ChatStatsQueries.recentTexts(chat, fromMe: true, limit: cap));
-    final theirTexts = await runAsync(
-      () => ChatStatsQueries.recentTexts(chat, fromMe: false, limit: cap, participantId: comparisonId),
-    );
+    final myTexts = await _stats.recentTexts(fromMe: true, limit: cap);
+    final theirTexts = await _stats.recentTexts(fromMe: false, limit: cap, participantId: comparisonId);
     final windowed = myTexts.length >= cap || theirTexts.length >= cap;
     // Scoped to the page-level timeframe (unlike the rest of Content, which
     // reads full history) — the longest/shortest leaderboards should honor
     // the same window the other tabs do.
-    final lengthsByParticipant = await runAsync(
-      () => ChatStatsQueries.textLengthsByParticipant(
-        chat,
-        sinceMillis: timeframe.value.cutoffMillis(),
-        limitPerParticipant: cap,
-      ),
+    final lengthsByParticipant = await _stats.textLengthsByParticipant(
+      sinceMillis: timeframe.value.cutoffMillis(),
+      limitPerParticipant: cap,
     );
-    final reactions = await runAsync(() => ChatStatsQueries.reactions(chat));
-    final mimeTypes = await runAsync(() => ChatStatsQueries.attachmentMimeTypes(chat));
-    final effectIds = await runAsync(() => ChatStatsQueries.expressiveSendStyleIds(chat));
-    final edited = await runAsync(() => ChatStatsQueries.editedCount(chat));
-    final unsent = await runAsync(() => ChatStatsQueries.unsentCount(chat));
-    final editedMine = await runAsync(() => ChatStatsQueries.editedCount(chat, fromMe: true));
+    final reactions = await _stats.reactions();
+    final mimeTypes = await _stats.attachmentMimeTypes();
+    final effectIds = await _stats.expressiveSendStyleIds();
+    final edited = await _stats.editedCount();
+    final unsent = await _stats.unsentCount();
+    final editedMine = await _stats.editedCount(fromMe: true);
     final editedTheirs =
-        await runAsync(() => ChatStatsQueries.editedCount(chat, fromMe: false, participantId: comparisonId));
-    final unsentMine = await runAsync(() => ChatStatsQueries.unsentCount(chat, fromMe: true));
+        await _stats.editedCount(fromMe: false, participantId: comparisonId);
+    final unsentMine = await _stats.unsentCount(fromMe: true);
     final unsentTheirs =
-        await runAsync(() => ChatStatsQueries.unsentCount(chat, fromMe: false, participantId: comparisonId));
-    final sentMine = await runAsync(() => ChatStatsQueries.sentCount(chat));
-    final receivedTheirs = await runAsync(() => ChatStatsQueries.receivedCount(chat, participantId: comparisonId));
-    final audio = await runAsync(() => ChatStatsQueries.audioStats(chat));
+        await _stats.unsentCount(fromMe: false, participantId: comparisonId);
+    final sentMine = await _stats.sentCount();
+    final receivedTheirs = await _stats.receivedCount(participantId: comparisonId);
+    final audio = await _stats.audioStats();
 
     return _isolateContent(
       myTexts: myTexts,
@@ -360,7 +353,7 @@ class ChatStatsController extends GetxController {
   }
 
   /// Group event timeline — cheap, single query, no isolate hop needed.
-  Future<List<GroupEventRecord>> loadGroupEvents() => runAsync(() => ChatStatsQueries.groupEvents(chat));
+  Future<List<GroupEventRecord>> loadGroupEvents() => _stats.groupEvents();
 
   /// Opt-in who-reacts-to-whom matrix (Members tab). Not part of [stats] / the
   /// cache — it's windowed and explicitly user-triggered, so it's held only
@@ -373,8 +366,8 @@ class ChatStatsController extends GetxController {
     reactionMatrixLoading.value = true;
     try {
       final since = DateTime.now().subtract(Duration(days: months * 30)).millisecondsSinceEpoch;
-      final raw = await runAsync(() => ChatStatsQueries.reactionMatrixData(chat, sinceMillis: since));
-      final ids = [kMeParticipantId, ...await runAsync(() => ChatStatsQueries.participantHandleIds(chat))];
+      final raw = await _stats.reactionMatrixData(sinceMillis: since);
+      final ids = [kMeParticipantId, ...await _stats.participantHandleIds()];
       reactionMatrix.value = await _isolateReactionMatrix(
         reactionRows: raw.reactionRows,
         guidToSender: raw.guidToSender,
@@ -392,7 +385,7 @@ class ChatStatsController extends GetxController {
   /// backs the per-participant deep dive. Reuses the already-fetched
   /// `_byParticipant` map rather than issuing a new DB query.
   Future<ActivityStats> activityForParticipant(int participantId) async {
-    _byParticipant ??= await runAsync(() => ChatStatsQueries.timestampsByParticipant(chat));
+    _byParticipant ??= await _stats.timestampsByParticipant();
     final timestamps = _byParticipant![participantId] ?? const <int>[];
     return _isolateActivity(byParticipant: {participantId: timestamps});
   }
@@ -400,12 +393,12 @@ class ChatStatsController extends GetxController {
   /// Resolves display names/avatars once per participant id. The computer
   /// never sees names — only ids — which is what keeps it isolate-portable.
   Future<void> _resolveParticipants() async {
-    final ids = await runAsync(() => ChatStatsQueries.participantHandleIds(chat));
+    final ids = await _stats.participantHandleIds();
     final resolved = <int, ParticipantInfo>{
       kMeParticipantId: const ParticipantInfo(id: kMeParticipantId, displayName: 'You'),
     };
     for (final id in ids) {
-      final handle = await runAsync(() => Database.handles.get(id));
+      final handle = await MessagingStore.current.handleById(id);
       if (handle == null) continue;
       final handleState = HandleSvc.getOrCreateHandleState(handle);
       resolved[id] = ParticipantInfo(

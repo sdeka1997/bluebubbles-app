@@ -445,6 +445,18 @@ mixin ObjectBoxSyncStore implements SyncStore {
   Future<List<Chat>> allChats() async => Database.chats.getAll();
 
   @override
+  Future<List<Chat>> liveChatsWithParticipants(List<int> handleIds) async {
+    if (handleIds.isEmpty) return const [];
+    final idSet = handleIds.toSet();
+    final query = Database.chats.query(Chat_.dateDeleted.isNull()).build();
+    try {
+      return query.find().where((chat) => chat.handles.any((h) => idSet.contains(h.id))).toList();
+    } finally {
+      query.close();
+    }
+  }
+
+  @override
   Future<void> setChatHandleIds(Map<int, List<int>> handleIdsByChat) async {
     for (final entry in handleIdsByChat.entries) {
       final chat = Database.chats.get(entry.key);

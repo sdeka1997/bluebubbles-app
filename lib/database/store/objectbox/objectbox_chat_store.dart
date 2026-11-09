@@ -5,6 +5,9 @@ import 'package:bluebubbles/database/store/objectbox/objectbox_thread_store_help
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart' show canonicalTwinFor;
+import 'package:bluebubbles/helpers/ui/async_task.dart';
+import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_models.dart';
+import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_queries.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
@@ -536,6 +539,9 @@ mixin ObjectBoxChatStore implements ChatStore {
   }
 
   @override
+  ChatStatsReader chatStats(Chat chat) => _ObjectBoxChatStats(chat);
+
+  @override
   Future<int> chatCount() async => Database.chats.count();
 
   @override
@@ -606,4 +612,96 @@ bool _tryUpdateLastMessage(Chat chat, Message? lastMessage, bool toggleUnread) {
     if (toggleUnread && !(lastMessage.isFromMe ?? false)) chat.toggleHasUnreadAsync(true);
   }
   return didUpdate;
+}
+
+/// [ChatStatsReader] over ChatStatsQueries, each read scheduled between frames
+/// as the stats screen did before.
+class _ObjectBoxChatStats implements ChatStatsReader {
+  _ObjectBoxChatStats(this.chat);
+
+  final Chat chat;
+
+  @override
+  Future<int> messageCountForTier() =>
+      runAsync(() => ChatStatsQueries.messageCountForTier(chat));
+
+  @override
+  Future<({int count, int latestMillis})> cacheKey() =>
+      runAsync(() => ChatStatsQueries.cacheKey(chat));
+
+  @override
+  Future<Map<int, List<int>>> timestampsByParticipant({int? sinceMillis}) =>
+      runAsync(() => ChatStatsQueries.timestampsByParticipant(chat, sinceMillis: sinceMillis));
+
+  @override
+  Future<int> attachmentMessageCount({int? sinceMillis}) =>
+      runAsync(() => ChatStatsQueries.attachmentMessageCount(chat, sinceMillis: sinceMillis));
+
+  @override
+  Future<int> unattributedCount({int? sinceMillis}) =>
+      runAsync(() => ChatStatsQueries.unattributedCount(chat, sinceMillis: sinceMillis));
+
+  @override
+  Future<int?> firstMessageMillis() =>
+      runAsync(() => ChatStatsQueries.firstMessageMillis(chat));
+
+  @override
+  Future<List<int>> readTimestamps({int? sinceMillis}) =>
+      runAsync(() => ChatStatsQueries.readTimestamps(chat, sinceMillis: sinceMillis));
+
+  @override
+  Future<double> textCoverage() =>
+      runAsync(() => ChatStatsQueries.textCoverage(chat));
+
+  @override
+  Future<List<String>> recentTexts({required bool fromMe, int? limit, int? participantId}) =>
+      runAsync(() => ChatStatsQueries.recentTexts(chat, fromMe: fromMe, limit: limit, participantId: participantId));
+
+  @override
+  Future<Map<int, List<int>>> textLengthsByParticipant({int? sinceMillis, int? limitPerParticipant}) =>
+      runAsync(() => ChatStatsQueries.textLengthsByParticipant(chat, sinceMillis: sinceMillis, limitPerParticipant: limitPerParticipant));
+
+  @override
+  Future<List<({String type, int participantId})>> reactions() =>
+      runAsync(() => ChatStatsQueries.reactions(chat));
+
+  @override
+  Future<List<String>> attachmentMimeTypes() =>
+      runAsync(() => ChatStatsQueries.attachmentMimeTypes(chat));
+
+  @override
+  Future<List<String>> expressiveSendStyleIds() =>
+      runAsync(() => ChatStatsQueries.expressiveSendStyleIds(chat));
+
+  @override
+  Future<int> editedCount({bool? fromMe, int? participantId}) =>
+      runAsync(() => ChatStatsQueries.editedCount(chat, fromMe: fromMe, participantId: participantId));
+
+  @override
+  Future<int> unsentCount({bool? fromMe, int? participantId}) =>
+      runAsync(() => ChatStatsQueries.unsentCount(chat, fromMe: fromMe, participantId: participantId));
+
+  @override
+  Future<int> sentCount() =>
+      runAsync(() => ChatStatsQueries.sentCount(chat));
+
+  @override
+  Future<int> receivedCount({int? participantId}) =>
+      runAsync(() => ChatStatsQueries.receivedCount(chat, participantId: participantId));
+
+  @override
+  Future<({int sent, int received, double? playedOfReceived})> audioStats() =>
+      runAsync(() => ChatStatsQueries.audioStats(chat));
+
+  @override
+  Future<List<GroupEventRecord>> groupEvents() =>
+      runAsync(() => ChatStatsQueries.groupEvents(chat));
+
+  @override
+  Future<({List<ReactionMatrixRow> reactionRows, Map<String, int> guidToSender})> reactionMatrixData({required int sinceMillis}) =>
+      runAsync(() => ChatStatsQueries.reactionMatrixData(chat, sinceMillis: sinceMillis));
+
+  @override
+  Future<List<int>> participantHandleIds({int? sinceMillis}) =>
+      runAsync(() => ChatStatsQueries.participantHandleIds(chat, sinceMillis: sinceMillis));
 }

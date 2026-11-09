@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/backend/interfaces/contact_v2_interface.dart';
 import 'package:bluebubbles/services/services.dart';
@@ -223,44 +223,37 @@ class ContactServiceV2 {
   /// Notify the UI that certain handles have been updated.
   /// Pushes fresh DB data into the HandleState registry so reactive Obx() widgets rebuild.
   void notifyHandlesUpdated(List<int> handleIds) {
-    if (handleIds.isEmpty) return;
+    if (handleIds.isEmpty || kIsWeb) return;
+    unawaited(_notifyHandlesUpdated(handleIds));
+  }
 
+  Future<void> _notifyHandlesUpdated(List<int> handleIds) async {
     // Push refreshed Handle data into the HandleState registry
-    if (!kIsWeb) {
-      final refreshed = handleIds.map((id) => Database.handles.get(id)).whereType<Handle>().toList();
+    try {
+      final refreshed = await MessagingStore.current.handlesByIds(handleIds);
       if (refreshed.isNotEmpty) HandleSvc.updateHandleStates(refreshed);
+    } catch (e, stack) {
+      Logger.error('[ContactServiceV2] Error refreshing handles', error: e, trace: stack);
     }
 
     // Update chats that have these handles as participants
     // This ensures chat titles and headers reflect the new contact names
-    if (!kIsWeb) {
-      _updateChatsForHandles(handleIds);
-    }
+    await _updateChatsForHandles(handleIds);
   }
 
   /// Update chats that contain the affected handles
-  void _updateChatsForHandles(List<int> handleIds) {
+  Future<void> _updateChatsForHandles(List<int> handleIds) async {
     try {
       // Check if ChatsService is available yet (it might not be during initial startup)
       if (!GetIt.I.isRegistered<ChatsService>()) {
         return;
       }
 
-      // Single pass: load chats once and match participants against the handle
-      // ID set, instead of re-querying all chats (and lazily loading each
-      // chat's handles) once per affected handle.
-      final idSet = handleIds.toSet();
-      final query = Database.chats.query(Chat_.dateDeleted.isNull()).build();
-      final allChats = query.find();
-      query.close();
-
       final ChatsService chats = GetIt.I<ChatsService>();
-      for (final chat in allChats) {
-        if (chat.handles.any((p) => idSet.contains(p.id))) {
-          // Debounced (immediate: false) so a large sync batches into one
-          // chat-list version bump instead of one rebuild per chat.
-          chats.updateChat(chat, override: true, immediate: false);
-        }
+      for (final chat in await MessagingStore.current.liveChatsWithParticipants(handleIds)) {
+        // Debounced (immediate: false) so a large sync batches into one
+        // chat-list version bump instead of one rebuild per chat.
+        chats.updateChat(chat, override: true, immediate: false);
       }
     } catch (e, stack) {
       Logger.error('[ContactServiceV2] Error updating chats for handles', error: e, trace: stack);
