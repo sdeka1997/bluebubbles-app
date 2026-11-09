@@ -5,6 +5,7 @@ import 'package:bluebubbles/utils/memory_trace.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/sqlite/db_change_events.dart';
 import 'package:bluebubbles/database/sqlite/storage_state.dart';
 import 'package:bluebubbles/services/isolates/global_isolate.dart';
 import 'package:bluebubbles/services/isolates/incremental_sync_isolate.dart';
@@ -208,6 +209,9 @@ class StartupTasks {
     NetworkTasks.registerIsolate(GetIt.I<IncrementalSyncIsolate>());
     PrefsInterface.listenForIsolateSettings(GetIt.I<GlobalIsolate>());
     PrefsInterface.listenForIsolateSettings(GetIt.I<IncrementalSyncIsolate>());
+    // Committed SQLite writes of the spawned isolates, for the services that show them.
+    DbChangeEvents.main.listenTo(GetIt.I<GlobalIsolate>());
+    DbChangeEvents.main.listenTo(GetIt.I<IncrementalSyncIsolate>());
 
     // Load FCM data into settings from the database
     // We only need to do this for the main startup

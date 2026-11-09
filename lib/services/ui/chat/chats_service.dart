@@ -25,6 +25,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:get/get.dart' hide Response;
 import 'package:universal_io/io.dart';
 import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:get_it/get_it.dart';
 
 // ignore: non_constant_identifier_names
@@ -299,20 +300,16 @@ class ChatsService {
     if (headless) return;
     if (!kIsWeb) {
       // watch for new chats
-      final countQuery = (Database.chats.query(Chat_.dateDeleted.isNull())..order(Chat_.id, flags: Order.descending))
-          .watch(triggerImmediately: true);
-      countSub = countQuery.listen((event) async {
+      countSub = MessagingStore.current.chatsWritten().listen((chats) async {
         if (!SettingsSvc.settings.finishedSetup.value) return;
-        final newCount = event.count();
-        if (newCount > currentCount && currentCount != 0) {
-          final chat = event.findFirst()!;
+        for (var chat in chats) {
           if (chat.dbOnlyLatestMessageDate == null || chat.dbOnlyLatestMessageDate!.millisecondsSinceEpoch == 0) {
             // wait for the chat.addMessage to go through
             await Future.delayed(const Duration(milliseconds: 500));
+            chat = await MessagingStore.current.chatById(chat.id!) ?? chat;
           }
           await addChat(chat, immediate: true);
         }
-        currentCount = newCount;
       });
     } else {
       countSub = WebListeners.newChat.listen((chat) async {
@@ -334,7 +331,7 @@ class ChatsService {
     _loadDefaultChatListFilters();
 
     // Get current count from database or server
-    currentCount = getChatCount() ??
+    currentCount = await getChatCount() ??
         (await HttpSvc.chat.getCount().catchError((err) {
           Logger.info("Error when fetching chat count!", tag: "ChatBloc");
           return Response(requestOptions: RequestOptions(path: ''));
@@ -360,9 +357,7 @@ class ChatsService {
     // Service twins are shown as the thread they were folded into.
     var foldedTwins = const <String>{};
     if (!kIsWeb) {
-      final twinsQuery = Database.chats.query(Chat_.threadKey.notNull()).build();
-      foldedTwins = foldedTwinGuids(twinsQuery.find());
-      twinsQuery.close();
+      foldedTwins = foldedTwinGuids(await MessagingStore.current.threadedChats());
     }
 
     final batches = (currentCount / batchSize).ceil();
@@ -402,7 +397,7 @@ class ChatsService {
     Logger.info("Finished fetching chats (${chatStates.length}).", tag: "ChatBloc");
     MemTrace.mark('chat list loaded (${chatStates.length} chats)');
     if (!kIsWeb) {
-      _logUnlistedThreads();
+      unawaited(_logUnlistedThreads());
     }
 
     // Calculate initial unread count now that all chat states are populated.
@@ -719,9 +714,9 @@ class ChatsService {
 
   /// Logs every thread that should be listed but isn't, so a missing
   /// conversation can be traced from an exported log.
-  void _logUnlistedThreads() {
+  Future<void> _logUnlistedThreads() async {
     try {
-      final lines = threadDiagnostics(Database.chats.getAll(), listed: chatStates.keys.toSet());
+      final lines = threadDiagnostics(await MessagingStore.current.allChats(), listed: chatStates.keys.toSet());
       Logger.info("Unlisted threads: ${lines.length}", tag: "ThreadCheck");
       for (final line in lines.take(200)) {
         Logger.info(line, tag: "ThreadCheck");
@@ -834,7 +829,7 @@ class ChatsService {
   Future<void> addChat(Chat toAdd, {bool immediate = false}) async {
     if (headless) return;
     // A service twin is shown as the thread it was folded into.
-    if (!kIsWeb && findCanonicalTwin(toAdd) != null) {
+    if (!kIsWeb && await MessagingStore.current.canonicalTwinOf(toAdd) != null) {
       if (chatStates.containsKey(toAdd.guid)) removeChat(toAdd);
       return;
     }
@@ -1136,9 +1131,7 @@ class ChatsService {
   // ========== Chat Operations with Service Orchestration ==========
 
   /// Get chat count
-  int? getChatCount() {
-    return Database.chats.count();
-  }
+  Future<int?> getChatCount() => MessagingStore.current.chatCount();
 
   /// Delete a chat with full UI cleanup and service state management.
   /// Set [deleteHandles] to true to also remove the chat's participant handles.
@@ -1163,10 +1156,12 @@ class ChatsService {
     }
 
     // Perform the actual DB deletion
-    List<Message> messages = Chat.getMessages(chat);
+    // The same 25 newest messages Chat.getMessages(chat) returned here before.
+    final messageIds = await MessagingStore.current.messagePageIds(chat.id!, chat.handles.toList(),
+        offset: 0, limit: 25, includeDeleted: false);
     await ChatInterface.deleteChat(
       chatId: chat.id!,
-      messageIds: messages.map((e) => e.id!).toList(),
+      messageIds: messageIds,
       handleIds: handleIds,
     );
 

@@ -1,13 +1,17 @@
+import 'dart:async';
+
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
 import 'package:bluebubbles/database/sqlite/chat_repo.dart';
 import 'package:bluebubbles/database/sqlite/contact_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
+import 'package:bluebubbles/database/sqlite/db_change_events.dart';
 import 'package:bluebubbles/database/sqlite/handle_repo.dart';
 import 'package:bluebubbles/database/sqlite/message_repo.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_messaging_store.dart';
+import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart' show canonicalTwinFor;
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:collection/collection.dart';
 
@@ -395,6 +399,44 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
     }
     final chats = await ChatRepo(db).listPage(limit: offset + limit);
     return chats.skip(offset).map((chat) => chat.id!).toList();
+  }
+  /// Chat ids only grow (AUTOINCREMENT), so a chat is new when its id is above
+  /// every id stored when the stream started or emitted since.
+  @override
+  Stream<List<Chat>> chatsWritten() {
+    final controller = StreamController<List<Chat>>();
+    StreamSubscription<List<Chat>>? sub;
+    controller.onListen = () {
+      final start = db.select('SELECT max(id) AS id FROM chats').then((rows) => rows.first['id'] as int? ?? 0);
+      var newest = -1;
+      sub = DbChangeEvents.main.on('chats').asyncMap((ids) async {
+        if (newest < 0) newest = await start;
+        final added = ids.where((id) => id > newest).toList();
+        if (added.isEmpty) return const <Chat>[];
+        newest = added.max;
+        final chats = await ChatRepo(db).byIds(added);
+        return chats.values.where((c) => c.dateDeleted == null).sortedBy<num>((c) => c.id!);
+      }).where((chats) => chats.isNotEmpty).listen(controller.add, onError: controller.addError);
+    };
+    controller.onCancel = () => sub?.cancel();
+    return controller.stream;
+  }
+
+  @override
+  Future<int> chatCount() async => (await db.select('SELECT count(*) AS n FROM chats')).first['n'] as int;
+
+  @override
+  Future<List<Chat>> threadedChats() async {
+    final rows = await db.select('SELECT id FROM chats WHERE thread_key IS NOT NULL ORDER BY id');
+    final ids = [for (final row in rows) row['id'] as int];
+    return inIdOrder(ids, await ChatRepo(db).byIds(ids));
+  }
+
+  @override
+  Future<Chat?> canonicalTwinOf(Chat chat) async {
+    final key = chat.threadKey;
+    if (key == null || key.isEmpty) return null;
+    return canonicalTwinFor(chat, await ChatRepo(db).threadCopies(key));
   }
 }
 

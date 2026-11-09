@@ -300,6 +300,21 @@ abstract interface class ChatStore {
   Future<void> clearTranscript(int chatId);
 
   Future<List<int>> chatPageIds({required int limit, required int offset, required List<int> ids});
+
+  /// Chats as they are written, so the conversation list picks up new ones.
+  /// ObjectBox: the newest live chat each time the count of live chats grows
+  /// (the list's own watch before switch commit 7). SQLite: the chats each
+  /// committed write touched ([DbChangeEvents.main]), read again.
+  Stream<List<Chat>> chatsWritten();
+
+  /// Every stored chat, deleted ones included.
+  Future<int> chatCount();
+
+  /// The stored chats that belong to a thread (threadKey set).
+  Future<List<Chat>> threadedChats();
+
+  /// The live chat [chat] is folded into, or null when [chat] is its own thread.
+  Future<Chat?> canonicalTwinOf(Chat chat);
 }
 
 abstract class MessagingStore

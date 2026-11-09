@@ -4,6 +4,7 @@ import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/store/objectbox/objectbox_thread_store_helpers.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
+import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart' show canonicalTwinFor;
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
@@ -479,6 +480,46 @@ mixin ObjectBoxChatStore implements ChatStore {
       query.close();
       return chats.map((e) => e.id!).toList();
     });
+  }
+  /// Chat ids only grow, so a chat is new when its id is above every id stored
+  /// when the stream started or emitted since (the same rule as SQLite; the
+  /// former live-count rule missed a new chat whenever a delete landed in the
+  /// same notification).
+  @override
+  Stream<List<Chat>> chatsWritten() {
+    int? newest;
+    return Database.chats.query().watch(triggerImmediately: true).map((_) {
+      final query = (Database.chats.query(Chat_.id.greaterThan(newest ?? 0).and(Chat_.dateDeleted.isNull()))
+            ..order(Chat_.id))
+          .build();
+      final chats = newest == null ? const <Chat>[] : query.find();
+      query.close();
+      final maxQuery = (Database.chats.query()..order(Chat_.id, flags: Order.descending)).build()..limit = 1;
+      newest = maxQuery.findIds().firstOrNull ?? 0;
+      maxQuery.close();
+      return chats;
+    }).where((chats) => chats.isNotEmpty);
+  }
+
+  @override
+  Future<int> chatCount() async => Database.chats.count();
+
+  @override
+  Future<List<Chat>> threadedChats() async {
+    final query = Database.chats.query(Chat_.threadKey.notNull()).build();
+    final chats = query.find();
+    query.close();
+    return chats;
+  }
+
+  @override
+  Future<Chat?> canonicalTwinOf(Chat chat) async {
+    final key = chat.threadKey;
+    if (key == null || key.isEmpty) return null;
+    final query = Database.chats.query(Chat_.threadKey.equals(key)).build();
+    final copies = query.find();
+    query.close();
+    return canonicalTwinFor(chat, copies);
   }
 }
 
