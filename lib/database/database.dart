@@ -10,6 +10,7 @@ import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/migrations/chat_latest_message_migration.dart';
 import 'package:bluebubbles/database/migrations/message_handle_relationship_migration.dart';
 import 'package:bluebubbles/database/sqlite/storage_state.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:collection/collection.dart';
@@ -24,6 +25,14 @@ class Database {
   /// Bump this whenever preset theme definitions change (colors, font sizes,
   /// etc.) to force existing installs to re-seed preset themes on next launch.
   static int themesVersion = 6;
+
+  /// Migration steps that read or edit the ObjectBox messaging boxes. Once
+  /// messages live in SQLite those boxes are only the copy's source, so the
+  /// steps are skipped there (SQLite files are created already at [version]).
+  static const objectBoxMessagingMigrations = {2, 3, 6, 8, 10};
+
+  static bool migrationRuns(int step, ActiveStore store) =>
+      store == ActiveStore.objectBox || !objectBoxMessagingMigrations.contains(step);
 
   static late final Store store;
   static late final Box<Attachment> attachments;
@@ -194,113 +203,119 @@ class Database {
       Logger.info("Migrating from version $currentVersion to $nextVersion...", tag: "DB-Migration");
       await StartupTasks.setSplashStatus("Updating database ($nextVersion of ${Database.version})...");
 
-      switch (nextVersion) {
-        // Version 2 changed handleId to match the server side ROWID, rather than client side ROWID
-        case 2:
-          Logger.info("Fetching all messages and handles...", tag: "DB-Migration");
-          final messages = Database.messages.getAll();
-          if (messages.isNotEmpty) {
-            final handles = Database.handles.getAll();
-            Logger.info("Replacing handleIds for messages...", tag: "DB-Migration");
-            for (Message m in messages) {
-              if (m.isFromMe! || m.handleId == 0 || m.handleId == null) continue;
-              m.handleId = handles.firstWhereOrNull((e) => e.id == m.handleId)?.originalROWID ?? m.handleId;
+      final store = MessagingStore.current.kind;
+      if (!migrationRuns(nextVersion, store)) {
+        Logger.info("Skipping version $nextVersion: it edits ObjectBox messaging data, and messages are in ${store.name}",
+            tag: "DB-Migration");
+      } else {
+        switch (nextVersion) {
+          // Version 2 changed handleId to match the server side ROWID, rather than client side ROWID
+          case 2:
+            Logger.info("Fetching all messages and handles...", tag: "DB-Migration");
+            final messages = Database.messages.getAll();
+            if (messages.isNotEmpty) {
+              final handles = Database.handles.getAll();
+              Logger.info("Replacing handleIds for messages...", tag: "DB-Migration");
+              for (Message m in messages) {
+                if (m.isFromMe! || m.handleId == 0 || m.handleId == null) continue;
+                m.handleId = handles.firstWhereOrNull((e) => e.id == m.handleId)?.originalROWID ?? m.handleId;
+              }
+              Logger.info("Final save...", tag: "DB-Migration");
+              Database.messages.putMany(messages);
             }
-            Logger.info("Final save...", tag: "DB-Migration");
-            Database.messages.putMany(messages);
-          }
-          break;
+            break;
 
-        // Version 3 modifies chat typing indicators and read receipts values to follow global setting initially
-        case 3:
-          final chats = Database.chats.getAll();
-          final papi = SettingsSvc.settings.enablePrivateAPI.value;
-          final typeGlobal = SettingsSvc.settings.privateSendTypingIndicators.value;
-          final readGlobal = SettingsSvc.settings.privateMarkChatAsRead.value;
-          for (Chat c in chats) {
-            if (papi && readGlobal && !(c.autoSendReadReceipts ?? true)) {
-              // dont do anything
-            } else {
-              c.autoSendReadReceipts = null;
+          // Version 3 modifies chat typing indicators and read receipts values to follow global setting initially
+          case 3:
+            final chats = Database.chats.getAll();
+            final papi = SettingsSvc.settings.enablePrivateAPI.value;
+            final typeGlobal = SettingsSvc.settings.privateSendTypingIndicators.value;
+            final readGlobal = SettingsSvc.settings.privateMarkChatAsRead.value;
+            for (Chat c in chats) {
+              if (papi && readGlobal && !(c.autoSendReadReceipts ?? true)) {
+                // dont do anything
+              } else {
+                c.autoSendReadReceipts = null;
+              }
+              if (papi && typeGlobal && !(c.autoSendTypingIndicators ?? true)) {
+                // dont do anything
+              } else {
+                c.autoSendTypingIndicators = null;
+              }
             }
-            if (papi && typeGlobal && !(c.autoSendTypingIndicators ?? true)) {
-              // dont do anything
-            } else {
-              c.autoSendTypingIndicators = null;
+            Database.chats.putMany(chats);
+            break;
+
+          // Version 4 saves FCM Data to the shared preferences for use in Tasker integration
+          case 4:
+            SettingsSvc.loadFcmDataFromDatabase();
+            SettingsSvc.fcmData.save();
+            break;
+
+          case 5:
+            // Find the Bright White theme and reset it back to the default (new colors)
+            final brightWhite = Database.themes.query(ThemeStruct_.name.equals("Bright White")).build().findFirst();
+            if (brightWhite != null) {
+              brightWhite.data = ThemesService.whiteLightTheme;
+              Database.themes.put(brightWhite, mode: PutMode.update);
             }
-          }
-          Database.chats.putMany(chats);
-          break;
 
-        // Version 4 saves FCM Data to the shared preferences for use in Tasker integration
-        case 4:
-          SettingsSvc.loadFcmDataFromDatabase();
-          SettingsSvc.fcmData.save();
-          break;
+            // Find the OLED theme and reset it back to the default (new colors)
+            final oled = Database.themes.query(ThemeStruct_.name.equals("OLED Dark")).build().findFirst();
+            if (oled != null) {
+              oled.data = ThemesService.oledDarkTheme;
+              Database.themes.put(oled, mode: PutMode.update);
+            }
+            break;
 
-        case 5:
-          // Find the Bright White theme and reset it back to the default (new colors)
-          final brightWhite = Database.themes.query(ThemeStruct_.name.equals("Bright White")).build().findFirst();
-          if (brightWhite != null) {
-            brightWhite.data = ThemesService.whiteLightTheme;
-            Database.themes.put(brightWhite, mode: PutMode.update);
-          }
+          // Version 6: Migrate Message.handle from embedded object to ToOne relationship (Phase 2)
+          case 6:
+            Logger.info("Executing Message-Handle relationship migration (Phase 2)...", tag: "DB-Migration");
+            await MessageHandleRelationshipMigration.migrate();
+            break;
 
-          // Find the OLED theme and reset it back to the default (new colors)
-          final oled = Database.themes.query(ThemeStruct_.name.equals("OLED Dark")).build().findFirst();
-          if (oled != null) {
-            oled.data = ThemesService.oledDarkTheme;
-            Database.themes.put(oled, mode: PutMode.update);
-          }
-          break;
+          // Version 7: Remove V1 Contact entity (we don't need to do anything.)
+          // We removed the code, so it's unused, but it'll remain in the database.
+          case 7:
+            break;
 
-        // Version 6: Migrate Message.handle from embedded object to ToOne relationship (Phase 2)
-        case 6:
-          Logger.info("Executing Message-Handle relationship migration (Phase 2)...", tag: "DB-Migration");
-          await MessageHandleRelationshipMigration.migrate();
-          break;
+          // Version 8: Backfill Chat.dbLatestMessage (ToOne<Message>) and
+          // dbOnlyLatestMessageDate from each chat's most recent message.
+          case 8:
+            Logger.info("Executing chat latest message backfill...", tag: "DB-Migration");
+            await ChatLatestMessageMigration.migrate();
+            break;
 
-        // Version 7: Remove V1 Contact entity (we don't need to do anything.)
-        // We removed the code, so it's unused, but it'll remain in the database.
-        case 7:
-          break;
+          // Version 9: move legacy Monet overlay users to the new Material You
+          // presets so selected theme becomes the single source of truth.
+          case 9:
+            final monetModeRaw = PrefsSvc.admin.get('monetTheming') as int?;
+            if (monetModeRaw == 1 || monetModeRaw == 2) {
+              await PrefsSvc.theme.setSelectedThemes(
+                lightTheme: ThemesService.materialYouLightName,
+                darkTheme: ThemesService.materialYouDarkName,
+              );
+            }
+            await PrefsSvc.admin.remove('monetTheming');
+            break;
 
-        // Version 8: Backfill Chat.dbLatestMessage (ToOne<Message>) and
-        // dbOnlyLatestMessageDate from each chat's most recent message.
-        case 8:
-          Logger.info("Executing chat latest message backfill...", tag: "DB-Migration");
-          await ChatLatestMessageMigration.migrate();
-          break;
-
-        // Version 9: move legacy Monet overlay users to the new Material You
-        // presets so selected theme becomes the single source of truth.
-        case 9:
-          final monetModeRaw = PrefsSvc.admin.get('monetTheming') as int?;
-          if (monetModeRaw == 1 || monetModeRaw == 2) {
-            await PrefsSvc.theme.setSelectedThemes(
-              lightTheme: ThemesService.materialYouLightName,
-              darkTheme: ThemesService.materialYouDarkName,
-            );
-          }
-          await PrefsSvc.admin.remove('monetTheming');
-          break;
-
-        // Version 10: favicons cached before convertIcoToPng passed `singleFrame: true` are APNGs that cycle
-        // through every .ico resolution, and the cache is never re-fetched, so flatten them in place.
-        case 10:
-          final query = Database.messages.query(Message_.dbMetadata.contains('previewIconMd5')).build();
-          final hashes = query
-              .property(Message_.dbMetadata)
-              .find()
-              .map((json) => (jsonDecode(json) as Map<String, dynamic>)['previewIconMd5'])
-              .whereType<String>()
-              .toSet();
-          query.close();
-          for (final hash in hashes) {
-            final path = FilesystemSvc.urlPreviewImagePath(hash);
-            if (File(path).existsSync()) ImageActions.flattenAnimatedPng(path);
-          }
-          break;
+          // Version 10: favicons cached before convertIcoToPng passed `singleFrame: true` are APNGs that cycle
+          // through every .ico resolution, and the cache is never re-fetched, so flatten them in place.
+          case 10:
+            final query = Database.messages.query(Message_.dbMetadata.contains('previewIconMd5')).build();
+            final hashes = query
+                .property(Message_.dbMetadata)
+                .find()
+                .map((json) => (jsonDecode(json) as Map<String, dynamic>)['previewIconMd5'])
+                .whereType<String>()
+                .toSet();
+            query.close();
+            for (final hash in hashes) {
+              final path = FilesystemSvc.urlPreviewImagePath(hash);
+              if (File(path).existsSync()) ImageActions.flattenAnimatedPng(path);
+            }
+            break;
+        }
       }
 
       // Back to the spinner
