@@ -126,12 +126,17 @@ void main() {
     const marker = '1700000000000:4000';
 
     Future<StorageState> run(List<String> lines,
-            {int? stopAfterBatches, void Function(double)? onProgress, String objectBoxMarker = marker, void Function()? onCopied}) =>
+            {int? stopAfterBatches,
+            void Function(double)? onProgress,
+            String objectBoxMarker = marker,
+            String? install = 'install-1',
+            void Function()? onCopied}) =>
         runStorageStartup(
           store: fixture.store,
           files: files,
           log: lines.add,
           objectBoxMarker: objectBoxMarker,
+          install: install,
           batchSize: 7,
           stopAfterBatches: stopAfterBatches,
           onProgress: onProgress,
@@ -178,7 +183,9 @@ void main() {
       final otherDir = Directory.systemTemp.createTempSync('bb_state_other_');
       addTearDown(() => otherDir.deleteSync(recursive: true));
       final other = StorageFiles(otherDir);
-      expect(await runStorageStartup(store: fixture.store, files: other, log: (_) {}, objectBoxMarker: marker, batchSize: 7),
+      expect(
+          await runStorageStartup(
+              store: fixture.store, files: other, log: (_) {}, objectBoxMarker: marker, install: 'install-1', batchSize: 7),
           StorageState.ready);
 
       final a = AppDatabase.file(files.ready);
@@ -195,7 +202,7 @@ void main() {
       final lines = <String>[];
       fixture.store.close();
       // A closed store throws on any read: the verified partial must not be copied again.
-      expect(await runStorageStartup(store: fixture.store, files: files, log: lines.add, objectBoxMarker: marker),
+      expect(await runStorageStartup(store: fixture.store, files: files, log: lines.add, objectBoxMarker: marker, install: null),
           StorageState.ready);
       expect(lines.where((l) => l.startsWith('BBSQL skip: copy verified')), hasLength(1));
       fixture.store = Store(getObjectBoxModel(), directory: obDir.path);
@@ -267,6 +274,26 @@ void main() {
       await expectFtsConsistent(db);
     });
 
+    test('a normal launch (same install) judges the copy without reading ObjectBox', () async {
+      expect(await run([]), StorageState.ready);
+      // A closed store throws on any read: this launch must not touch it.
+      fixture.store.close();
+      final lines = <String>[];
+      expect(await run(lines), StorageState.ready);
+      expect(lines, contains('BBSQL storage current'));
+      fixture.store = Store(getObjectBoxModel(), directory: obDir.path);
+    });
+
+    test('the first launch after an install checks ObjectBox once, then records it', () async {
+      expect(await run([]), StorageState.ready);
+      final lines = <String>[];
+      expect(await run(lines, install: 'install-2'), StorageState.ready);
+      expect(lines, contains('BBSQL storage current'));
+      fixture.store.close();
+      expect(await run([], install: 'install-2'), StorageState.ready, reason: 'checked once per install');
+      fixture.store = Store(getObjectBoxModel(), directory: obDir.path);
+    });
+
     test('decision 2: ObjectBox holding messages the copy lacks, at the same position, is out of date too', () async {
       expect(await run([]), StorageState.ready);
       final newer = Message(guid: 'rolled-back', text: 'arrived on the ObjectBox build', dateCreated: DateTime.utc(2027));
@@ -274,7 +301,8 @@ void main() {
       fixture.store.box<Message>().put(newer);
 
       final lines = <String>[];
-      expect(await run(lines), StorageState.ready);
+      // The undo build and the reinstall: an install every time.
+      expect(await run(lines, install: 'install-3'), StorageState.ready);
       expect(lines.first, 'BBSQL discard bluebubbles.db: out of date: ObjectBox has newer messages');
       final db = AppDatabase.file(files.ready);
       addTearDown(db.close);
@@ -290,7 +318,7 @@ void main() {
       fixture.store.close();
 
       final lines = <String>[];
-      expect(await runStorageStartup(store: fixture.store, files: files, log: lines.add, objectBoxMarker: marker),
+      expect(await runStorageStartup(store: fixture.store, files: files, log: lines.add, objectBoxMarker: marker, install: null),
           StorageState.failed);
       expect(decideStorage(StorageState.failed).store, ActiveStore.objectBox);
       expect(lines, contains('BBSQL storage state=failed'));
@@ -326,6 +354,7 @@ void main() {
         objectBoxPath: obDir.path,
         directoryPath: appDir.path,
         objectBoxMarker: marker,
+        install: 'install-1',
         onProgress: progress.add,
         onCopied: () => copied++,
         log: (_) {},
@@ -381,6 +410,13 @@ void main() {
       final end = source.indexOf('\n  static ', start + signature.length);
       return source.substring(start, end < 0 ? source.length : end);
     }
+
+    test('the fresh-copy marker reset writes prefs directly: no isolate exists yet during Database.init', () {
+      final reset = body(File('lib/database/sqlite/storage_state.dart').readAsStringSync(),
+          'Future<void> resetSqliteMarkers(');
+      expect(reset, isNot(contains('saveManyAsync')));
+      expect(reset, isNot(contains('PrefsInterface')));
+    });
 
     test('main starts the state machine from Database.init; the S1 check after sync is gone', () {
       expect(body(database, 'static Future<void> init()'), contains('StorageStartup.start()'));

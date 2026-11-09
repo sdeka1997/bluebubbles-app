@@ -35,14 +35,19 @@ void main() {
 
   test('no file: copy, then SQLite serves the chat list and the first chat page', () async {
     const marker = '1700000000000:4000';
-    final current = CopyFingerprint(objectBoxMarker: marker, store: fixture.store);
+    final current = CopyFingerprint(objectBoxMarker: marker, store: fixture.store, install: 'install-1');
     expect((await inspectStorage(files, current: current)).state, StorageState.noFile);
     expect(decideStorage(StorageState.noFile).waitForCopy, isTrue);
 
     final progress = <double>[];
     expect(
         await runStorageStartup(
-            store: fixture.store, files: files, log: (_) {}, objectBoxMarker: marker, onProgress: progress.add),
+            store: fixture.store,
+            files: files,
+            log: (_) {},
+            objectBoxMarker: marker,
+            install: 'install-1',
+            onProgress: progress.add),
         StorageState.ready);
     expect(progress.last, 1.0);
     expect((await inspectStorage(files, current: current)).state, StorageState.ready);

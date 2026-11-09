@@ -205,6 +205,18 @@ Map<String, String?>? _readMeta(File file) {
   }
 }
 
+void _writeMeta(File file, Map<String, String?> values) {
+  final db = raw.sqlite3.open(file.path, mode: raw.OpenMode.readWrite);
+  try {
+    db.execute('PRAGMA busy_timeout = 5000');
+    for (final entry in values.entries) {
+      db.execute('INSERT OR REPLACE INTO storage_meta (key, value) VALUES (?, ?)', [entry.key, entry.value]);
+    }
+  } finally {
+    db.dispose();
+  }
+}
+
 Future<StorageClassification> inspectStorage(StorageFiles files, {CopyFingerprint? current}) async {
   final ready = _readMeta(files.ready);
   return classifyStorage(
@@ -221,23 +233,35 @@ Future<StorageClassification> inspectStorage(StorageFiles files, {CopyFingerprin
 /// means an ObjectBox build ran since (an undo): the copy is out of date and
 /// is redone in full. A file with no record (copied before this rule) is out
 /// of date too.
+///
+/// The position is read from settings on every launch. ObjectBox itself is read
+/// only on the first launch of an [install]: an ObjectBox build can only have
+/// run in between if the app was installed over this one, and the id lookup
+/// has to walk the message box (~800 MB resident on the phone).
 class CopyFingerprint {
-  CopyFingerprint({required this.objectBoxMarker, required this.store});
+  CopyFingerprint({required this.objectBoxMarker, required this.store, required this.install});
 
   /// `lastIncrementalSync:lastIncrementalSyncRowId` of the ObjectBox build.
   final String objectBoxMarker;
   final Store store;
 
+  /// This install of the app ([installIdentity]); null reads ObjectBox every launch.
+  final String? install;
+
   static const metaKey = 'objectbox_marker';
+
+  /// The install whose first launch last found the copy current (or made it).
+  static const checkedInstallKey = 'objectbox_checked_install';
 
   static String markerOf(int timestamp, int rowId) => '$timestamp:$rowId';
 
   /// Why the copy in [file] (its storage_meta is [meta]) no longer matches
-  /// ObjectBox, or null when it does. Reads ObjectBox ids from the id index only.
+  /// ObjectBox, or null when it does.
   String? differenceFrom(Map<String, String?> meta, File file) {
     final recorded = meta[metaKey];
     if (recorded == null) return 'no ObjectBox position recorded';
     if (recorded != objectBoxMarker) return 'ObjectBox sync moved';
+    if (install != null && meta[checkedInstallKey] == install) return null;
     final copied = _copiedUpTo(file);
     if (_anyAbove(store.box<Message>().query(Message_.id.greaterThan(copied['messages'] ?? 0)).build())) {
       return 'ObjectBox has newer messages';
@@ -279,11 +303,11 @@ void _deleteDatabase(File file) {
 
 /// Marks the verified partial file ready and renames it into place. Killed in
 /// between, the next start finds a verified partial and only repeats this.
-Future<void> _promote(StorageFiles files, String objectBoxMarker) async {
+Future<void> _promote(StorageFiles files, CopyFingerprint current) async {
   final database = AppDatabase.file(files.partial);
   try {
-    await database.customStatement(
-        'INSERT OR REPLACE INTO storage_meta (key, value) VALUES (?, ?)', [CopyFingerprint.metaKey, objectBoxMarker]);
+    await database.customStatement('INSERT OR REPLACE INTO storage_meta (key, value) VALUES (?, ?), (?, ?)',
+        [CopyFingerprint.metaKey, current.objectBoxMarker, CopyFingerprint.checkedInstallKey, current.install]);
     await database.customStatement("INSERT OR REPLACE INTO storage_meta (key, value) VALUES ('storage_state', 'ready')");
     await database.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
   } finally {
@@ -300,20 +324,22 @@ Future<void> _promote(StorageFiles files, String objectBoxMarker) async {
 /// `sqlite-copy.lock` throughout, so two engines never copy at once. ObjectBox
 /// is only read. Returns the state it leaves behind; never throws.
 ///
-/// [objectBoxMarker] is the ObjectBox build's sync position now
-/// ([CopyFingerprint]); a copy records it, and a ready file taken at another
-/// position is discarded first. [onCopied] runs once a fresh copy is in place.
+/// [objectBoxMarker] is the ObjectBox build's sync position now and [install]
+/// this install of the app ([CopyFingerprint]); a copy records both, and a
+/// ready file taken at another position is discarded first. [onCopied] runs
+/// once a fresh copy is in place.
 Future<StorageState> runStorageStartup({
   required Store store,
   required StorageFiles files,
   required void Function(String line) log,
   required String objectBoxMarker,
+  required String? install,
   int batchSize = 1000,
   int? stopAfterBatches,
   void Function(double fraction)? onProgress,
   void Function()? onCopied,
 }) async {
-  final current = CopyFingerprint(objectBoxMarker: objectBoxMarker, store: store);
+  final current = CopyFingerprint(objectBoxMarker: objectBoxMarker, store: store, install: install);
   RandomAccessFile? lock;
   try {
     lock = files.lock.openSync(mode: FileMode.append);
@@ -351,13 +377,17 @@ Future<StorageState> runStorageStartup({
           if (after.state == StorageState.failed) log('BBSQL storage failed: staying on ObjectBox (${after.reason})');
           return after.state;
         }
-        await _promote(files, objectBoxMarker);
+        await _promote(files, current);
         onProgress?.call(1.0);
         log('BBSQL storage ready');
         onCopied?.call();
         return StorageState.ready;
       case CopyStep.none:
         if (state == StorageState.ready) {
+          final meta = _readMeta(files.ready);
+          if (current.install != null && meta?[CopyFingerprint.checkedInstallKey] != current.install) {
+            _writeMeta(files.ready, {CopyFingerprint.checkedInstallKey: current.install});
+          }
           log('BBSQL storage current');
         } else {
           log('BBSQL storage failed: staying on ObjectBox (${found.reason})');
@@ -385,6 +415,7 @@ Future<StorageState> runStorageStartupInIsolate({
   required String objectBoxPath,
   required String directoryPath,
   required String objectBoxMarker,
+  required String? install,
   required void Function(String line) log,
   void Function(double fraction)? onProgress,
   void Function()? onCopied,
@@ -404,7 +435,7 @@ Future<StorageState> runStorageStartupInIsolate({
   });
   final send = port.sendPort;
   try {
-    await Isolate.run(_storageIsolateTask(send, objectBoxPath, directoryPath, objectBoxMarker),
+    await Isolate.run(_storageIsolateTask(send, objectBoxPath, directoryPath, objectBoxMarker, install),
         debugName: 'sqlite-storage');
     return await done.future;
   } finally {
@@ -415,10 +446,11 @@ Future<StorageState> runStorageStartupInIsolate({
 /// Built here so the closure captures only these sendable values (a closure
 /// created inside [runStorageStartupInIsolate] would carry its Completer).
 Future<void> Function() _storageIsolateTask(
-        SendPort send, String objectBoxPath, String directoryPath, String objectBoxMarker) =>
-    () => _storageIsolateBody(send, objectBoxPath, directoryPath, objectBoxMarker);
+        SendPort send, String objectBoxPath, String directoryPath, String objectBoxMarker, String? install) =>
+    () => _storageIsolateBody(send, objectBoxPath, directoryPath, objectBoxMarker, install);
 
-Future<void> _storageIsolateBody(SendPort send, String objectBoxPath, String directoryPath, String objectBoxMarker) async {
+Future<void> _storageIsolateBody(
+    SendPort send, String objectBoxPath, String directoryPath, String objectBoxMarker, String? install) async {
   var state = StorageState.failed;
   try {
     final store = Store.attach(getObjectBoxModel(), objectBoxPath);
@@ -428,6 +460,7 @@ Future<void> _storageIsolateBody(SendPort send, String objectBoxPath, String dir
         files: StorageFiles(Directory(directoryPath)),
         log: send.send,
         objectBoxMarker: objectBoxMarker,
+        install: install,
         onProgress: send.send,
         onCopied: () => send.send(true),
       );
@@ -456,6 +489,7 @@ class StorageStartup {
         objectBoxPath: join(Database.appDocPath, 'objectbox'),
         directoryPath: Database.appDocPath,
         objectBoxMarker: CopyFingerprint.markerOf(settings.lastIncrementalSync.value, settings.lastIncrementalSyncRowId.value),
+        install: installIdentity(),
         onProgress: (fraction) => progress.value = fraction,
         onCopied: () => unawaited(resetSqliteMarkers(settings)),
         log: debugPrint,
@@ -505,12 +539,25 @@ class StorageStartup {
   }
 }
 
+/// This install of the app: Android's last-update time changes with every
+/// install or update. Null (unknown) makes every launch read ObjectBox.
+String? installIdentity() {
+  if (!GetIt.I.isRegistered<FilesystemService>()) return null;
+  final info = FilesystemSvc.packageInfo;
+  final updated = info.updateTime;
+  return updated == null ? null : '${info.buildNumber}@${updated.millisecondsSinceEpoch}';
+}
+
 /// After a fresh copy the SQLite build's own sync markers start over, so its
 /// next sync resumes from the ObjectBox position the copy was taken at
-/// ([SyncMarker] reads ObjectBox's marker while its own is 0).
+/// ([SyncMarker] reads ObjectBox's marker while its own is 0). Runs inside
+/// Database.init, before any isolate exists: it writes main's settings and
+/// the prefs directly, and the isolates read them when they start.
 Future<void> resetSqliteMarkers(Settings settings) async {
   settings.sqliteLastIncrementalSync.value = 0;
   settings.sqliteLastIncrementalSyncRowId.value = 0;
   settings.sqliteIncrementalCatchUpTotal.value = 0;
-  await settings.saveManyAsync(SyncMarkerKeys.sqlite.all);
+  for (final key in SyncMarkerKeys.sqlite.all) {
+    await PrefsSvc.admin.setInt(key, 0);
+  }
 }
