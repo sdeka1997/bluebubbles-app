@@ -1,4 +1,3 @@
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_keys.dart';
 import 'package:bluebubbles/helpers/types/helpers/thread_grouping.dart';
@@ -94,29 +93,6 @@ List<String> guidsToMarkRead(String guid, Iterable<Chat> chats) {
   return [guid, ...chats.where((c) => c.threadKey == key && c.guid != guid).map((c) => c.guid)];
 }
 
-List<Chat> _chatsInThread(String? key) {
-  if (key == null || key.isEmpty) return const [];
-  final query = Database.chats.query(Chat_.threadKey.equals(key)).build();
-  final result = query.find();
-  query.close();
-  return result;
-}
-
-/// The local thread [chat] belongs to, or null when [chat] is its own thread.
-Chat? findCanonicalTwin(Chat chat) => canonicalTwinFor(chat, _chatsInThread(chat.threadKey));
-
-/// Every local chat in [chat]'s thread, [chat] included.
-List<Chat> findThreadChats(Chat chat) {
-  final chats = _chatsInThread(chat.threadKey).where((c) => c.dateDeleted == null).toList();
-  return chats.any((c) => c.guid == chat.guid) ? chats : [chat, ...chats];
-}
-
-/// [guidsToMarkRead] against the local database.
-List<String> findGuidsToMarkRead(String guid) {
-  final chat = Chat.findOne(guid: guid);
-  return guidsToMarkRead(guid, chat == null ? const [] : _chatsInThread(chat.threadKey));
-}
-
 /// Pin, mute, archive and a custom name set on a twin before it was folded
 /// carry over to its thread, without overriding anything the thread has.
 /// Returns whether [thread] changed.
@@ -159,25 +135,6 @@ String? threadName(Chat thread, Iterable<Chat> copies, {Message? newestRename}) 
   if (renamed.length == 1) return renamed.first;
   if (renamed.length > 1) return newestRename != null ? newestRename.groupTitle ?? '' : thread.latestGroupTitle ?? renamed.first;
   return all.map((c) => c.displayName).firstWhereOrNull((n) => n?.isNotEmpty ?? false) ?? thread.displayName;
-}
-
-/// [threadName] against the local database.
-String? threadNameFor(Chat chat) {
-  final key = chat.threadKey;
-  if (key == null || key.isEmpty || chat.id == null) return chat.currentName;
-  final copies = _chatsInThread(key).where((c) => c.dateDeleted == null).toList();
-  if (copies.length < 2) return chat.currentName;
-  Message? newestRename;
-  if ({for (final c in copies) c.latestGroupTitle}.whereType<String>().length > 1) {
-    final query = (Database.messages.query(Message_.itemType.equals(2))
-          ..link(Message_.chat, Chat_.id.equals(chat.id!))
-          ..order(Message_.dateCreated, flags: Order.descending))
-        .build();
-    query.limit = 1;
-    newestRename = query.findFirst();
-    query.close();
-  }
-  return threadName(chat, copies, newestRename: newestRename);
 }
 
 /// Log lines for every thread the conversation list should show but doesn't:

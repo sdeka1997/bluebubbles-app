@@ -3,8 +3,7 @@ import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/store/objectbox/objectbox_thread_store_helpers.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
-import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
-import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart' show canonicalTwinFor;
+import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart' show canonicalTwinFor, guidsToMarkRead, threadName;
 import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_models.dart';
 import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_queries.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -636,6 +635,65 @@ mixin ObjectBoxChatStore implements ChatStore {
     final chats = query.find();
     query.close();
     return chats;
+  }
+
+  @override
+  Future<Message?> newestMessageIn(int chatId, {bool listing = true}) async {
+    final live = Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull());
+    final query = (Database.messages.query(listing ? live.and(listsThreadCondition) : live)
+          ..link(Message_.chat, Chat_.id.equals(chatId))
+          ..order(Message_.dateCreated, flags: Order.descending))
+        .build();
+    query.limit = 1;
+    try {
+      return query.findFirst();
+    } finally {
+      query.close();
+    }
+  }
+
+  List<Chat> _storedThread(String? key) {
+    if (key == null || key.isEmpty) return const [];
+    final query = Database.chats.query(Chat_.threadKey.equals(key)).build();
+    try {
+      return query.find();
+    } finally {
+      query.close();
+    }
+  }
+
+  @override
+  Future<List<Chat>> threadChatsOf(Chat chat) async {
+    final chats = _storedThread(chat.threadKey).where((c) => c.dateDeleted == null).toList();
+    return chats.any((c) => c.guid == chat.guid) ? chats : [chat, ...chats];
+  }
+
+  @override
+  Future<List<String>> threadGuidsToMarkRead(String guid) async {
+    final chat = Chat.findOne(guid: guid);
+    return guidsToMarkRead(guid, chat == null ? const [] : _storedThread(chat.threadKey));
+  }
+
+  @override
+  Future<String?> threadNameOf(Chat chat) async {
+    final key = chat.threadKey;
+    if (key == null || key.isEmpty || chat.id == null) return chat.currentName;
+    final copies = _storedThread(key).where((c) => c.dateDeleted == null).toList();
+    if (copies.length < 2) return chat.currentName;
+    Message? newestRename;
+    if ({for (final c in copies) c.latestGroupTitle}.whereType<String>().length > 1) {
+      final query = (Database.messages.query(Message_.itemType.equals(2))
+            ..link(Message_.chat, Chat_.id.equals(chat.id!))
+            ..order(Message_.dateCreated, flags: Order.descending))
+          .build();
+      query.limit = 1;
+      try {
+        newestRename = query.findFirst();
+      } finally {
+        query.close();
+      }
+    }
+    return threadName(chat, copies, newestRename: newestRename);
   }
 
   @override

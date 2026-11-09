@@ -1,5 +1,4 @@
-import 'package:bluebubbles/database/models.dart';
-import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
@@ -15,12 +14,12 @@ class TypingIndicatorService extends GetxController {
 
   Future<void> startTyping(String chatGuid) async {
     _activeTypingChatGuid = chatGuid;
-    await Future.wait(_threadGuids(chatGuid).map((guid) => ChatInterface.startTyping(chatGuid: guid)));
+    await Future.wait((await _threadGuids(chatGuid)).map((guid) => ChatInterface.startTyping(chatGuid: guid)));
   }
 
   Future<void> stopTyping(String chatGuid) async {
     if (_activeTypingChatGuid == chatGuid) _activeTypingChatGuid = null;
-    await Future.wait(_threadGuids(chatGuid).map((guid) => ChatInterface.stopTyping(chatGuid: guid)));
+    await Future.wait((await _threadGuids(chatGuid)).map((guid) => ChatInterface.stopTyping(chatGuid: guid)));
   }
 
   /// Stops the active typing indicator for any chat.
@@ -31,15 +30,15 @@ class TypingIndicatorService extends GetxController {
     if (_activeTypingChatGuid == null) return;
     final guid = _activeTypingChatGuid!;
     _activeTypingChatGuid = null;
-    await Future.wait(_threadGuids(guid).map((g) => ChatInterface.stopTyping(chatGuid: g)));
+    await Future.wait((await _threadGuids(guid)).map((g) => ChatInterface.stopTyping(chatGuid: g)));
   }
 
   /// Every Apple chat in [chatGuid]'s thread, so whichever copy the others are
   /// reading shows it. Messages sends typing where the service carries it.
-  List<String> _threadGuids(String chatGuid) {
+  Future<List<String>> _threadGuids(String chatGuid) async {
     if (kIsWeb) return [chatGuid];
-    final chat = Chat.findOne(guid: chatGuid);
+    final chat = await MessagingStore.current.chatByGuid(chatGuid);
     if (chat == null) return [chatGuid];
-    return findThreadChats(chat).map((c) => c.guid).toList();
+    return (await MessagingStore.current.threadChatsOf(chat)).map((c) => c.guid).toList();
   }
 }

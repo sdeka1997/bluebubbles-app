@@ -503,7 +503,7 @@ mixin ObjectBoxSyncStore implements SyncStore {
   Future<DateTime?> newestStoredNameChange(String chatGuid) async {
     final local = Chat.findOne(guid: chatGuid);
     if (local == null) return null;
-    final chatIds = {local.id!, findCanonicalTwin(local)?.id ?? local.id!}.toList();
+    final chatIds = <int>{local.id!, objectBoxCanonicalTwin(local)?.id ?? local.id!}.toList();
     final query = (Database.messages.query(Message_.itemType.equals(2))
           ..link(Message_.chat, Chat_.id.oneOf(chatIds))
           ..order(Message_.dateCreated, flags: Order.descending))

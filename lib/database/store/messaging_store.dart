@@ -439,6 +439,20 @@ abstract interface class ChatStore {
   /// The live chat [chat] is folded into, or null when [chat] is its own thread.
   Future<Chat?> canonicalTwinOf(Chat chat);
 
+  /// The newest message, deleted ones excluded, of the local chat [chatId].
+  /// With [listing], only a message that `listsThread`.
+  Future<Message?> newestMessageIn(int chatId, {bool listing = true});
+
+  /// Every live local chat in [chat]'s thread, [chat] included.
+  Future<List<Chat>> threadChatsOf(Chat chat);
+
+  /// `guidsToMarkRead` against the stored copies of [guid]'s thread.
+  Future<List<String>> threadGuidsToMarkRead(String guid);
+
+  /// `threadName` from the stored copies of [chat]'s thread (and its newest
+  /// rename when renamed copies disagree); [Chat.currentName] when it has none.
+  Future<String?> threadNameOf(Chat chat);
+
   /// The chat-stats reads of [chat].
   ChatStatsReader chatStats(Chat chat);
 }

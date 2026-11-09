@@ -1,7 +1,6 @@
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
-import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart' show findGuidsToMarkRead;
 import 'package:bluebubbles/services/backend/interfaces/contact_v2_interface.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -24,7 +23,7 @@ class ChatActions {
         SettingsSvc.settings.enablePrivateAPI.value &&
         SettingsSvc.settings.privateMarkChatAsRead.value) {
       for (final chat in chats) {
-        for (final guid in findGuidsToMarkRead(chat.guid)) {
+        for (final guid in await MessagingStore.current.threadGuidsToMarkRead(chat.guid)) {
           await HttpSvc.chat.markRead(guid);
         }
       }
@@ -36,7 +35,7 @@ class ChatActions {
     final markAsRead = data['markAsRead'] as bool;
     final shouldMarkOnServer = data['shouldMarkOnServer'] as bool;
     if (shouldMarkOnServer && SettingsSvc.settings.enablePrivateAPI.value) {
-      for (final guid in findGuidsToMarkRead(chatGuid)) {
+      for (final guid in await MessagingStore.current.threadGuidsToMarkRead(chatGuid)) {
         if (markAsRead) {
           await HttpSvc.chat.markRead(guid);
         } else {

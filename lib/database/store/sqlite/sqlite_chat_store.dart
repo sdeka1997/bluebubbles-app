@@ -12,7 +12,7 @@ import 'package:bluebubbles/database/sqlite/message_repo.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_messaging_store.dart';
-import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart' show canonicalTwinFor;
+import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart' show canonicalTwinFor, guidsToMarkRead, threadName;
 import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_models.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:collection/collection.dart';
@@ -491,6 +491,49 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
     final rows = await db.select('SELECT id FROM chats WHERE thread_key IS NOT NULL ORDER BY id');
     final ids = [for (final row in rows) row['id'] as int];
     return inIdOrder(ids, await ChatRepo(db).byIds(ids));
+  }
+
+  /// Ordered as the chat screen orders (sort_at, id), which ObjectBox's
+  /// created-date query matches except for delivered-before-created ties.
+  @override
+  Future<Message?> newestMessageIn(int chatId, {bool listing = true}) async {
+    final rows = await db.select(
+        'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? '
+        'AND date_deleted_us IS NULL AND date_created_us IS NOT NULL '
+        '${listing ? 'AND (item_type IS NULL OR item_type = 0) ' : ''}'
+        'ORDER BY date_created_us DESC, id DESC LIMIT 1',
+        [chatId]);
+    if (rows.isEmpty) return null;
+    final message = messageFromRow(rows.single);
+    await MessageRepo(db).attachmentsFor([message]);
+    return message;
+  }
+
+  @override
+  Future<List<Chat>> threadChatsOf(Chat chat) async {
+    final key = chat.threadKey;
+    final chats = key == null || key.isEmpty ? <Chat>[] : await ChatRepo(db).threadCopies(key);
+    return chats.any((c) => c.guid == chat.guid) ? chats : [chat, ...chats];
+  }
+
+  @override
+  Future<List<String>> threadGuidsToMarkRead(String guid) async {
+    final chat = await ChatRepo(db).byGuid(guid);
+    final key = chat?.threadKey;
+    if (key == null || key.isEmpty) return [guid];
+    final rows = await db.select('SELECT guid FROM chats WHERE thread_key = ? ORDER BY id', [key]);
+    return guidsToMarkRead(guid, [for (final row in rows) Chat(guid: row['guid'] as String, threadKey: key)]);
+  }
+
+  @override
+  Future<String?> threadNameOf(Chat chat) async {
+    final key = chat.threadKey;
+    if (key == null || key.isEmpty || chat.id == null) return chat.currentName;
+    final copies = await ChatRepo(db).threadCopies(key);
+    if (copies.length < 2) return chat.currentName;
+    final renamed = {for (final c in copies) c.latestGroupTitle}.whereType<String>().length > 1;
+    final newestRename = renamed ? await MessageRepo(db).newestRename([chat.id!]) : null;
+    return threadName(chat, copies, newestRename: newestRename);
   }
 
   @override

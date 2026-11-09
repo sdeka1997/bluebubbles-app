@@ -1,4 +1,4 @@
-import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
+import 'package:bluebubbles/database/store/objectbox/objectbox_thread_store_helpers.dart' show listsThreadCondition;
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/backend/startup_tasks.dart';

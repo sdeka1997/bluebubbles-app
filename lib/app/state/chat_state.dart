@@ -1,10 +1,10 @@
 import 'dart:async' show unawaited;
 
-import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/app/components/wallpaper/chat_wallpaper_type.dart';
 import 'package:bluebubbles/app/components/wallpaper/wallpaper_config_codec.dart';
 import 'package:bluebubbles/app/state/handle_state.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:flutter/foundation.dart';
@@ -84,7 +84,7 @@ class ChatState {
         muteType = RxnString(chat.muteType),
         muteArgs = RxnString(chat.muteArgs),
         isArchived = (chat.isArchived ?? false).obs,
-        displayName = RxnString(_threadName(chat)),
+        displayName = RxnString(chat.currentName),
         customAvatarPath = RxnString(chat.customAvatarPath),
         customBackgroundPath = RxnString(FilesystemSvc.getExistingChatBackgroundPath(chat.guid)),
         // Placeholder; recomputed from live participant state once [participants]
@@ -144,6 +144,18 @@ class ChatState {
     if (SettingsSvc.settings.redactedMode.value) {
       redactFields();
     }
+    unawaited(_refreshThreadName(chat));
+  }
+
+  /// Names the chat from every copy of its thread (`MessagingStore.threadNameOf`)
+  /// once the store answers; until then it shows the chat's own name. Kept
+  /// back while contact info is redacted.
+  Future<void> _refreshThreadName(Chat source) async {
+    if (kIsWeb) return;
+    final name = await MessagingStore.current.threadNameOf(source);
+    if (SettingsSvc.settings.redactedMode.value && SettingsSvc.settings.hideContactInfo.value) return;
+    updateDisplayNameInternal(name);
+    updateTitleInternal(_computeTitle());
   }
 
   // ========== Internal State Update Methods ==========
@@ -438,7 +450,8 @@ class ChatState {
     updateHasUnreadInternal(updatedChat.hasUnreadMessage ?? false);
     updateMutedInternal(updatedChat.muteType, updatedChat.muteArgs);
     updateArchivedInternal(updatedChat.isArchived ?? false);
-    updateDisplayNameInternal(_threadName(updatedChat));
+    updateDisplayNameInternal(updatedChat.currentName);
+    unawaited(_refreshThreadName(updatedChat));
     updateCustomAvatarPathInternal(updatedChat.customAvatarPath);
     updateCustomBackgroundPathInternal(FilesystemSvc.getExistingChatBackgroundPath(updatedChat.guid));
     updateCustomThemeLightInternal(updatedChat.customThemeLight);
@@ -569,8 +582,9 @@ class ChatState {
 
   /// Restore contact information to original values from the underlying DB model.
   void unredactContactInfo() {
-    updateDisplayNameInternal(_threadName(chat));
+    updateDisplayNameInternal(chat.currentName);
     updateTitleInternal(_computeTitle());
+    unawaited(_refreshThreadName(chat));
     updateChatCreatorSubtitleInternal(_computeCreatorSubtitle());
     // Recompute subtitle — hideMessageContent may still be active even after
     // contact-info redaction is lifted, so use _computeSubtitle to stay correct.
@@ -629,6 +643,3 @@ class ChatState {
   }
 }
 
-/// A folded thread is named from all its copies; the web build keeps no
-/// threads, so a chat there is named on its own.
-String? _threadName(Chat chat) => kIsWeb ? chat.currentName : threadNameFor(chat);

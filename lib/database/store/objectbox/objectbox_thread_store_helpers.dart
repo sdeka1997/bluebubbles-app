@@ -3,6 +3,9 @@ import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 
+/// `listsThread` as an ObjectBox condition.
+Condition<Message> get listsThreadCondition => Message_.itemType.isNull().or(Message_.itemType.equals(0));
+
 List<Chat> _chatsInThread(String? key) {
   if (key == null || key.isEmpty) return const [];
   final query = Database.chats.query(Chat_.threadKey.equals(key)).build();
@@ -11,7 +14,8 @@ List<Chat> _chatsInThread(String? key) {
   return result;
 }
 
-Chat? _findCanonicalTwin(Chat chat) => canonicalTwinFor(chat, _chatsInThread(chat.threadKey));
+/// The stored thread [chat] is folded into, or null when it is its own thread.
+Chat? objectBoxCanonicalTwin(Chat chat) => canonicalTwinFor(chat, _chatsInThread(chat.threadKey));
 
 /// ObjectBox implementation of the legacy service-twin fold. The body is the
 /// former service_twin_helpers.dart write path, kept behind MessagingStore.
@@ -32,7 +36,7 @@ Map<String, Chat> foldServiceTwinsObjectBox(Iterable<Chat> chats) {
     final stored = twin.id == null ? Chat.findOne(guid: twin.guid) : twin;
     if (stored == null) continue;
     stored.threadKey ??= twin.threadKey;
-    final found = _findCanonicalTwin(stored);
+    final found = objectBoxCanonicalTwin(stored);
     if (found == null) continue;
     final canonical = threads.putIfAbsent(found.id!, () => found);
     folded[twin.guid] = canonical;

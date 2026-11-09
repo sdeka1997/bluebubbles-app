@@ -4,9 +4,9 @@ import 'dart:io';
 
 import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
-import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
 import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -531,7 +531,7 @@ class IncomingMessageHandler {
         // The event's chat carries Messages' current Spam verdict; the stored
         // copy may predate it.
         if (local.mergeSpamFlag(partial)) await local.saveAsync(updateIsFilteredAsSpam: true);
-        return (chat: findCanonicalTwin(local) ?? local, affectedHandleIds: <int>[]);
+        return (chat: await MessagingStore.current.canonicalTwinOf(local) ?? local, affectedHandleIds: <int>[]);
         // Cases to fetch from the server:
         // * Local chat exists but has no participants (incomplete data) or group id.
         // * Local chat doesn't exist at all (new chat).
@@ -547,7 +547,7 @@ class IncomingMessageHandler {
       Logger.warn('Failed to sync new chat ${partial.guid} for message ${m.guid}', tag: _tag);
     }
     // File a service twin's messages under the thread it was folded into.
-    return (chat: findCanonicalTwin(synced) ?? synced, affectedHandleIds: result.affectedHandleIds);
+    return (chat: await MessagingStore.current.canonicalTwinOf(synced) ?? synced, affectedHandleIds: result.affectedHandleIds);
   }
 
   // ── DB helpers ──────────────────────────────────────────────────────────

@@ -1,4 +1,3 @@
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:collection/collection.dart';
 
@@ -10,23 +9,6 @@ import 'package:collection/collection.dart';
 
 /// Whether [message] can be its thread's preview and set its place in the list.
 bool listsThread(Message message) => (message.itemType ?? 0) == 0;
-
-/// [listsThread] as a database condition.
-Condition<Message> get listsThreadCondition => Message_.itemType.isNull().or(Message_.itemType.equals(0));
-
-/// The newest message, deleted ones excluded, of the local chat [chatId]. With
-/// [listing], only a message that [listsThread].
-Message? newestMessageIn(int chatId, {bool listing = true}) {
-  final live = Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull());
-  final query = (Database.messages.query(listing ? live.and(listsThreadCondition) : live)
-        ..link(Message_.chat, Chat_.id.equals(chatId))
-        ..order(Message_.dateCreated, flags: Order.descending))
-      .build();
-  query.limit = 1;
-  final result = query.findFirst();
-  query.close();
-  return result;
-}
 
 /// Points [thread] at the newest of [messages] that [listsThread]. A thread can
 /// be a copy holding only a rename, and copies folded into it bring newer

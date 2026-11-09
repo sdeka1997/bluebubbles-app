@@ -1,6 +1,6 @@
-import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/app/state/message_state.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:flutter/material.dart';
@@ -132,7 +132,7 @@ Future<void> removeReaction({
 
   await NotificationsSvc.clearFailedToSend(chat.id!);
   // Get the "new" latest info
-  final latest = chat.id == null ? null : newestMessageIn(chat.id!);
+  final latest = chat.id == null ? null : await MessagingStore.current.newestMessageIn(chat.id!);
   if (latest != null) ChatsSvc.setChatLatestMessage(chat, latest);
   await chat.saveAsync();
 }

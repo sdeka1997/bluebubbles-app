@@ -30,6 +30,7 @@ abstract class StoreFixture {
     String? threadKey,
     DateTime? deleted,
     bool unread = false,
+    String? groupTitle,
   });
 
   Future<Message> message(
@@ -121,8 +122,10 @@ class ObjectBoxFixture extends StoreFixture {
     String? threadKey,
     DateTime? deleted,
     bool unread = false,
+    String? groupTitle,
   }) async {
     final c = Chat(guid: guid, threadKey: threadKey, dateDeleted: deleted, hasUnreadMessage: unread)
+      ..latestGroupTitle = groupTitle
       ..handles.addAll(handles);
     obx.box<Chat>().put(c);
     return c;
@@ -224,8 +227,10 @@ class SqliteFixture extends StoreFixture {
     String? threadKey,
     DateTime? deleted,
     bool unread = false,
+    String? groupTitle,
   }) async {
-    final c = Chat(guid: guid, threadKey: threadKey, dateDeleted: deleted, hasUnreadMessage: unread);
+    final c = Chat(guid: guid, threadKey: threadKey, dateDeleted: deleted, hasUnreadMessage: unread)
+      ..latestGroupTitle = groupTitle;
     c.id = await _insert('chats', chatToRow(c));
     await db.write((tx) async {
       for (final h in handles) {
