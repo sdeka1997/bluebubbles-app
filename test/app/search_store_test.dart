@@ -1,6 +1,5 @@
-// Message search reads through MessagingStore (switch plan commit 8): the same
-// results on ObjectBox and SQLite, each with its chat, and the search screen
-// no longer queries ObjectBox.
+// Message search reads through MessagingStore (switch plan commit 8): results
+// each with its chat, and the search screen no longer queries ObjectBox.
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -10,7 +9,7 @@ import '../database/store/store_fixture.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     test('text matches newest first, with their chats, and each filter', () async {
       final bob = await fixture().handle('bob@x.com', rowId: 7);
       final chat = await fixture().chat('c', handles: [bob]);

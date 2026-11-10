@@ -16,7 +16,7 @@ void main() {
   setUpAll(() => isIsolateOverride = true);
   tearDownAll(() => isIsolateOverride = false);
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     group('contact links', () {
       test('sync links matching handles to the contact and an empty one-to-one chat', () async {
         final old = await fixture().handle('old@example.com');

@@ -1,6 +1,5 @@
-// sync_helpers.dart through MessagingStore (S2 switch plan, commit 5): the
-// ObjectBox behavior is preserved and SQLite performs each helper as one
-// Db.write. The same batch started concurrently must end in a state reachable
+// sync_helpers.dart through MessagingStore (S2 switch plan, commit 5): each
+// helper is one Db.write. The same batch started concurrently must end in a state reachable
 // by running the two batches sequentially in either order.
 import 'package:bluebubbles/database/models.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'store_fixture.dart';
 
 void main() {
-  forEachStore((fixture) {
+  storeTests((fixture) {
     test('metadata refresh folds service copies and relists chats shown by status events', () async {
       final canonical = await fixture().chat('SMS;-;+155****1111');
       final twin = await fixture().chat('RCS;-;+155****1111');

@@ -1,7 +1,7 @@
-// Runs a test body against both MessagingStore implementations (S2 switch
-// plan, commits 4-6): ObjectBox on a real store in a temp directory (the
-// Actions' own code reads `Database.*`, so the boxes are set once per test
-// file), SQLite on a fresh in-memory Db per test. Not a test file itself.
+// Runs a test body against the MessagingStore on a fresh in-memory SQLite Db
+// per test. ObjectBoxFixture remains only for the rollback drill
+// (incremental_sync_marker_test) until ObjectBox is removed. Not a test file
+// itself.
 import 'dart:io';
 
 import 'package:bluebubbles/database/database.dart';
@@ -351,32 +351,26 @@ void closeObjectBox() {
   _obxDir = null;
 }
 
-/// Defines [body]'s tests twice, in a group per store; each test gets an empty
-/// store in `fixture()`, which is also `MessagingStore.current` while it runs.
-void forEachStore(void Function(StoreFixture Function() fixture) body, {Set<ActiveStore> only = const {}}) {
-  setUpAll(() {
-    if (!GetIt.I.isRegistered<BaseLogger>()) GetIt.I.registerSingleton<BaseLogger>(BaseLogger());
-  });
-  tearDownAll(closeObjectBox);
-
-  for (final kind in ActiveStore.values) {
-    if (only.isNotEmpty && !only.contains(kind)) continue;
-    group(kind == ActiveStore.objectBox ? 'ObjectBox' : 'SQLite', () {
-      late StoreFixture fixture;
-      setUp(() {
-        fixture = switch (kind) {
-          ActiveStore.objectBox => ObjectBoxFixture(_openObjectBox()..let(_emptyObjectBox)),
-          ActiveStore.sqlite => SqliteFixture(),
-        };
-        MessagingStore.use(fixture.store);
-      });
-      tearDown(() async {
-        MessagingStore.use(null);
-        await fixture.db?.close();
-      });
-      body(() => fixture);
+/// Defines [body]'s tests over a fresh in-memory SQLite store per test, in
+/// `fixture()`, which is also `MessagingStore.current` while it runs. Each call
+/// is its own group, so a file may call it more than once.
+void storeTests(void Function(SqliteFixture Function() fixture) body) {
+  group('', () {
+    setUpAll(() {
+      if (!GetIt.I.isRegistered<BaseLogger>()) GetIt.I.registerSingleton<BaseLogger>(BaseLogger());
     });
-  }
+
+    late SqliteFixture fixture;
+    setUp(() {
+      fixture = SqliteFixture();
+      MessagingStore.use(fixture.store);
+    });
+    tearDown(() async {
+      MessagingStore.use(null);
+      await fixture.db.close();
+    });
+    body(() => fixture);
+  });
 }
 
 extension _Let<T> on T {

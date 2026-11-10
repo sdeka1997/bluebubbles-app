@@ -1,5 +1,5 @@
 // SyncActions.bulkSyncData / SyncInterface.bulkSyncData through MessagingStore
-// (S2 switch plan, commit 5): the sync_batch_test cases on both stores, plus
+// (S2 switch plan, commit 5): the sync_batch_test cases, plus
 // the R6 transaction-boundary tests (risk 1 of the plan): batches started
 // concurrently end as they would run one after the other.
 import 'package:bluebubbles/database/store/messaging_store.dart';
@@ -114,7 +114,7 @@ void main() {
   setUpAll(() => isIsolateOverride = true);
   tearDownAll(() => isIsolateOverride = false);
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     MessagingStore store() => fixture().store;
 
     group('SyncActions.bulkSyncData', () {
@@ -204,9 +204,8 @@ void main() {
         expect(await store().allMessageIds(), isEmpty);
         expect(await store().findAttachmentIds(null), isEmpty);
         expect(await store().chatByGuid('iMessage;+;chat99'), isNull);
-        // ObjectBox saves the batch's handles in a transaction of their own
-        // first; SQLite writes them in the batch's one Db.write.
-        expect(await store().allHandleIds(), hasLength(fixture().kind == ActiveStore.objectBox ? 2 : 0));
+        // The batch's handles are written in the batch's one Db.write too.
+        expect(await store().allHandleIds(), isEmpty);
       });
 
       test('SyncInterface.bulkSyncData hands back the saved messages and moved chats', () async {

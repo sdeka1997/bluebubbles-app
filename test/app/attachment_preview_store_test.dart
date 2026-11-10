@@ -1,6 +1,6 @@
 // Attachment previews look attachments up through MessagingStore (switch plan
 // commit 8) when the message in memory carries none: by the message, else by
-// the guids its attributed body names, the same on ObjectBox and SQLite.
+// the guids its attributed body names.
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -10,7 +10,7 @@ import '../database/store/store_fixture.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     test('attachments of a message, else of the guids named', () async {
       final chat = await fixture().chat('c');
       final m = await fixture().message('m', chat, t0);
