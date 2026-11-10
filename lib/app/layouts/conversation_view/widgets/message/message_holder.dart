@@ -1,5 +1,4 @@
 import 'package:bluebubbles/app/state/message_state.dart';
-import 'package:bluebubbles/utils/memory_trace.dart';
 import 'package:bluebubbles/app/layouts/conversation_view/widgets/message/chat_event/chat_event.dart';
 import 'package:bluebubbles/app/layouts/conversation_view/widgets/message/message_holder/message_holder_indicators.dart';
 import 'package:bluebubbles/app/layouts/conversation_view/widgets/message/message_holder/message_holder_reactions.dart';
@@ -116,7 +115,6 @@ class _MessageHolderState extends State<MessageHolder> with AutomaticKeepAliveCl
   @override
   void initState() {
     super.initState();
-    LiveCount.track(this, 'Bubble');
     if (widget.isReplyThread) {
       replyOffsets = List.generate(widget.replyPart != null ? 1 : controller.parts.length, (_) => 0.0.obs);
       keys = List.generate(widget.replyPart != null ? 1 : controller.parts.length, (_) => GlobalKey());

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:bluebubbles/utils/memory_trace.dart';
 import 'dart:math';
 
 import 'package:audio_waveforms/audio_waveforms.dart';
@@ -84,7 +83,6 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
   @override
   void initState() {
     super.initState();
-    LiveCount.track(this, 'MessagesView');
     smartRepliesManager = SmartRepliesManager();
     dropZoneManager = DropZoneManager(controller: controller);
     animationOrchestrator = MessageAnimationOrchestrator();
@@ -217,8 +215,6 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
 
   @override
   void dispose() {
-    // Diagnostic: after the screen is gone, log what is still alive.
-    Future.delayed(const Duration(seconds: 3), () => LiveCount.log('chat closed'));
     // Clean up managers
     if (_messages.isNotEmpty) {
       chat.lastReadMessageGuid = _messages.first.guid;

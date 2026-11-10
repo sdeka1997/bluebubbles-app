@@ -63,9 +63,7 @@ class MessagesService extends GetxController {
   late List<Message> messagesRef;
 
   final String tag;
-  MessagesService(this.tag) {
-    LiveCount.track(this, 'MessagesService');
-  }
+  MessagesService(this.tag);
 
   bool _init = false;
   bool messagesLoaded = false;

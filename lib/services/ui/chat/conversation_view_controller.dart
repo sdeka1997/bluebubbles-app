@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:bluebubbles/utils/memory_trace.dart';
 import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:bluebubbles/app/components/custom_text_editing_controllers.dart';
 import 'package:bluebubbles/app/wrappers/stateful_boilerplate.dart';
@@ -39,7 +38,6 @@ class ConversationViewController extends StatefulController with GetSingleTicker
 
   ConversationViewController(this.chat, {String? tag_}) {
     tag = tag_ ?? chat.guid;
-    LiveCount.track(this, 'ChatController');
   }
 
   // caching items
