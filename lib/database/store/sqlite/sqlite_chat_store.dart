@@ -480,13 +480,8 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
       final chats = (await ChatRepo(db).byIds(ids)).values.sortedBy<num>((chat) => chat.id!);
       return chats.skip(offset).take(limit).map((chat) => chat.id!).toList();
     }
-    // The order of ChatRepo.listPage (dated chats newest first, then undated
-    // ones by id), as ids only: the caller reads the chats it shows.
-    final rows = await db.select(
-        'SELECT id FROM chats WHERE date_deleted_us IS NULL '
-        'ORDER BY latest_message_date_us IS NULL, latest_message_date_us DESC, id DESC LIMIT ? OFFSET ?',
-        [limit, offset]);
-    return [for (final row in rows) row['id'] as int];
+    final chats = await ChatRepo(db).listPage(limit: offset + limit);
+    return chats.skip(offset).map((chat) => chat.id!).toList();
   }
   /// Chat ids only grow (AUTOINCREMENT), so a chat is new when its id is above
   /// every id stored when the stream started or emitted since.
