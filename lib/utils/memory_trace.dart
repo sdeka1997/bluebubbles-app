@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' show reachabilityBarrier;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -43,5 +44,43 @@ class MemTrace {
     } catch (e) {
       debugPrint('BBMEM unavailable: $e');
     }
+  }
+}
+
+/// Diagnostic for the chat-screen leak: how many objects of each kind are still
+/// alive, written under "BBLIVE". A Finalizer counts each tracked object when
+/// the VM collects it, so "alive" is made minus collected. [log] first makes
+/// the VM run full collections (it allocates short-lived garbage until two have
+/// run), so anything still alive afterwards is held by something.
+class LiveCount {
+  static final Map<String, int> _made = {};
+  static final Map<String, int> _freed = {};
+  static final Finalizer<String> _finalizer = Finalizer((kind) => _freed[kind] = (_freed[kind] ?? 0) + 1);
+
+  static bool get _enabled => !kIsWeb && Platform.isAndroid;
+
+  static void track(Object object, String kind) {
+    if (!_enabled) return;
+    _made[kind] = (_made[kind] ?? 0) + 1;
+    _finalizer.attach(object, kind);
+  }
+
+  static Future<void> log(String step) async {
+    if (!_enabled) return;
+    final start = reachabilityBarrier;
+    final junk = <List<int>>[];
+    var rounds = 0;
+    while (reachabilityBarrier < start + 2 && rounds < 400) {
+      junk.add(List<int>.filled(200000, 0));
+      if (junk.length > 40) junk.removeAt(0);
+      rounds++;
+      await Future<void>.delayed(Duration.zero);
+    }
+    junk.clear();
+    // Finalizers run as their own events after a collection.
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    final kinds = _made.keys.toList()..sort();
+    final counts = kinds.map((k) => '$k=${_made[k]! - (_freed[k] ?? 0)}/${_made[k]}').join(' ');
+    debugPrint('BBLIVE $step gcs=${reachabilityBarrier - start} rss=${ProcessInfo.currentRss ~/ (1024 * 1024)}MB $counts');
   }
 }

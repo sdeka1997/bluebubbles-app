@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:bluebubbles/utils/memory_trace.dart';
 import 'dart:convert';
 import 'dart:math';
 
@@ -230,6 +231,7 @@ class Message {
     if (dateEdited != null) _dateEdited.value = dateEdited;
     if (isDelievered != null) _isDelivered.value = isDelievered;
     if (associatedMessages.isEmpty) associatedMessages = [];
+    LiveCount.track(this, 'Message');
     if (attributedBody.isEmpty) attributedBody = [];
     if (messageSummaryInfo.isEmpty) messageSummaryInfo = [];
   }

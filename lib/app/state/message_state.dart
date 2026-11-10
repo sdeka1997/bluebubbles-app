@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bluebubbles/utils/memory_trace.dart';
 import 'package:bluebubbles/app/state/attachment_state.dart';
 import 'package:bluebubbles/app/state/handle_state.dart';
 import 'package:bluebubbles/app/wrappers/stateful_boilerplate.dart';
@@ -189,6 +190,7 @@ class MessageState extends StatefulController {
         isSent = (!(message.guid?.startsWith('temp') ?? false)).obs,
         isReaction = (message.associatedMessageGuid != null).obs,
         hasEffectPlayed = message.hasEffectPlayed.obs {
+    LiveCount.track(this, 'MessageState');
     // Create AttachmentState for every attachment already on the message.
     for (final attachment in message.dbAttachments) {
       if (attachment.guid != null) {
