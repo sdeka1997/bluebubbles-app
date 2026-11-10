@@ -2,9 +2,7 @@
 // from SQLite carry their relation ids from the row; repositories fill the
 // related objects. A relation read before it is filled throws (debug), and
 // every repository read returns entities whose reachable relations are all
-// filled. On ObjectBox the relations behave as before.
-import 'dart:io';
-
+// filled.
 import 'package:bluebubbles/database/io/relations.dart' as rel;
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
@@ -25,7 +23,7 @@ import 'sqlite_seed.dart';
 int expectFilled(Iterable<Object> roots) {
   final seen = Set<Object>.identity();
   var visited = 0;
-  void one(String what, rel.ToOne r, Object? Function() read, void Function(Object) walk) {
+  void one(String what, rel.Rel r, Object? Function() read, void Function(Object) walk) {
     visited++;
     expect(r.isFilled, isTrue, reason: '$what not filled');
     final t = read();
@@ -33,7 +31,7 @@ int expectFilled(Iterable<Object> roots) {
     if (t != null) walk(t);
   }
 
-  void many(String what, rel.ToMany r, void Function(Object) walk) {
+  void many(String what, rel.RelList r, void Function(Object) walk) {
     visited++;
     expect(r.isFilled, isTrue, reason: '$what not filled');
     for (final e in r.toList()) {
@@ -45,21 +43,21 @@ int expectFilled(Iterable<Object> roots) {
     if (!seen.add(e)) return;
     switch (e) {
       case final Message m:
-        one('Message ${m.id}.chat', m.chat as rel.ToOne, () => m.chat.target, walk);
-        one('Message ${m.id}.handleRelation', m.handleRelation as rel.ToOne, () => m.handleRelation.target, walk);
-        many('Message ${m.id}.dbAttachments', m.dbAttachments as rel.ToMany, walk);
+        one('Message ${m.id}.chat', m.chat as rel.Rel, () => m.chat.target, walk);
+        one('Message ${m.id}.handleRelation', m.handleRelation as rel.Rel, () => m.handleRelation.target, walk);
+        many('Message ${m.id}.dbAttachments', m.dbAttachments as rel.RelList, walk);
       case final Chat c:
-        one('Chat ${c.id}.dbLatestMessage', c.dbLatestMessage as rel.ToOne, () => c.dbLatestMessage.target, walk);
-        many('Chat ${c.id}.handles', c.handles as rel.ToMany, walk);
+        one('Chat ${c.id}.dbLatestMessage', c.dbLatestMessage as rel.Rel, () => c.dbLatestMessage.target, walk);
+        many('Chat ${c.id}.handles', c.handles as rel.RelList, walk);
         expect(c.latestMessage, same(c.dbLatestMessage.target));
       case final Handle h:
-        many('Handle ${h.id}.contactsV2', h.contactsV2 as rel.ToMany, walk);
+        many('Handle ${h.id}.contactsV2', h.contactsV2 as rel.RelList, walk);
       case final ContactV2 c:
-        many('ContactV2 ${c.id}.handles', c.handles as rel.ToMany, walk);
+        many('ContactV2 ${c.id}.handles', c.handles as rel.RelList, walk);
       case final Attachment a:
-        one('Attachment ${a.id}.message', a.message as rel.ToOne, () => a.message.target, walk);
+        one('Attachment ${a.id}.message', a.message as rel.Rel, () => a.message.target, walk);
       case final CustomGroup g:
-        many('CustomGroup ${g.id}.chats', g.chats as rel.ToMany, walk);
+        many('CustomGroup ${g.id}.chats', g.chats as rel.RelList, walk);
     }
   }
 
@@ -130,62 +128,6 @@ void main() {
       expect(chatToRow(chat)['latest_message_id'], 7);
       final a = attachmentFromRow(attachmentToRow(Attachment(id: 1, guid: 'a')..message.targetId = 5));
       expect((a.message.targetId, attachmentToRow(a)['message_id']), (5, 5));
-    });
-  });
-
-  group('ObjectBox keeps its relations', () {
-    late Directory dir;
-    late Store store;
-    setUp(() {
-      dir = Directory.systemTemp.createTempSync('bb_rel_ob_');
-      store = Store(getObjectBoxModel(), directory: dir.path);
-    });
-    tearDown(() {
-      store.close();
-      dir.deleteSync(recursive: true);
-    });
-
-    test('the entity fields are the Rel/RelList look-alikes and ObjectBox lazy-loads and saves them as before', () {
-      final handle = Handle(address: '+1', service: 'iMessage');
-      final contact = ContactV2(displayName: 'A', nativeContactId: 'n')..handles.add(handle);
-      store.box<ContactV2>().put(contact);
-      final chat = Chat(guid: 'c')..handles.add(handle);
-      store.box<Chat>().put(chat);
-      final m = Message(guid: 'm', text: 'hi', dateCreated: at(baseMs));
-      m.chat.target = chat;
-      m.handleRelation.target = handle;
-      store.box<Message>().put(m);
-      final a = Attachment(guid: 'a');
-      a.message.target = m;
-      store.box<Attachment>().put(a);
-      chat.dbLatestMessage.target = m;
-      store.box<Chat>().put(chat);
-      final group = CustomGroup(name: 'G')..chats.add(chat);
-      store.box<CustomGroup>().put(group);
-
-      final readMessage = store.box<Message>().get(m.id!)!;
-      expect(readMessage.chat, isA<rel.Rel<Chat>>());
-      expect(readMessage.dbAttachments, isA<rel.RelList<Attachment>>());
-      expect((readMessage.chat as rel.ToOne).isFilled, isTrue);
-      expect(readMessage.chat.target!.guid, 'c');
-      expect(readMessage.handleRelation.target!.address, '+1');
-      expect(readMessage.dbAttachments.single.guid, 'a');
-      final readChat = store.box<Chat>().get(chat.id!)!;
-      expect(readChat.handles.single.address, '+1');
-      expect(readChat.handles.single.contactsV2.single.displayName, 'A');
-      expect(readChat.dbLatestMessage.target!.guid, 'm');
-      expect(readChat.messages.single.guid, 'm');
-      expect(readChat.customGroups.single.name, 'G');
-      expect(store.box<Attachment>().get(a.id!)!.message.target!.guid, 'm');
-      expect(store.box<CustomGroup>().get(group.id!)!.chats.single.guid, 'c');
-      expect(store.box<ContactV2>().get(contact.id)!.handles.single.address, '+1');
-
-      // ToMany edits still save through ObjectBox.
-      readChat.handles.removeAt(0);
-      store.box<Chat>().put(readChat);
-      expect(store.box<Chat>().get(chat.id!)!.handles, isEmpty);
-      // Message_ relation queries still work (generated code unchanged).
-      expect(store.box<Message>().query(Message_.chat.equals(chat.id!)).build().count(), 1);
     });
   });
 

@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:bluebubbles/helpers/helpers.dart';
-import 'package:bluebubbles/generated/objectbox.g.dart';
 import 'package:bluebubbles/database/io/message.dart';
 import 'package:bluebubbles/services/backend/descriptors/attachment_query_descriptor.dart';
 import 'package:bluebubbles/services/backend/interfaces/attachment_interface.dart';
@@ -11,18 +10,14 @@ import 'package:flutter/foundation.dart';
 import 'package:mime_type/mime_type.dart';
 // (needed when generating objectbox model code)
 // ignore: unnecessary_import
-import 'package:objectbox/objectbox.dart';
 import 'package:bluebubbles/database/io/relations.dart' show Rel;
 import 'package:passkit/passkit.dart';
 import 'package:universal_io/io.dart';
 
-@Entity()
 class Attachment {
   int? id;
   int? originalROWID;
 
-  @Index(type: IndexType.value)
-  @Unique()
   String? guid;
 
   String? uti;
@@ -32,7 +27,6 @@ class Attachment {
   int? totalBytes;
   int? height;
   int? width;
-  @Transient()
   Uint8List? bytes;
   String? webUrl;
   bool hasLivePhoto;
@@ -324,9 +318,7 @@ class Attachment {
 
   bool get canCompress => mimeStart == "image" && !mimeType!.contains("gif");
 
-  @Transient()
   PkPass? _pkPass;
-  @Transient()
   bool _pkPassParsed = false;
 
   /// The parsed Wallet pass, or null if this isn't one (or is a corrupt one).

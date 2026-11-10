@@ -45,7 +45,6 @@ import dev.fluttercommunity.plus.packageinfo.PackageInfoPlugin
 import io.flutter.plugins.flutter_plugin_android_lifecycle.FlutterAndroidLifecyclePlugin
 import io.flutter.plugins.pathprovider.PathProviderPlugin
 import io.flutter.plugins.sharedpreferences.SharedPreferencesPlugin
-import io.objectbox.objectbox_flutter_libs.ObjectboxFlutterLibsPlugin
 import net.wolverinebeach.flutter_timezone.FlutterTimezonePlugin
 import org.unifiedpush.flutter.connector.Plugin as UnifiedPushConnectorPlugin
 
@@ -313,7 +312,6 @@ class DartWorker(context: Context, workerParams: WorkerParameters): ListenableWo
         plugins.add(PackageInfoPlugin())
         plugins.add(DeviceInfoPlusPlugin())
         // Database
-        plugins.add(ObjectboxFlutterLibsPlugin())
         // Notifications
         plugins.add(FlutterLocalNotificationsPlugin())
         // Transport security (custom user certificates; JniPlugin is a required dependency)

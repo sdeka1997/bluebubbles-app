@@ -17,7 +17,6 @@ import 'package:get/get.dart' hide Response;
 import 'package:get_it/get_it.dart';
 // (needed when generating objectbox model code)
 // ignore: unnecessary_import
-import 'package:objectbox/objectbox.dart';
 import 'package:bluebubbles/database/io/relations.dart' show Rel, RelList;
 import 'package:universal_io/io.dart';
 
@@ -38,12 +37,9 @@ bool? unreadAfterIncomingMessage(
 bool clearNotificationsWithoutReadFlip({required bool isFromMe, required bool clearIfFromMe, required bool wasUnread}) =>
     isFromMe && clearIfFromMe && !wasUnread;
 
-@Entity()
 class Chat {
   int? id;
 
-  @Index(type: IndexType.value)
-  @Unique()
   String guid;
 
   String? chatIdentifier;
@@ -56,7 +52,6 @@ class Chat {
   // Name after the newest rename; "" when it was cleared, null if never renamed.
   String? latestGroupTitle;
   // Chats with the same key show as one thread; set by assignThreadKeys.
-  @Index()
   String? threadKey;
   bool? isArchived;
   String? muteType;
@@ -77,10 +72,8 @@ class Chat {
 
   /// The latest message as the SQLite ChatRepo loads it with the chat (its id is
   /// `dbLatestMessage.targetId`). Not stored; null for chats read from ObjectBox.
-  @Transient()
   Message? latestMessage;
 
-  @Property(uid: 526293286661780207)
   DateTime? dbOnlyLatestMessageDate;
 
   /// Clears the cached latest message for a chat the device no longer holds
@@ -133,16 +126,13 @@ class Chat {
 
   /// [ChatWallpaperType.name] — "none" (default/absent), "image", or "dynamic".
   /// Read via `ChatWallpaperType.fromName(chat.wallpaperType)`.
-  @Property(uid: 699362128358203439)
   String? wallpaperType;
 
   /// [DynamicWallpaperDefinition.id] of the selected dynamic wallpaper, when
   /// [wallpaperType] is "dynamic". Null otherwise.
-  @Property(uid: 3728602269935984680)
   String? dynamicWallpaperId;
 
   /// JSON-encoded config map for [dynamicWallpaperId], via [WallpaperConfigCodec].
-  @Property(uid: 738307263391205523)
   String? dynamicWallpaperConfig;
 
   final RxnString _customAvatarPath = RxnString();
@@ -157,26 +147,20 @@ class Chat {
   int? get pinIndex => _pinIndex.value;
   set pinIndex(int? i) => _pinIndex.value = i;
 
-  @Transient()
   RxDouble sendProgress = 0.0.obs;
 
   final handles = RelList<Handle>();
 
   // Do not use this field directly, use the handles ToMany relation instead.
   // This should only really be used for serialization/deserialization purposes.
-  @Transient()
   List<Handle> participants = [];
 
-  @Backlink('chat')
   final messages = RelList<Message>();
 
-  @Backlink('chats')
   final customGroups = RelList<CustomGroup>();
 
-  @Transient()
   String? _fakeName;
 
-  @Transient()
   String get fakeName {
     if (_fakeName != null) return _fakeName!;
     final color = faker.color.color();

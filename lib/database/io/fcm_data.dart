@@ -1,9 +1,6 @@
-import 'package:bluebubbles/generated/objectbox.g.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:flutter/foundation.dart';
-import 'package:objectbox/objectbox.dart';
 
-@Entity()
 class FCMData {
   int? id;
   String? projectID;

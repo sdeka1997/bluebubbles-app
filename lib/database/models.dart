@@ -15,13 +15,7 @@ export 'package:bluebubbles/database/io/launch_at_startup.dart'
     if (dart.library.html) 'package:bluebubbles/models/html/launch_at_startup.dart';
 export 'package:bluebubbles/database/io/message.dart'
     if (dart.library.html) 'package:bluebubbles/models/html/message.dart';
-export 'package:bluebubbles/generated/objectbox.g.dart'
-    if (dart.library.html) 'package:bluebubbles/models/html/objectbox.dart' hide Version;
 export 'package:bluebubbles/database/io/theme.dart' if (dart.library.html) 'package:bluebubbles/models/html/theme.dart';
-export 'package:bluebubbles/database/io/theme_entry.dart'
-    if (dart.library.html) 'package:bluebubbles/models/html/theme_entry.dart';
-export 'package:bluebubbles/database/io/theme_object.dart'
-    if (dart.library.html) 'package:bluebubbles/models/html/theme_object.dart';
 export 'package:bluebubbles/database/global/platform_file.dart';
 export 'package:bluebubbles/database/global/settings.dart';
 export 'package:bluebubbles/database/global/attributed_body.dart';

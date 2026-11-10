@@ -126,12 +126,10 @@ dependencies:
   network_info_plus: ^7.0.0
   network_tools: ^6.0.3
   numberpicker: ^2.1.2
-  objectbox: ^5.3.1
-  objectbox_flutter_libs: any
   passkit: any
   passkit_ui: any
   sqlite3: ^2.9.4
-  sqlite3_flutter_libs: ^0.5.24 # required for network_tools drift/ARP service on Android
+  sqlite3_flutter_libs: ^0.5.24 # SQLite for the app database (drift) and network_tools on Android
   open_filex: ^4.7.0
   package_info_plus: ^9.0.1
   particles_flutter: ^3.2.0
@@ -198,11 +196,6 @@ dependencies:
   uuid: any
 dependency_overrides:
   clock: ^1.1.2 # encrypter_plus
-  flat_buffers: # RangeError on FlexBuffer resize: https://github.com/objectbox/objectbox-dart/issues/786
-    git:
-      url: https://github.com/google/flatbuffers.git
-      ref: e7c6874192a643c50b10cb90f81c0ed84fd7f53a
-      path: dart
   flutter_local_notifications_windows: # no identity + crashing fixes + suppressPopup
     git:
       url: https://github.com/jjoelj/flutter_local_notifications.git
@@ -241,7 +234,6 @@ dev_dependencies:
   flutter_launcher_icons: ^0.14.3
   flutter_lints: ^6.0.0
   peanut: ^6.0.0
-  objectbox_generator: any
 
 flutter_icons:
   android: true
@@ -260,11 +252,6 @@ flutter_native_splash:
     image_dark: "assets/icon/splash-foreground-dark-2.png"
     icon_background_color: "#FFFFFF"
     icon_background_color_dark: "000000"
-
-objectbox:
-  # Writes objectbox-model.json and objectbox.g.dart to lib/generated
-  # This helps separate generated code from handwritten code.
-  output_dir: generated
 
 #   flutter_test:
 #     sdk: flutter

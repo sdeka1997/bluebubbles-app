@@ -9,7 +9,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 // (needed when generating objectbox model code)
 // ignore: unnecessary_import
-import 'package:objectbox/objectbox.dart';
 import 'package:bluebubbles/database/io/relations.dart' show RelList;
 import 'package:bluebubbles/models/models.dart' show HandleLookupKey;
 
@@ -47,11 +46,9 @@ List<Handle> adoptServerRowIds(List<(Handle, int)> reported, List<Handle> holder
   return changed.values.toList();
 }
 
-@Entity()
 class Handle {
   int? id;
   int? originalROWID;
-  @Unique()
   String uniqueAddressAndService;
   String address;
   String? formattedAddress;
@@ -64,13 +61,10 @@ class Handle {
 
   // N:M Relationship to ContactV2 (new contact service)
   // This is a backlink - ContactV2 owns the relationship
-  @Backlink('handles')
   final contactsV2 = RelList<ContactV2>();
 
-  @Transient()
   Widget? _fakeAvatar;
 
-  @Transient()
   Widget get fakeAvatar {
     if (_fakeAvatar != null) return _fakeAvatar!;
     // Pick a random background color from the hex list: randomAvatarBackgroundColors
@@ -86,7 +80,6 @@ class Handle {
     return _fakeAvatar!;
   }
 
-  @Transient()
   String get displayName {
     if (address.startsWith("urn:biz")) return "Business";
     if (!kIsWeb && contactsV2.isNotEmpty) {
@@ -107,7 +100,6 @@ class Handle {
     return address.contains("@") ? address : (formattedAddress ?? formatPhoneNumber(address));
   }
 
-  @Transient()
   String get reactionDisplayName {
     if (address.startsWith("urn:biz")) return "Business";
     if (!kIsWeb && contactsV2.isNotEmpty) {
@@ -124,12 +116,10 @@ class Handle {
     return address.contains("@") ? address : (formattedAddress ?? address);
   }
 
-  @Transient()
   String get shortName {
     return contactsV2.isNotEmpty ? reactionDisplayName.firstWord : reactionDisplayName;
   }
 
-  @Transient()
   String? get initials {
     if (address.startsWith("urn:biz")) return null;
 

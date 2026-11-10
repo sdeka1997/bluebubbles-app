@@ -16,7 +16,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
   maps_launcher
   media_kit_libs_linux
   media_kit_video
-  objectbox_flutter_libs
   pasteboard
   printing
   record_linux

@@ -14,7 +14,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart' hide Condition;
 // (needed when generating objectbox model code)
 // ignore: unnecessary_import
-import 'package:objectbox/objectbox.dart';
 import 'package:bluebubbles/database/io/relations.dart' show Rel, RelList;
 
 /// Whether a saved message's sender should be set to [resolved].
@@ -29,13 +28,10 @@ bool shouldLinkSender({required Handle? linked, required Handle? resolved, requi
   return fromPayload && linked.uniqueAddressAndService != resolved.uniqueAddressAndService;
 }
 
-@Entity()
 class Message {
   int? id;
   int? originalROWID;
 
-  @Index(type: IndexType.value)
-  @Unique()
   String? guid;
 
   int? handleId;
@@ -47,7 +43,6 @@ class Message {
   /// The service Messages sent this message over (iMessage, SMS or RCS).
   String? service;
 
-  @Index()
   DateTime? dateCreated;
 
   bool? isFromMe;
@@ -62,7 +57,6 @@ class Message {
 
   /// The message this reaction or reply belongs to. Indexed: every chat page looks up its
   /// messages' reactions by it, which otherwise reads every message on the phone.
-  @Index(type: IndexType.hash)
   String? associatedMessageGuid;
   int? associatedMessagePart;
   String? associatedMessageType;
@@ -86,11 +80,9 @@ class Message {
 
   /// The message a reaction points at, when the store loaded it
   /// ([MessagingStore.fillLinkedMessages]); its preview text reads this.
-  @Transient()
   Message? reactionTarget;
 
   /// The handle [otherHandle] names (added/removed person), when loaded.
-  @Transient()
   Handle? otherParticipant;
   bool? bigEmoji;
   List<AttributedBody> attributedBody;
@@ -131,7 +123,6 @@ class Message {
   /// True when this message has at least one retracted part.
   bool get hasUnsentParts => dateEdited != null && retractedParts.isNotEmpty;
 
-  @Backlink('message')
   final dbAttachments = RelList<Attachment>();
 
   final chat = Rel<Chat>();
@@ -151,30 +142,22 @@ class Message {
   String? get dbMetadata => metadata == null ? null : jsonEncode(metadata);
   set dbMetadata(String? json) => metadata = json == null ? null : jsonDecode(json) as Map<String, dynamic>;
 
-  @Transient()
   bool get isKeptAudio => itemType == 5 && subject != null;
 
   // It's outgoing from this device is the guid starts with "temp" and isFromMe is true.
   // A temp GUID is only assigned to outgoing messages before they are sent to the server.
-  @Transient()
   bool get isSending => isFromMe == true && guid != null && guid!.startsWith("temp");
 
-  @Transient()
   bool get isSticker => associatedMessageType == "sticker" && associatedMessageGuid != null;
 
-  @Transient()
   bool get isNameChange => itemType == 2;
 
-  @Transient()
   bool get isGroupPhotoEvent => itemType == 3 && (groupActionType ?? 0) > 0;
 
-  @Transient()
   bool get isGroupPhotoChanged => itemType == 3 && groupActionType == 1;
 
-  @Transient()
   bool get isGroupPhotoRemoved => itemType == 3 && groupActionType == 2;
 
-  @Transient()
   bool get isReply => threadOriginatorGuid != null;
 
   Message({
