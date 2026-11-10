@@ -8,18 +8,9 @@ import 'package:bluebubbles/database/sqlite/app_database.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
-import 'package:drift/isolate.dart' show DriftRemoteException;
 import 'package:flutter_test/flutter_test.dart';
 
 const _counterKey = 'contention_counter';
-
-/// SQLite's error code for [e]; a Db.file connection runs on a background
-/// isolate, so a statement sent straight to its AppDatabase fails wrapped.
-int? _sqliteCode(Object e) => switch (e) {
-      SqliteException() => e.extendedResultCode,
-      DriftRemoteException(remoteCause: final SqliteException cause) => cause.extendedResultCode,
-      _ => null,
-    };
 
 Future<int> _readCounter(AppDatabase database) async {
   final row = await database
@@ -63,11 +54,9 @@ Future<void> _stressWorker((SendPort, String, int, bool) args) async {
       } else {
         await _incrementDeferred(db.database, hold: const Duration(milliseconds: 1));
       }
-    } catch (e) {
-      final code = _sqliteCode(e);
-      if (code == null) rethrow;
+    } on SqliteException catch (e) {
       failures++;
-      firstCode ??= code;
+      firstCode ??= e.extendedResultCode;
     }
   }
   await db.close();
@@ -99,10 +88,8 @@ Future<void> _raceWorker((SendPort, String, bool) args) async {
       await db.database.transaction(body);
     }
     reply.send(('done', 0, clock.elapsedMilliseconds));
-  } catch (e) {
-    final code = _sqliteCode(e);
-    if (code == null) rethrow;
-    reply.send(('done', code, clock.elapsedMilliseconds));
+  } on SqliteException catch (e) {
+    reply.send(('done', e.extendedResultCode, clock.elapsedMilliseconds));
   } finally {
     await db.close();
     await next.cancel();

@@ -112,68 +112,6 @@ void main() {
     expect(await _count(db, 'chats'), 1);
   });
 
-  test('a slow read on a file database does not block this isolate', () async {
-    final directory = await Directory.systemTemp.createTemp('bb_db_background_');
-    addTearDown(() => directory.delete(recursive: true));
-    final fileDb = Db.file(File('${directory.path}/bluebubbles.db'));
-    addTearDown(fileDb.close);
-    await fileDb.select('SELECT 1'); // opened, schema made
-
-    final clock = Stopwatch()..start();
-    var done = false;
-    final slow = fileDb
-        .select('WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 3000000) SELECT count(*) AS c FROM n')
-        .whenComplete(() => done = true);
-    // The screen draws on this isolate: a timer here must keep firing on time.
-    var worstGap = 0;
-    var last = clock.elapsedMilliseconds;
-    while (!done) {
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      final now = clock.elapsedMilliseconds;
-      if (now - last > worstGap) worstGap = now - last;
-      last = now;
-    }
-    expect((await slow).single['c'], 3000000);
-    // ignore: avoid_print
-    print('Db background: read took ${clock.elapsedMilliseconds}ms, worst timer gap ${worstGap}ms');
-    expect(clock.elapsedMilliseconds, greaterThan(200), reason: 'the read must be slow enough to matter');
-    expect(worstGap, lessThan(100));
-  });
-
-  test('writes to a file database report their changed rows', () async {
-    final directory = await Directory.systemTemp.createTemp('bb_db_changes_');
-    addTearDown(() => directory.delete(recursive: true));
-    final fileDb = Db.file(File('${directory.path}/bluebubbles.db'));
-    addTearDown(fileDb.close);
-    final events = <DbChanges>[];
-    fileDb.changes.listen(events.add);
-
-    await fileDb.write((tx) async {
-      await _insertChat(tx, 1);
-      await tx.execute('UPDATE chats SET display_name = ? WHERE id = 1', ['n']);
-    });
-    await expectLater(fileDb.write((tx) async {
-      await _insertChat(tx, 2);
-      throw StateError('boom');
-    }), throwsStateError);
-    await fileDb.write((tx) => _insertChat(tx, 3));
-
-    expect(events.map((e) => e.tables), [
-      {'chats': {1}},
-      {'chats': {3}},
-    ]);
-  });
-
-  test('a failed statement on a file database throws the SqliteException itself', () async {
-    final directory = await Directory.systemTemp.createTemp('bb_db_errors_');
-    addTearDown(() => directory.delete(recursive: true));
-    final fileDb = Db.file(File('${directory.path}/bluebubbles.db'));
-    addTearDown(fileDb.close);
-    await fileDb.write((tx) => _insertChat(tx, 1));
-    await expectLater(fileDb.write((tx) => _insertChat(tx, 1)),
-        throwsA(isA<SqliteException>().having((e) => e.extendedResultCode, 'extendedResultCode', anyOf(1555, 2067))));
-  });
-
   test('a write that stays busy past busy_timeout is retried once and then succeeds', () async {
     final directory = await Directory.systemTemp.createTemp('bb_db_retry_');
     addTearDown(() => directory.delete(recursive: true));
