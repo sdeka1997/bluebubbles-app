@@ -46,6 +46,9 @@ class _GradientBackgroundState extends CustomState<GradientBackground, void, Con
 
   @override
   void dispose() {
+    // Left registered, the binding keeps this background, its controller and
+    // the whole closed chat screen alive.
+    WidgetsBinding.instance.removeObserver(this);
     _resizeDebounce?.cancel();
     super.dispose();
   }
