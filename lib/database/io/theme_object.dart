@@ -1,6 +1,5 @@
 import 'dart:core';
 
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:flutter/foundation.dart';
@@ -56,16 +55,6 @@ class ThemeObject {
         ThemeEntry(name: ThemeColors.BackgroundColor, color: data!.colorScheme.surface, isFont: false),
         ThemeEntry(name: ThemeColors.PrimaryColor, color: data!.primaryColor, isFont: false),
       ];
-
-  static List<ThemeObject> getThemes() {
-    final results = Database.themeObjects.getAll();
-    final list = <ThemeObject>[];
-    if (results.isNotEmpty) {
-      final existing = list.map((e) => e.name);
-      list.addAll(results.where((element) => !existing.contains(element.name)).map((e) => e..fetchData()));
-    }
-    return list;
-  }
 
   List<ThemeEntry> fetchData() {
     if (isPreset && !name!.contains("Music")) {

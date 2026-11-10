@@ -24,4 +24,14 @@ Conditional imports resolve the correct implementation at compile time.
 After editing entities in `io/`: `dart run build_runner build`
 
 ## Initialization
-`database.dart` — ObjectBox Store init with `_initDatabaseMobile` / `_initDatabaseDesktop` platform paths.
+`database.dart` — `Database.init` opens (or creates) `bluebubbles.db` through
+`sqlite/storage.dart` (`openStorage`) as this isolate's `MessagingStore`, loads
+the themes (`store/sqlite/theme_store.dart`) and seeds the presets. The
+`objectbox/` folder of builds before SQLite is never opened; it stays on disk
+for a rollback.
+
+## Storage
+- `sqlite/` — `Db` (the connection), the drift schema (`app_database.dart`) and
+  one repository per table group.
+- `store/messaging_store.dart` — `MessagingStore`, everything the Actions and
+  Interfaces read and write; its parts are the mixins in `store/sqlite/`.

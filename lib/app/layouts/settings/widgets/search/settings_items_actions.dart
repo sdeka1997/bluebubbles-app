@@ -110,7 +110,7 @@ class SettingsItemsActions {
   /// `PrefsSvc.*` category, so running it after would silently discard the
   /// freshly-written defaults (including `finishedSetup`).
   static Future<void> resetApp() async {
-    Database.reset();
+    await Database.reset();
     await FilesystemSvc.deleteCacheDirectories();
     SocketSvc.forgetConnection();
 

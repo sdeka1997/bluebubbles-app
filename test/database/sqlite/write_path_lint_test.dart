@@ -13,17 +13,12 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// `lib/database/sqlite/` files allowed to talk to drift directly: Db itself,
-/// the schema, and the copy with its startup state machine (one isolate,
-/// ObjectBox to a file no one else opens until it is ready, under a lock).
+/// `lib/database/sqlite/` files allowed to talk to drift directly: Db itself
+/// and the schema.
 const _allowed = {
   'db.dart',
   'app_database.dart',
   'app_database.g.dart',
-  'objectbox_sqlite_copy.dart',
-  'sqlite_copy_check.dart',
-  'storage_state.dart',
-  'sqlite_chat_repository.dart',
 };
 
 /// Where SQLite writes happen or will (switch plan commits 4-6): no drift

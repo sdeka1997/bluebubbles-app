@@ -372,22 +372,15 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
   }
 
   /// Keyset paging on (sort_at, id) through [MessageRepo]: its timeline
-  /// query already leaves out reactions and senders this chat can't place
-  /// (so [participants] and [loadedRows] are not needed).
+  /// query already leaves out reactions and senders this chat can't place.
   @override
-  Future<MessagePage> olderMessagePage(
-    int chatId,
-    List<Handle> participants, {
-    MessagePageCursor? after,
-    required int loadedRows,
-    required int limit,
-  }) async {
+  Future<MessagePage> olderMessagePage(int chatId, {MessagePageCursor? after, required int limit}) async {
     final repo = MessageRepo(db);
     final key = after?.key;
     final page = key == null ? await repo.newest([chatId], limit: limit) : await repo.olderThan([chatId], key, limit: limit);
     return (
       ids: [for (final m in page) m.id!],
-      next: page.isEmpty ? after : MessagePageCursor.sqlite(MessageKey.of(page.last)),
+      next: page.isEmpty ? after : MessagePageCursor(MessageKey.of(page.last)),
     );
   }
 
@@ -401,7 +394,7 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
     final page = await repo.around([chatId], MessageKey.of(target), before: limit, after: limit);
     return (
       ids: [for (final m in page) m.id!],
-      next: page.isEmpty ? null : MessagePageCursor.sqlite(MessageKey.of(page.last)),
+      next: page.isEmpty ? null : MessagePageCursor(MessageKey.of(page.last)),
     );
   }
 

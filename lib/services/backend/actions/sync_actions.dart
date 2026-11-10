@@ -39,7 +39,7 @@ class SyncActions {
   static Future<List<int>> performIncrementalSync(dynamic data) async {
     try {
       final incrementalSyncManager =
-          IncrementalSyncManager.resumingFrom(SyncMarker.of(SettingsSvc.settings, MessagingStore.current.kind));
+          IncrementalSyncManager.resumingFrom(SyncMarker(SettingsSvc.settings));
 
       await incrementalSyncManager.start();
       return incrementalSyncManager.latestMessageIdPerChat.values.toList();

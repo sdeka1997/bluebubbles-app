@@ -1,10 +1,5 @@
 // Runs a test body against the MessagingStore on a fresh in-memory SQLite Db
-// per test. ObjectBoxFixture remains only for the rollback drill
-// (incremental_sync_marker_test) until ObjectBox is removed. Not a test file
-// itself.
-import 'dart:io';
-
-import 'package:bluebubbles/database/database.dart';
+// per test, with seeding helpers. Not a test file itself.
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
@@ -16,11 +11,8 @@ import 'package:get_it/get_it.dart';
 /// One store under test, with store-neutral seeding. Seeded entities come back
 /// with their local ids set.
 abstract class StoreFixture {
-  ActiveStore get kind;
   MessagingStore get store;
-
-  /// The SQLite file of the SQLite fixture (null on ObjectBox).
-  Db? get db => null;
+  Db get db;
 
   Future<Handle> handle(String address, {String service = 'iMessage', int? rowId, String? color});
 
@@ -98,120 +90,18 @@ Message _message(
       originalROWID: rowId,
     );
 
-class ObjectBoxFixture extends StoreFixture {
-  ObjectBoxFixture(this.obx);
-
-  final Store obx;
-
-  @override
-  ActiveStore get kind => ActiveStore.objectBox;
-
-  @override
-  final MessagingStore store = MessagingStore.forStore(ActiveStore.objectBox);
-
-  @override
-  Future<Handle> handle(String address, {String service = 'iMessage', int? rowId, String? color}) async {
-    final h = Handle(address: address, service: service, originalROWID: rowId, color: color);
-    obx.box<Handle>().put(h);
-    return h;
-  }
-
-  @override
-  Future<Chat> chat(
-    String guid, {
-    List<Handle> handles = const [],
-    String? threadKey,
-    DateTime? deleted,
-    bool unread = false,
-    String? groupTitle,
-    String? identifier,
-  }) async {
-    final c = Chat(guid: guid, threadKey: threadKey, dateDeleted: deleted, hasUnreadMessage: unread)
-      ..latestGroupTitle = groupTitle
-      ..chatIdentifier = identifier
-      ..handles.addAll(handles);
-    obx.box<Chat>().put(c);
-    return c;
-  }
-
-  @override
-  Future<Message> message(String guid, Chat? chat, int ms,
-      {Handle? from,
-      int? handleId,
-      String? reactsTo,
-      String? threadOriginator,
-      String? appleChatGuid,
-      String? service,
-      bool deleted = false,
-      int? itemType,
-      String? text,
-      int? rowId,
-      int? deliveredMs,
-      void Function(Message m)? edit}) async {
-    final m = _message(
-      guid,
-      ms,
-      from,
-      handleId,
-      reactsTo,
-      threadOriginator,
-      appleChatGuid,
-      service,
-      deleted,
-      itemType,
-      text,
-      rowId,
-      deliveredMs,
-    );
-    if (chat != null) m.chat.target = chat;
-    if (from != null) m.handleRelation.target = from;
-    edit?.call(m);
-    obx.box<Message>().put(m);
-    return m;
-  }
-
-  @override
-  Future<Attachment> attachment(String guid, Message? message, {String? mimeType, void Function(Attachment)? edit}) async {
-    final a = Attachment(guid: guid, mimeType: mimeType ?? 'image/jpeg', transferName: '$guid.jpg', isOutgoing: false);
-    edit?.call(a);
-    if (message != null) a.message.target = message;
-    obx.box<Attachment>().put(a);
-    return a;
-  }
-
-  @override
-  Future<ContactV2> contact(String nativeId, String name, {List<Handle> handles = const []}) async {
-    final c = ContactV2(nativeContactId: nativeId, displayName: name)..handles.addAll(handles);
-    obx.box<ContactV2>().put(c);
-    return c;
-  }
-
-  @override
-  Future<void> setLatest(Chat chat, Message? message) async {
-    chat.dbLatestMessage.target = message;
-    chat.dbOnlyLatestMessageDate = message?.dateCreated;
-    obx.box<Chat>().put(chat);
-  }
-
-  @override
-  Future<void> reset() async => _emptyObjectBox(obx);
-}
-
 class SqliteFixture extends StoreFixture {
   @override
   Db db = Db.memory();
 
   @override
-  ActiveStore get kind => ActiveStore.sqlite;
-
-  @override
-  late MessagingStore store = MessagingStore.forStore(ActiveStore.sqlite, db: db);
+  late MessagingStore store = MessagingStore(db);
 
   @override
   Future<void> reset() async {
     await db.close();
     db = Db.memory();
-    store = MessagingStore.forStore(ActiveStore.sqlite, db: db);
+    store = MessagingStore(db);
     MessagingStore.use(store);
   }
 
@@ -310,47 +200,6 @@ class SqliteFixture extends StoreFixture {
       [message?.id, message?.dateCreated?.microsecondsSinceEpoch, chat.id]));
 }
 
-Directory? _obxDir;
-Store? _obx;
-
-/// Opens this test file's ObjectBox store once and points `Database.*` at it.
-Store _openObjectBox() {
-  if (_obx != null) return _obx!;
-  _obxDir = Directory.systemTemp.createTempSync('bb_store_');
-  final store = _obx = Store(getObjectBoxModel(), directory: _obxDir!.path);
-  Database.store = store;
-  Database.attachments = store.box<Attachment>();
-  Database.chats = store.box<Chat>();
-  Database.contactsV2 = store.box<ContactV2>();
-  Database.customGroups = store.box<CustomGroup>();
-  Database.handles = store.box<Handle>();
-  Database.messages = store.box<Message>();
-  return store;
-}
-
-void _emptyObjectBox(Store store) {
-  store.runInTransaction(TxMode.write, () {
-    store.box<Attachment>().removeAll();
-    store.box<Message>().removeAll();
-    store.box<CustomGroup>().removeAll();
-    store.box<Chat>().removeAll();
-    store.box<ContactV2>().removeAll();
-    store.box<Handle>().removeAll();
-  });
-}
-
-/// An empty ObjectBox store for a test that needs both stores at once (the
-/// rollback drill); `Database.*` points at it.
-ObjectBoxFixture objectBoxFixture() => ObjectBoxFixture(_openObjectBox()..let(_emptyObjectBox));
-
-/// Closes what [objectBoxFixture] opened; for tearDownAll.
-void closeObjectBox() {
-  _obx?.close();
-  _obx = null;
-  _obxDir?.deleteSync(recursive: true);
-  _obxDir = null;
-}
-
 /// Defines [body]'s tests over a fresh in-memory SQLite store per test, in
 /// `fixture()`, which is also `MessagingStore.current` while it runs. Each call
 /// is its own group, so a file may call it more than once.
@@ -371,8 +220,4 @@ void storeTests(void Function(SqliteFixture Function() fixture) body) {
     });
     body(() => fixture);
   });
-}
-
-extension _Let<T> on T {
-  void let(void Function(T) f) => f(this);
 }

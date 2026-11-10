@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/backend/interfaces/handle_interface.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
@@ -46,17 +45,6 @@ List<Handle> adoptServerRowIds(List<(Handle, int)> reported, List<Handle> holder
     changed[holder.uniqueAddressAndService] = holder;
   }
   return changed.values.toList();
-}
-
-/// Runs [adoptServerRowIds] against the handles in [box] holding a reported
-/// ROWID and saves every handle it changed. Must run inside a write transaction.
-void adoptServerRowIdsInBox(Box<Handle> box, List<(Handle, int)> reported) {
-  if (reported.isEmpty) return;
-  final query = box.query(Handle_.originalROWID.oneOf(reported.map((r) => r.$2).toList())).build();
-  final holders = query.find();
-  query.close();
-  final changed = adoptServerRowIds(reported, holders);
-  if (changed.isNotEmpty) box.putMany(changed);
 }
 
 @Entity()
@@ -214,33 +202,6 @@ class Handle {
     }
   }
 
-  /// Save a single handle - prefer [bulkSave] for multiple handles rather
-  /// than iterating through them
-  Handle save({bool updateColor = false, matchOnOriginalROWID = false}) {
-    if (kIsWeb) return this;
-    Database.runInTransaction(TxMode.write, () {
-      Handle? existing;
-      if (matchOnOriginalROWID) {
-        existing = Handle.findOne(originalROWID: originalROWID);
-      } else {
-        existing = Handle.findOne(addressAndService: HandleLookupKey(address, service));
-      }
-
-      if (existing != null) {
-        id = existing.id;
-        originalROWID ??= existing.originalROWID;
-      }
-      // Contact matching is now handled automatically by ContactServiceV2
-      if (!updateColor) {
-        color = existing?.color ?? color;
-      }
-      try {
-        id = Database.handles.put(this);
-      } on UniqueViolationException catch (_) {}
-    });
-    return this;
-  }
-
   /// Save a single handle asynchronously (non-blocking)
   Future<Handle> saveAsync({bool updateColor = false, matchOnOriginalROWID = false}) async {
     if (kIsWeb) return this;
@@ -257,34 +218,6 @@ class Handle {
     originalROWID = savedHandle.originalROWID;
 
     return this;
-  }
-
-  /// Save a list of handles
-  static List<Handle> bulkSave(List<Handle> handles, {matchOnOriginalROWID = false}) {
-    Database.runInTransaction(TxMode.write, () {
-      /// Match existing to the handles to save, where possible
-      for (Handle h in handles) {
-        Handle? existing;
-        if (matchOnOriginalROWID) {
-          existing = Handle.findOne(originalROWID: h.originalROWID);
-        } else {
-          existing = Handle.findOne(addressAndService: HandleLookupKey(h.address, h.service));
-        }
-
-        if (existing != null) {
-          h.id = existing.id;
-          h.originalROWID ??= existing.originalROWID;
-        }
-        // Contact matching is now handled automatically by ContactServiceV2
-      }
-
-      List<int> insertedIds = Database.handles.putMany(handles);
-      for (int i = 0; i < insertedIds.length; i++) {
-        handles[i].id = insertedIds[i];
-      }
-    });
-
-    return handles;
   }
 
   /// Save a list of handles asynchronously (non-blocking)
@@ -309,21 +242,6 @@ class Handle {
     return handles;
   }
 
-  /// Permanently deletes a handle by its local database [id]. Used by the
-  /// Developer Tools "Handle Auditing" panel to purge orphaned/unrecoverable
-  /// handle records. Does not clean up references from other entities (Chat
-  /// participants, Message.handleRelation) — those simply resolve to null
-  /// afterwards, matching how deleteChat's handle cleanup already behaves.
-  ///
-  /// A single-row delete is cheap enough to run directly on the calling
-  /// thread — no need to round-trip through the isolate for this.
-  static void delete(int id) {
-    if (kIsWeb) return;
-    Database.runInTransaction(TxMode.write, () {
-      Database.handles.remove(id);
-    });
-  }
-
   Handle updateDefaultPhone(String newPhone) {
     defaultPhone = newPhone;
     unawaited(saveAsync());
@@ -334,29 +252,6 @@ class Handle {
     defaultEmail = newEmail;
     unawaited(saveAsync());
     return this;
-  }
-
-  static Handle? findOne({int? id, int? originalROWID, HandleLookupKey? addressAndService}) {
-    if (kIsWeb || id == 0) return null;
-    if (id != null) {
-      final handle = Database.handles.get(id) ?? Handle.findOne(originalROWID: id);
-      return handle;
-    } else if (originalROWID != null) {
-      final query = Database.handles.query(Handle_.originalROWID.equals(originalROWID)).build();
-      query.limit = 1;
-      final result = query.findFirst();
-      query.close();
-      return result;
-    } else if (addressAndService != null) {
-      final query = Database.handles
-          .query(Handle_.address.equals(addressAndService.address) & Handle_.service.equals(addressAndService.service))
-          .build();
-      query.limit = 1;
-      final result = query.findFirst();
-      query.close();
-      return result;
-    }
-    return null;
   }
 
   static Future<Handle?> findOneAsync({int? id, int? originalROWID, HandleLookupKey? addressAndService}) async {
@@ -384,21 +279,6 @@ class Handle {
     }
 
     return handle1;
-  }
-
-  /// Find a list of handles by the specified condition, or return all handles
-  /// when no condition is specified
-  static List<Handle> find({Condition<Handle>? cond}) {
-    final query = Database.handles.query(cond).build();
-    return query.find();
-  }
-
-  static Future<List<Handle>> findAsync({Condition<Handle>? cond}) async {
-    if (kIsWeb) return [];
-
-    // Note: For now, we don't serialize conditions for cross-isolate communication
-    // This will return all handles. Future enhancement can add condition serialization.
-    return await HandleInterface.findHandlesAsync();
   }
 
   Map<String, dynamic> toMap() {

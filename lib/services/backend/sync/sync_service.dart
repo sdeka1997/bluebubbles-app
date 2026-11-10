@@ -73,9 +73,8 @@ class SyncService {
 
     // Set the last sync date (for incremental, even though this isn't incremental)
     // We won't try an incremental sync until the last (full) sync date is set
-    final marker = SyncMarker.of(SettingsSvc.settings, MessagingStore.current.kind);
-    marker.timestamp = DateTime.now().millisecondsSinceEpoch;
-    await SettingsSvc.settings.saveOneAsync(marker.keys.timestamp);
+    SyncMarker(SettingsSvc.settings).timestamp = DateTime.now().millisecondsSinceEpoch;
+    await SettingsSvc.settings.saveOneAsync(SyncMarkerKeys.timestamp);
     await _manager!.start();
   }
 

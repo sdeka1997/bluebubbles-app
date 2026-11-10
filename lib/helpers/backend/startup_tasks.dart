@@ -6,8 +6,6 @@ import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/sqlite/db_change_events.dart';
-import 'package:bluebubbles/database/sqlite/storage_state.dart';
-import 'package:bluebubbles/app/layouts/startup/storage_copy_screen.dart';
 import 'package:bluebubbles/services/isolates/global_isolate.dart';
 import 'package:bluebubbles/services/isolates/incremental_sync_isolate.dart';
 import 'package:bluebubbles/services/backend/interfaces/prefs_interface.dart';
@@ -197,10 +195,7 @@ class StartupTasks {
     // The next thing we need to do is initialize the database.
     // If the database is not initialized, we cannot do anything.
     await _step("Opening database...");
-    // A finished setup only: before it, both stores were just emptied and the copy is instant.
-    if (SettingsSvc.settings.finishedSetup.value) StorageStartup.onWait = () => runApp(const StorageCopyScreen());
     await Database.init();
-    StorageStartup.onWait = null;
     Logger.info("Database initialized");
     MemTrace.mark('database opened');
     startupInteropReady.complete();
@@ -217,10 +212,10 @@ class StartupTasks {
     DbChangeEvents.main.listenTo(GetIt.I<GlobalIsolate>());
     DbChangeEvents.main.listenTo(GetIt.I<IncrementalSyncIsolate>());
 
-    // Load FCM data into settings from the database
+    // Load FCM data into settings
     // We only need to do this for the main startup
     Logger.info("Loading FCM data...");
-    SettingsSvc.loadFcmDataFromDatabase();
+    SettingsSvc.loadFcmData();
 
     Logger.info("Initializing HttpService...");
     await _initHttpService();
@@ -337,7 +332,6 @@ class StartupTasks {
       binaryMessenger: messenger,
     );
 
-    await StorageStartup.waitUntilUsable();
     Logger.info("Initializing database...");
     await Database.init();
     Logger.info("Database initialized");
@@ -369,7 +363,6 @@ class StartupTasks {
       binaryMessenger: messenger,
     );
 
-    await StorageStartup.waitUntilUsable();
     Logger.info("Initializing database...");
     await Database.init();
     Logger.info("Database initialized");
@@ -399,7 +392,6 @@ class StartupTasks {
       isBubble: false,
     );
 
-    StorageStartup.checkWorker();
     Logger.info("Initializing database...");
     await Database.init();
     Logger.info("Database initialized");

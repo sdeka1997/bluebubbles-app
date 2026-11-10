@@ -1,7 +1,6 @@
-// Switch plan item 10 (commit 9): ObjectBox's messaging boxes and query fields
-// are used only by the ObjectBox layer, the copy into SQLite and the startup
-// check that judges the copy against ObjectBox. Everything else reaches
-// messages through MessagingStore, so the store startup selects is the one used.
+// Nothing but the entity files (whose ObjectBox annotations S5 step 3 removes)
+// and the generated code touches ObjectBox; messages are reached through
+// MessagingStore.
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -12,20 +11,13 @@ final objectBox = RegExp(r"package:objectbox/|\bDatabase\.(messages|chats|handle
 const allowedDirs = [
   'lib/database/io/',
   'lib/database/html/',
-  'lib/database/store/objectbox/',
-  'lib/database/migrations/',
   'lib/generated/',
 ];
 
-const allowedFiles = [
-  'lib/database/database.dart',
-  'lib/database/sqlite/objectbox_sqlite_copy.dart',
-  'lib/database/sqlite/sqlite_copy_check.dart',
-  'lib/database/sqlite/storage_state.dart',
-];
+const allowedFiles = <String>[];
 
 void main() {
-  test('only the ObjectBox layer, the copy and the startup check touch the messaging boxes', () {
+  test('only the entity files touch ObjectBox', () {
     final hits = <String>[];
     for (final f in Directory('lib').listSync(recursive: true).whereType<File>()) {
       final path = f.path.replaceAll('\\', '/');

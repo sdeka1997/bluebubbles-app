@@ -4,7 +4,6 @@ import 'dart:math';
 
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/app/state/message_state.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
@@ -326,77 +325,6 @@ class Message {
     );
   }
 
-  /// Save a single message - prefer [bulkSave] for multiple messages rather
-  /// than iterating through them
-  Message save({Chat? chat, bool updateIsBookmarked = false}) {
-    if (kIsWeb) return this;
-    Database.runInTransaction(TxMode.write, () {
-      Message? existing = Message.findOne(guid: guid);
-      if (existing != null) {
-        id = existing.id;
-        text ??= existing.text;
-        service ??= existing.service;
-
-        // Phase 2: Preserve the handle relationship from existing message
-        if (existing.handleRelation.hasValue) {
-          handleRelation.target = existing.handleRelation.target;
-        }
-
-        // Preserve the chat relationship from the existing message
-        if (chat == null && !this.chat.hasValue && existing.chat.hasValue) {
-          this.chat.target = existing.chat.target;
-        }
-      }
-
-      // Phase 2: Set up handle relationship if we have a handle
-      if (handle != null && !handleRelation.hasValue) {
-        if (handle!.id != null) {
-          handleRelation.targetId = handle!.id!;
-        } else if (handleId != null) {
-          final foundHandle = Handle.findOne(originalROWID: handleId);
-          if (foundHandle != null) {
-            handleRelation.target = foundHandle;
-          }
-        }
-      }
-      // Save associated messages or the original message (depending on whether
-      // this message is a reaction or regular message
-      if (associatedMessageType != null && associatedMessageGuid != null) {
-        Message? associatedMessage = Message.findOne(guid: associatedMessageGuid);
-        if (associatedMessage != null) {
-          associatedMessage.hasReactions = true;
-          associatedMessage.save();
-        }
-      } else if (!hasReactions) {
-        Message? reaction = Message.findOne(associatedMessageGuid: guid);
-        if (reaction != null) {
-          hasReactions = true;
-        }
-      }
-      if (!updateIsBookmarked) {
-        isBookmarked = existing?.isBookmarked ?? isBookmarked;
-      }
-
-      try {
-        if (chat != null) this.chat.target = chat;
-
-        // CRITICAL: Preserve dbAttachments ToMany relationship
-        // ObjectBox will clear ToMany relationships on put() if not explicitly preserved
-        final attachmentsToPreserve = List<Attachment>.from(dbAttachments);
-
-        id = Database.messages.put(this);
-
-        // Restore attachments after put
-        if (attachmentsToPreserve.isNotEmpty) {
-          dbAttachments.clear();
-          dbAttachments.addAll(attachmentsToPreserve);
-          dbAttachments.applyToDb();
-        }
-      } on UniqueViolationException catch (_) {}
-    });
-    return this;
-  }
-
   Future<Message> saveAsync({Chat? chat, bool updateIsBookmarked = false}) async {
     if (kIsWeb) return this;
 
@@ -468,24 +396,6 @@ class Message {
     return handle;
   }
 
-  static Message? findOne({String? guid, String? associatedMessageGuid}) {
-    if (kIsWeb) return null;
-    if (guid != null) {
-      final query = Database.messages.query(Message_.guid.equals(guid)).build();
-      query.limit = 1;
-      final result = query.findFirst();
-      query.close();
-      return result;
-    } else if (associatedMessageGuid != null) {
-      final query = Database.messages.query(Message_.associatedMessageGuid.equals(associatedMessageGuid)).build();
-      query.limit = 1;
-      final result = query.findFirst();
-      query.close();
-      return result;
-    }
-    return null;
-  }
-
   static Future<Message?> findOneAsync({String? guid, String? associatedMessageGuid}) async {
     if (kIsWeb) return null;
 
@@ -495,23 +405,6 @@ class Message {
     );
 
     return result;
-  }
-
-  /// Find a list of messages by the specified condition, or return all messages
-  /// when no condition is specified
-  static List<Message> find({Condition<Message>? cond}) {
-    final query = Database.messages.query(cond).build();
-    return query.find();
-  }
-
-  static Future<List<Message>> findAsync({Condition<Message>? cond}) async {
-    if (kIsWeb) return [];
-
-    // Note: For now, we pass null for conditionJson since serializing ObjectBox Condition
-    // is complex. This will return all messages. Future enhancement can add condition serialization.
-    return await MessageInterface.findAsync(
-      conditionJson: null,
-    );
   }
 
   /// Delete a message and remove all instances of that message in the DB

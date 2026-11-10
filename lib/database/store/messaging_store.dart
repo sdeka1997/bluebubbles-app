@@ -1,22 +1,26 @@
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:bluebubbles/database/sqlite/message_repo.dart' show MessageKey;
-import 'package:bluebubbles/database/store/objectbox/objectbox_messaging_store.dart';
-import 'package:bluebubbles/database/store/sqlite/sqlite_messaging_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_attachment_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_chat_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_contact_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_custom_group_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_handle_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_message_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_send_target_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_storage_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_sync_helper_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_sync_store.dart';
 import 'package:bluebubbles/services/backend/descriptors/attachment_query_descriptor.dart';
-import 'package:bluebubbles/services/backend/sync/sync_marker.dart';
 import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_models.dart';
 import 'package:flutter/foundation.dart';
 
-export 'package:bluebubbles/services/backend/sync/sync_marker.dart' show ActiveStore;
-
-// The messaging data behind the Actions and Interfaces (S2 switch plan,
-// commits 4-6). Two implementations: ObjectBox (the code the Actions ran
-// before, moved verbatim) and SQLite (the repositories in lib/database/sqlite,
-// each former `runInTransaction(TxMode.write)` body one `Db.write`).
+// The messaging data behind the Actions and Interfaces: the repositories in
+// lib/database/sqlite, each write one `Db.write`. The parts below are
+// implemented by the mixins of lib/database/store/sqlite.
 //
-// Reads return entities with their relations usable (ObjectBox lazy-loads
-// them, SQLite fills them). Writes return ids, as the Actions always have.
+// Reads return entities with their relations filled. Writes return ids, as
+// the Actions always have.
 
 /// Contacts (ContactV2Actions, ContactV2Interface).
 class ContactSyncResult {
@@ -47,6 +51,10 @@ abstract interface class ContactStore {
 /// Storage analysis/reset (StorageActions).
 abstract interface class StorageStore {
   Future<Set<String>> storageAttachmentGuids({String? chatGuid, int? beforeMillis});
+
+  /// Deletes every chat, message, attachment, handle, contact and custom group
+  /// (the messaging reset and a full app reset); themes stay.
+  Future<void> clearMessagingData();
 
   /// Resets download/image metadata for the stored attachments in [guids] in one write.
   Future<void> resetStorageAttachments(List<String> guids);
@@ -165,8 +173,7 @@ abstract interface class MessageStore {
   /// [Message.otherParticipant] (with contacts) on [messages] that have one.
   Future<void> fillLinkedMessages(Iterable<Message> messages);
 
-  /// Messages created after [millisecondsSinceEpoch], matching
-  /// MessageActions.getMessages' legacy ObjectBox query.
+  /// Messages created after [millisecondsSinceEpoch] (MessageActions.getMessages).
   Future<List<Message>> messagesCreatedAfter(int millisecondsSinceEpoch);
 
   /// Links every message from server handle [serverHandleId] (not from me) to
@@ -241,8 +248,7 @@ abstract interface class SyncStore {
   /// chats with participants (service twins folded), messages wired to chat
   /// and sender, reactions and attachment flags, attachments, latest
   /// pointers. Returns `messageIds` (every saved message) and `chatIds`
-  /// (chats whose latest pointer moved). On ObjectBox the batch's handles are
-  /// saved in a transaction of their own just before it.
+  /// (chats whose latest pointer moved).
   Future<Map<String, dynamic>> syncBatch(dynamic data);
 
   Future<Chat?> chatById(int id);
@@ -275,26 +281,19 @@ abstract interface class SyncStore {
 }
 
 /// Where the next older page of a chat's timeline starts, sendable between
-/// isolates as [toMap]. SQLite pages by the (sort_at, id) key of the last row
-/// it returned, the order the screen shows (Message.sort), so arrivals,
-/// deletes and late-saved history can't shift a page. ObjectBox can't order
-/// by that without scanning the whole box, so it keeps today's query by
-/// position (see [ChatStore.olderMessagePage]); switch plan commit 9 retires it.
+/// isolates as [toMap]: the (sort_at, id) key of the last row a page returned,
+/// the order the screen shows (Message.sort), so arrivals, deletes and
+/// late-saved history can't shift a page.
 class MessagePageCursor {
-  const MessagePageCursor.objectBox() : key = null;
+  const MessagePageCursor(this.key);
 
-  const MessagePageCursor.sqlite(MessageKey this.key);
+  final MessageKey key;
 
-  final MessageKey? key;
-
-  Map<String, int> toMap() => key == null ? const {} : {'sortAtUs': key!.sortAtUs, 'id': key!.id};
+  Map<String, int> toMap() => {'sortAtUs': key.sortAtUs, 'id': key.id};
 
   static MessagePageCursor? fromMap(Object? map) {
-    if (map is! Map) return null;
-    if (map['sortAtUs'] is int && map['id'] is int) {
-      return MessagePageCursor.sqlite(MessageKey(map['sortAtUs'] as int, map['id'] as int));
-    }
-    return const MessagePageCursor.objectBox();
+    if (map is! Map || map['sortAtUs'] is! int || map['id'] is! int) return null;
+    return MessagePageCursor(MessageKey(map['sortAtUs'] as int, map['id'] as int));
   }
 
   @override
@@ -304,15 +303,14 @@ class MessagePageCursor {
   int get hashCode => key.hashCode;
 
   @override
-  String toString() => 'MessagePageCursor(${key ?? 'by position'})';
+  String toString() => 'MessagePageCursor($key)';
 }
 
 /// One page of a chat's timeline: message ids newest first, and where the next
 /// older page starts ([next] is the request's cursor when nothing came back).
 typedef MessagePage = ({List<int> ids, MessagePageCursor? next});
 
-/// The chat-stats screen's reads for one chat (ChatStatsQueries on ObjectBox,
-/// ChatStatsRepo on SQLite). Timestamps are epoch milliseconds; participants
+/// The chat-stats screen's reads for one chat (ChatStatsRepo). Timestamps are epoch milliseconds; participants
 /// are local handle ids, [kMeParticipantId] for me.
 abstract interface class ChatStatsReader {
   Future<int> messageCountForTier();
@@ -397,19 +395,11 @@ abstract interface class ChatStore {
 
   /// The page of [chatId]'s timeline just older than [after] (the newest page
   /// when null), at most [limit] rows: what scrolling up in a chat loads.
-  /// [loadedRows] is how many rows of the chat the screen holds (messages and
-  /// reactions); only ObjectBox uses it, as today's offset.
-  Future<MessagePage> olderMessagePage(
-    int chatId,
-    List<Handle> participants, {
-    MessagePageCursor? after,
-    required int loadedRows,
-    required int limit,
-  });
+  Future<MessagePage> olderMessagePage(int chatId, {MessagePageCursor? after, required int limit});
 
   /// [limit] messages of [chatId] either side of the message [aroundId] and that
   /// message, newest first: what jumping to a search result loads. [next] is
-  /// where scrolling up continues (on ObjectBox, today's position again).
+  /// where scrolling up continues.
   Future<MessagePage> messagePageAround(int chatId, List<Handle> participants, int aroundId, {required int limit});
 
   /// Messages whose text contains [term] (ASCII letters in either case), newest
@@ -442,10 +432,8 @@ abstract interface class ChatStore {
 
   Future<List<int>> chatPageIds({required int limit, required int offset, required List<int> ids});
 
-  /// Chats as they are written, so the conversation list picks up new ones.
-  /// ObjectBox: the newest live chat each time the count of live chats grows
-  /// (the list's own watch before switch commit 7). SQLite: the chats each
-  /// committed write touched ([DbChangeEvents.main]), read again.
+  /// Chats as they are written, so the conversation list picks up new ones:
+  /// the chats each committed write touched ([DbChangeEvents.main]), read again.
   Stream<List<Chat>> chatsWritten();
 
   /// Every stored chat, deleted ones included.
@@ -475,7 +463,19 @@ abstract interface class ChatStore {
   ChatStatsReader chatStats(Chat chat);
 }
 
-abstract class MessagingStore
+/// The messaging store of this isolate: its connection to `bluebubbles.db`.
+class MessagingStore
+    with
+        SqliteContactStore,
+        SqliteStorageStore,
+        SqliteSendTargetStore,
+        SqliteHandleStore,
+        SqliteCustomGroupStore,
+        SqliteMessageStore,
+        SqliteAttachmentStore,
+        SqliteSyncHelperStore,
+        SqliteSyncStore,
+        SqliteChatStore
     implements
         ContactStore,
         StorageStore,
@@ -487,23 +487,17 @@ abstract class MessagingStore
         SyncHelperStore,
         SyncStore,
         ChatStore {
-  /// Which store this is; picks the sync markers (SyncMarker.of).
-  ActiveStore get kind;
+  MessagingStore(this.db);
 
-  /// The implementation for [store]. [db] is the SQLite file of this isolate.
-  static MessagingStore forStore(ActiveStore store, {Db? db}) => switch (store) {
-        ActiveStore.objectBox => ObjectBoxMessagingStore(),
-        ActiveStore.sqlite => SqliteMessagingStore(db ?? (throw ArgumentError.notNull('db'))),
-      };
+  @override
+  final Db db;
 
   static MessagingStore? _current;
 
-  /// The store of this isolate. ObjectBox until startup selects SQLite (switch
-  /// plan commit 9: `storage_state.dart` decideStorage returns
-  /// ActiveStore.objectBox in every state until then).
-  static MessagingStore get current => _current ??= forStore(ActiveStore.objectBox);
+  /// The store of this isolate, opened by Database.init (openStorage).
+  static MessagingStore get current => _current ?? (throw StateError('MessagingStore used before Database.init'));
 
-  /// Database.init, once per isolate, with the store the startup plan selected.
+  /// Database.init, once per isolate.
   static void select(MessagingStore store) => _current = store;
 
   @visibleForTesting

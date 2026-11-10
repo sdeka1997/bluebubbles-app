@@ -268,10 +268,8 @@ class IncrementalSyncManager extends SyncManager {
     }
   }
 
-  /// The incremental-sync markers of the active store: the ObjectBox keys on
-  /// ObjectBox, the `sqlite*` keys on SQLite (so a rollback to an ObjectBox
-  /// build re-syncs from where that build stopped).
-  SyncMarker get marker => SyncMarker.of(SettingsSvc.settings, MessagingStore.current.kind);
+  /// The incremental-sync markers (SyncMarker).
+  SyncMarker get marker => SyncMarker(SettingsSvc.settings);
 
   /// Persists the settings [keys] (and syncs them to the other isolates).
   Future<void> saveSettings(List<String> keys) => SettingsSvc.settings.saveManyAsync(keys);
@@ -279,7 +277,7 @@ class IncrementalSyncManager extends SyncManager {
   Future<void> saveCatchUpTotal(int total) async {
     final m = marker;
     m.catchUpTotal = total;
-    await saveSettings([m.keys.catchUpTotal]);
+    await saveSettings([SyncMarkerKeys.catchUpTotal]);
   }
 
   /// Saves [rowId] as the bookmark once every message up to it is synced.
@@ -289,7 +287,7 @@ class IncrementalSyncManager extends SyncManager {
     final m = marker;
     if (rowId <= m.rowId) return;
     m.rowId = rowId;
-    await saveSettings([m.keys.rowId]);
+    await saveSettings([SyncMarkerKeys.rowId]);
   }
 
   /// Saves where the next sync starts: the time this one started (or the
@@ -298,7 +296,7 @@ class IncrementalSyncManager extends SyncManager {
     final m = marker;
     // If we have a start timestamp, use the time that our sync started.
     // Otherwise, use the last timestamp we got from the API
-    final toSave = [m.keys.timestamp];
+    final toSave = [SyncMarkerKeys.timestamp];
     if (startTimestamp != null) {
       m.timestamp = syncStartedAt;
     } else if (lastSyncedTimestamp != null) {
@@ -310,7 +308,7 @@ class IncrementalSyncManager extends SyncManager {
     final bookmark = syncBookmark(checkpoint: checkpointRowId, lastSyncedRowId: lastSyncedRowId);
     if (bookmark != null) {
       m.rowId = bookmark;
-      toSave.add(m.keys.rowId);
+      toSave.add(SyncMarkerKeys.rowId);
     }
 
     await saveSettings(toSave);

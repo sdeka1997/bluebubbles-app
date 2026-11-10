@@ -212,9 +212,9 @@ class FilesystemService {
     }
   }
 
-  void deleteDB() {
+  Future<void> deleteDB() async {
     if (kIsWeb) return;
-    Database.reset();
+    await Database.reset();
     // Contacts are now managed by ContactServiceV2 and don't need manual clearing
   }
 

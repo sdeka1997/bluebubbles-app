@@ -81,25 +81,6 @@ void main() {
     expect(store.all().map((r) => r.name), ['Bright White', 'OLED Dark', 'Nord Theme']);
   });
 
-  test('a file with no themes takes the old database rows once', () async {
-    var reads = 0;
-    List<ThemeRow> old() {
-      reads++;
-      return [row('Bright White'), row('Mine', data: 'custom')];
-    }
-
-    final db = Db.file(file);
-    final store = await ThemeStore.open(db, moveFrom: old);
-    expect(store.byName('Mine')?.data, 'custom');
-    await db.close();
-
-    final again = Db.file(file);
-    addTearDown(again.close);
-    final reopened = await ThemeStore.open(again, moveFrom: old);
-    expect(reads, 1, reason: 'the old rows are read only while the new file has none');
-    expect(reopened.all().map((r) => r.name), ['Bright White', 'Mine']);
-  });
-
   test('a v2 file (before themes) gets the themes table and keeps its rows', () async {
     final db = Db.file(file);
     await db.write((tx) => tx.execute("INSERT INTO storage_meta (key, value) VALUES ('storage_state', 'ready')"));

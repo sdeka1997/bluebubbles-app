@@ -113,7 +113,7 @@ class SettingsService {
     return false;
   }
 
-  void loadFcmDataFromDatabase() {
+  void loadFcmData() {
     fcmData = FCMData.getFCM();
   }
 

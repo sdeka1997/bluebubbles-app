@@ -1,7 +1,5 @@
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/generated/objectbox.g.dart';
 import 'package:bluebubbles/services/services.dart';
-import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:objectbox/objectbox.dart';
 
@@ -64,20 +62,10 @@ class FCMData {
 
   static Future<void> deleteFcmData() async {
     await PrefsSvc.firebase.clearConfig();
-    await PrefsSvc.firebase.setMovedFromDatabase();
     SettingsSvc.fcmData = FCMData();
   }
 
-  static FCMData getFCM() {
-    final saved = fromPrefs();
-    if (!saved.isNull || PrefsSvc.firebase.movedFromDatabase()) return saved;
-    // Installs from before the shared preferences copy (database v4) keep it in ObjectBox.
-    final old = kIsWeb ? null : Database.fcmData.getAll().firstOrNull;
-    if (old == null || old.isNull) return saved;
-    old.save();
-    PrefsSvc.firebase.setMovedFromDatabase();
-    return old;
-  }
+  static FCMData getFCM() => fromPrefs();
 
   static FCMData fromPrefs() => FCMData(
         projectID: PrefsSvc.firebase.getProjectID(),
