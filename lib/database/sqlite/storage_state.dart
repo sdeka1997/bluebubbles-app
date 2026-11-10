@@ -94,7 +94,7 @@ Future<MessagingStore> openSelectedStore({
   // next copy takes it along.
   if (plan.store == ActiveStore.objectBox || plan.waitForCopy) return MessagingStore.forStore(ActiveStore.objectBox);
   await closeSelectedStore();
-  final db = Db.file(files.ready, inBackground: onMain);
+  final db = Db.file(files.ready);
   _selected = (db: db, changes: onMain ? DbChangeEvents.main.attachLocal(db) : DbChangeEvents.postFrom(db));
   return MessagingStore.forStore(ActiveStore.sqlite, db: db);
 }

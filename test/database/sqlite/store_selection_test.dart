@@ -6,7 +6,6 @@ import 'package:bluebubbles/database/sqlite/db_change_events.dart';
 import 'package:bluebubbles/database/sqlite/storage_state.dart';
 import 'package:bluebubbles/services/backend/sync/sync_marker.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:bluebubbles/database/store/sqlite/sqlite_messaging_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 // Switch plan commit 9, part 1: each isolate opens the store the startup plan
@@ -54,18 +53,6 @@ void main() {
         updateColor: false, matchOnOriginalROWID: false);
     expect(await changed.timeout(const Duration(seconds: 5)), contains(id));
     await closeSelectedStore();
-  });
-
-  test('only the main isolate puts its connection on a background isolate', () async {
-    final seed = Db.file(files.ready);
-    await seed.select('SELECT 1');
-    await seed.close();
-    for (final onMain in [true, false]) {
-      final store = await openSelectedStore(
-          read: () async => StorageState.ready, onMain: onMain, files: files, decide: sqliteWhenReady);
-      expect((store as SqliteMessagingStore).db.inBackground, onMain);
-      await closeSelectedStore();
-    }
   });
 
   test('while the copy is still running, a worker isolate opens nothing: ObjectBox stand-in', () async {
