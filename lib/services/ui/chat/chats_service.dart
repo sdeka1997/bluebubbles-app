@@ -1191,7 +1191,7 @@ class ChatsService {
     // init() below clears chatStates — it's our only enumeration source.
     final chatGuids = chatStates.keys.toList();
 
-    Database.resetMessagingData();
+    await Database.resetMessagingData();
     await FilesystemSvc.deleteCacheDirectories();
 
     for (final guid in chatGuids) {

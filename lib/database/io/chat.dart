@@ -5,7 +5,6 @@ import 'package:bluebubbles/helpers/types/helpers/rcs_business_chat.dart';
 import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
@@ -576,96 +575,6 @@ class Chat {
 
   // count() method moved to ChatsService
 
-  Future<List<Attachment>> getAttachmentsAsync({bool fetchDeleted = false}) async {
-    if (kIsWeb || id == null) return [];
-
-    final stopwatch = Stopwatch()..start();
-
-    /// Query the messages for this chat using ObjectBox's async API
-    final messageQuery = (Database.messages.query(fetchDeleted
-            ? Message_.dateCreated.notNull().and(Message_.dateDeleted.isNull().or(Message_.dateDeleted.notNull()))
-            : Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull()))
-          ..link(Message_.chat, Chat_.id.equals(id!))
-          ..order(Message_.dateCreated, flags: Order.descending))
-        .build();
-
-    // Execute query in worker isolate
-    final messages = await messageQuery.findAsync();
-    messageQuery.close();
-
-    if (messages.isEmpty) {
-      stopwatch.stop();
-      Logger.debug("Fetched 0 messages for chat $guid in ${stopwatch.elapsedMilliseconds} ms");
-      return [];
-    }
-
-    // Get all message IDs to query attachments
-    final messageIds = messages.map((e) => e.id!).toList();
-
-    // Query attachments linked to these messages asynchronously
-    final attachmentQuery = (Database.attachments.query(Attachment_.mimeType.notNull())
-          ..link(Attachment_.message, Message_.id.oneOf(messageIds)))
-        .build();
-
-    final attachments = await attachmentQuery.findAsync();
-    attachmentQuery.close();
-
-    // Remove duplicate attachments from the list, just in case
-    if (attachments.isNotEmpty) {
-      final guids = attachments.map((e) => e.guid).toSet();
-      attachments.retainWhere((element) => guids.remove(element.guid));
-    }
-
-    stopwatch.stop();
-    Logger.debug("Fetched ${attachments.length} attachments for chat $guid in ${stopwatch.elapsedMilliseconds} ms");
-    return attachments;
-  }
-
-  /// Gets messages synchronously - DO NOT use in performance-sensitive areas,
-  /// otherwise prefer [getMessagesAsync]
-  static List<Message> getMessages(Chat chat,
-      {int offset = 0, int limit = 25, bool includeDeleted = false, bool getDetails = false}) {
-    if (kIsWeb || chat.id == null) return [];
-    return Database.runInTransaction(TxMode.read, () {
-      final query = (Database.messages.query(includeDeleted
-              ? Message_.dateCreated.notNull().and(Message_.dateDeleted.isNull().or(Message_.dateDeleted.notNull()))
-              : Message_.dateDeleted.isNull().and(Message_.dateCreated.notNull()))
-            ..link(Message_.chat, Chat_.id.equals(chat.id!))
-            ..order(Message_.dateCreated, flags: Order.descending))
-          .build();
-      query
-        ..limit = limit
-        ..offset = offset;
-      final messages = query.find();
-      query.close();
-      for (int i = 0; i < messages.length; i++) {
-        Message message = messages[i];
-        if (chat.handles.isNotEmpty && !message.isFromMe! && message.handleId != null && message.handleId != 0) {
-          Handle? handle = chat.handles.firstWhereOrNull((e) => e.originalROWID == message.handleId) ??
-              message.handleRelation.target;
-          if (handle == null) {
-            messages.remove(message);
-            i--;
-          }
-        }
-      }
-      // fetch attachments and reactions if requested
-      if (getDetails) {
-        final messageGuids = messages.map((e) => e.guid!).toList();
-        final associatedMessagesQuery = (Database.messages.query(Message_.associatedMessageGuid.oneOf(messageGuids))
-              ..order(Message_.originalROWID))
-            .build();
-        List<Message> associatedMessages = associatedMessagesQuery.find();
-        associatedMessagesQuery.close();
-        associatedMessages = MessageHelper.normalizedAssociatedMessages(associatedMessages);
-        for (Message m in messages) {
-          m.associatedMessages = associatedMessages.where((e) => e.associatedMessageGuid == m.guid).toList();
-        }
-      }
-      return messages;
-    });
-  }
-
   /// Fetch messages asynchronously with progressive loading
   /// Returns messages with attachments, then loads reactions in background
   static Future<List<Message>> getMessagesAsync(Chat chat,
@@ -708,16 +617,10 @@ class Chat {
   /// when null), with attachments; reactions load in the background as in
   /// [getMessagesAsync].
   static Future<({List<Message> messages, MessagePageCursor? next})> getOlderMessagesAsync(Chat chat,
-      {MessagePageCursor? after, int loadedRows = 0, int limit = 25, Function? onSupplementalDataLoaded}) async {
+      {MessagePageCursor? after, int limit = 25, Function? onSupplementalDataLoaded}) async {
     if (kIsWeb || chat.id == null) return (messages: <Message>[], next: after);
     final totalStopwatch = Stopwatch()..start();
-    final page = await ChatInterface.getOlderMessagePage(
-      chatId: chat.id!,
-      participantsData: chat.handles.map((e) => e.toMap()).toList(),
-      after: after,
-      loadedRows: loadedRows,
-      limit: limit,
-    );
+    final page = await ChatInterface.getOlderMessagePage(chatId: chat.id!, after: after, limit: limit);
     if (page.messages.isNotEmpty) {
       _loadSupplementalDataAsync(
           page.messages, page.messages.map((e) => e.guid!).toList(), totalStopwatch, onSupplementalDataLoaded);
@@ -846,23 +749,6 @@ class Chat {
     return null;
   }
 
-  /// Finds a chat - DO NOT use this method on Flutter Web!! Prefer [findOneWeb]
-  /// instead!!
-  static Chat? findOne({String? guid, String? chatIdentifier}) {
-    if (guid != null) {
-      final query = Database.chats.query(Chat_.guid.equals(guid)).build();
-      final result = query.findFirst();
-      query.close();
-      return result;
-    } else if (chatIdentifier != null) {
-      final query = Database.chats.query(Chat_.chatIdentifier.equals(chatIdentifier)).build();
-      final result = query.findFirst();
-      query.close();
-      return result;
-    }
-    return null;
-  }
-
   static Future<List<Chat>> getChatsAsync({int limit = 15, int offset = 0, List<int> ids = const []}) async {
     if (kIsWeb) throw Exception("Use socket to get chats on Web!");
 
@@ -871,33 +757,6 @@ class Chat {
       offset: offset,
       ids: ids,
     );
-
-    // Populate contact name cache on main thread for ALL chats in one transaction
-    // The cache populated in the isolate doesn't transfer through JSON serialization
-    // Database.runInTransaction(TxMode.read, () {
-    //   for (Chat c in chats) {
-    //     // Re-fetch handles from ObjectBox to get proper instances with relationships
-    //     if (c._participants.isNotEmpty) {
-    //       final handleIds = c._participants.map((h) => h.id).whereType<int>().where((id) => id != 0).toList();
-    //       if (handleIds.isNotEmpty) {
-    //         final handlesBox = Database.handles;
-    //         final fetchedHandles = handlesBox.getMany(handleIds).whereType<Handle>().toList();
-    //         c._participants = fetchedHandles;
-
-    //         // Cache contact names while in transaction
-    //         for (final handle in c._participants) {
-    //           Logger.debug('[TEST] Handle has formatted address: ${handle.formattedAddress}');
-    //           final contactCount = handle.contactsV2.length;
-    //           if (contactCount > 0) {
-    //             handle.cachedContactName = handle.contactsV2.first.displayName;
-    //           } else {
-    //             handle.cachedContactName = null;
-    //           }
-    //         }
-    //       }
-    //     }
-    //   }
-    // });
 
     return chats;
   }
@@ -910,17 +769,6 @@ class Chat {
       chatsData: chats.map((e) => e.toMap()).toList(),
     ))
         .chats;
-  }
-
-  void clearTranscript() {
-    if (kIsWeb) return;
-    Database.runInTransaction(TxMode.write, () {
-      final toDelete = List<Message>.from(messages);
-      for (Message element in toDelete) {
-        element.dateDeleted = DateTime.now().toUtc();
-      }
-      Database.messages.putMany(toDelete);
-    });
   }
 
   Future<void> clearTranscriptAsync() async {

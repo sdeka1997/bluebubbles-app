@@ -1,8 +1,6 @@
-// The incremental-sync markers through SyncMarker (S2 switch plan, commit 6):
-// the sync reads and saves the markers of the active store, the ObjectBox
-// keys on ObjectBox and the `sqlite*` keys on SQLite, and the rollback drill:
-// a sync on SQLite leaves the ObjectBox marker (and the ObjectBox store) where
-// the last ObjectBox build left them.
+// The incremental-sync markers through SyncMarker: the sync reads and saves
+// the `sqlite*` keys only, and the rollback drill: a sync leaves the keys of
+// builds before SQLite where the last such build left them.
 import 'package:bluebubbles/database/global/settings.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
@@ -52,10 +50,10 @@ void main() {
     GetIt.I.registerSingleton<SettingsService>(SettingsService()..settings = s);
   }
 
-  void use(ActiveStore kind) {
+  void use() {
     final db = Db.memory();
     dbs.add(db);
-    MessagingStore.use(MessagingStore.forStore(kind, db: db));
+    MessagingStore.use(MessagingStore(db));
   }
 
   tearDown(() async {
@@ -69,21 +67,12 @@ void main() {
     if (GetIt.I.isRegistered<SettingsService>()) GetIt.I.unregister<SettingsService>();
   });
 
-  test('ObjectBox is the active store until startup selects SQLite: the sync uses the ObjectBox marker', () {
-    MessagingStore.use(null);
-    useSettings(_markers(ts: 10, rowId: 20, total: 30, sqTs: 99, sqRowId: 98));
-    final m = _Recording(startRowId: 1).marker;
-    expect(m.store, ActiveStore.objectBox);
-    expect((m.timestamp, m.rowId, m.catchUpTotal), (10, 20, 30));
-  });
+  {
+    const own = _sqlite;
+    const other = _objectBox;
 
-  for (final kind in ActiveStore.values) {
-    final own = kind == ActiveStore.objectBox ? _objectBox : _sqlite;
-    final other = kind == ActiveStore.objectBox ? _sqlite : _objectBox;
-    final keys = SyncMarkerKeys.of(kind);
-
-    group(kind.name, () {
-      setUp(() => use(kind));
+    group('markers', () {
+      setUp(use);
 
       test('a checkpoint saves the bookmark of this store only, and never moves it back', () async {
         useSettings(_markers(ts: 1, rowId: 50, sqTs: 1, sqRowId: 50));
@@ -92,7 +81,7 @@ void main() {
         await mgr.saveCheckpoint(60);
         expect(own(settings).$2, 80);
         expect(other(settings).$2, 50);
-        expect(mgr.saved, [keys.rowId]);
+        expect(mgr.saved, [SyncMarkerKeys.rowId]);
         expect(mgr.checkpointRowId, 60, reason: 'the in-memory checkpoint still moves');
       });
 
@@ -102,7 +91,7 @@ void main() {
         await mgr.saveCatchUpTotal(1234);
         expect(own(settings).$3, 1234);
         expect(other(settings).$3, 0);
-        expect(mgr.saved, [keys.catchUpTotal]);
+        expect(mgr.saved, [SyncMarkerKeys.catchUpTotal]);
       });
 
       test('the end-of-sync markers: start time and the bookmark, never behind a checkpoint', () async {
@@ -114,7 +103,7 @@ void main() {
         await mgr.saveMarkers();
         expect((own(settings).$1, own(settings).$2), (7777, 300));
         expect((other(settings).$1, other(settings).$2), (5, 10));
-        expect(mgr.saved, [keys.timestamp, keys.rowId]);
+        expect(mgr.saved, [SyncMarkerKeys.timestamp, SyncMarkerKeys.rowId]);
       });
 
       test('without a start timestamp the newest synced message time is the next start', () async {
@@ -124,39 +113,33 @@ void main() {
           ..lastSyncedTimestamp = 4242;
         await mgr.saveMarkers();
         expect(own(settings).$1, 4242);
-        expect(mgr.saved, [keys.timestamp], reason: 'no ROWID seen, no bookmark saved');
+        expect(mgr.saved, [SyncMarkerKeys.timestamp], reason: 'no ROWID seen, no bookmark saved');
       });
 
       test('the background sync resumes from this store\'s marker', () {
         useSettings(_markers(ts: 10, rowId: 20, sqTs: 30, sqRowId: 40));
-        final mgr = IncrementalSyncManager.resumingFrom(SyncMarker.of(settings, kind));
-        expect((mgr.startTimestamp, mgr.startRowId, mgr.saveMarker),
-            kind == ActiveStore.objectBox ? (10, 20, true) : (30, 40, true));
+        final mgr = IncrementalSyncManager.resumingFrom(SyncMarker(settings));
+        expect((mgr.startTimestamp, mgr.startRowId, mgr.saveMarker), (30, 40, true));
       });
     });
   }
 
-  test('a first SQLite sync starts where ObjectBox stopped (the copy holds everything ObjectBox had)', () {
-    use(ActiveStore.sqlite);
+  test('with no sqlite marker yet the sync starts where the build before SQLite stopped', () {
+    use();
     useSettings(_markers(ts: 10, rowId: 20));
-    final mgr = IncrementalSyncManager.resumingFrom(SyncMarker.of(settings, ActiveStore.sqlite));
+    final mgr = IncrementalSyncManager.resumingFrom(SyncMarker(settings));
     expect((mgr.startTimestamp, mgr.startRowId), (10, 20));
   });
 
   group('rollback drill', () {
     setUpAll(() => isIsolateOverride = true);
-    tearDownAll(() {
-      isIsolateOverride = false;
-      closeObjectBox();
-    });
+    tearDownAll(() => isIsolateOverride = false);
 
-    test('a sync on SQLite leaves the ObjectBox marker and the ObjectBox store unchanged', () async {
-      final obx = objectBoxFixture();
-      final kept = await obx.message('kept', await obx.chat('iMessage;-;ana@example.com'), t0);
+    test('a sync leaves the markers of builds before SQLite unchanged', () async {
       useSettings(_markers(ts: 1000, rowId: 500));
-      use(ActiveStore.sqlite);
+      use();
 
-      // Messages 501..700 arrive on the SQLite build.
+      // Messages 501..700 arrive.
       final mgr = _Recording(startRowId: 500, startTimestamp: 1000)..syncStartedAt = 2000;
       final result = await SyncActions.bulkSyncData({
         'messagesData': [
@@ -170,14 +153,8 @@ void main() {
       await mgr.saveMarkers();
 
       expect(_sqlite(settings), (2000, 700, 0));
-      expect(_objectBox(settings), (1000, 500, 0), reason: 'an ObjectBox build re-syncs 501..700');
-      expect(await obx.store.allMessageIds(), [kept.id], reason: 'the sync wrote only to SQLite');
+      expect(_objectBox(settings), (1000, 500, 0), reason: 'a build before SQLite re-syncs 501..700');
       expect((await MessagingStore.current.messageByGuid('new-701'))?.text, 'hi');
-
-      // The rolled-back ObjectBox build resumes from its own marker.
-      MessagingStore.use(obx.store);
-      final rolledBack = IncrementalSyncManager.resumingFrom(SyncMarker.of(settings, MessagingStore.current.kind));
-      expect((rolledBack.startTimestamp, rolledBack.startRowId), (1000, 500));
     });
   });
 }

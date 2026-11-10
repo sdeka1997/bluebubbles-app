@@ -68,15 +68,7 @@ class MethodChannelHandlers {
   final MethodChannelServiceDelegate service;
   late final Map<String, Future<bool> Function(MethodCall, Map<String, dynamic>?)> _handlers;
 
-  /// Whether the messaging store may be used. The headless DartWorker sets it
-  /// (StorageStartup.checkWorker) while startup makes storage wait for the
-  /// copy; until then nothing is gated.
-  static Future<bool> Function() storageUsable = alwaysUsable;
-  static Future<bool> alwaysUsable() async => true;
-
   Future<bool> handle(MethodCall call, Map<String, dynamic>? arguments) async {
-    // DartWorker logs the retry it asks Android for.
-    if (!identical(storageUsable, alwaysUsable) && !await storageUsable()) return _retry();
     final handler = _handlers[call.method];
     if (handler == null) return _ok();
     return handler(call, arguments);

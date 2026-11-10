@@ -498,7 +498,7 @@ void logout(BuildContext context) {
         isDefault: true,
         onPressed: () async {
           Navigator.of(context, rootNavigator: true).pop();
-          FilesystemSvc.deleteDB();
+          await FilesystemSvc.deleteDB();
           SocketSvc.forgetConnection();
           SettingsSvc.settings = Settings();
           SettingsSvc.fcmData = FCMData();

@@ -157,15 +157,9 @@ class ChatActions {
 
   /// `{'ids': [...], 'next': MessagePageCursor.toMap() or null}`.
   static Future<Map<String, dynamic>> getOlderMessagePage(dynamic data) async {
-    final participants = (data['participantsData'] as List)
-        .cast<Map<String, dynamic>>()
-        .map(Handle.fromMap)
-        .toList();
     final page = await MessagingStore.current.olderMessagePage(
       data['chatId'] as int,
-      participants,
       after: MessagePageCursor.fromMap(data['after']),
-      loadedRows: data['loadedRows'] as int? ?? 0,
       limit: data['limit'] as int? ?? 25,
     );
     return {'ids': page.ids, 'next': page.next?.toMap()};

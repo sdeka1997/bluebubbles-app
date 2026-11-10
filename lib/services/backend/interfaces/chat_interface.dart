@@ -270,16 +270,12 @@ class ChatInterface {
   /// page when null), hydrated on this isolate.
   static Future<({List<Message> messages, MessagePageCursor? next})> getOlderMessagePage({
     required int chatId,
-    required List<Map<String, dynamic>> participantsData,
     MessagePageCursor? after,
-    int loadedRows = 0,
     int limit = 25,
   }) async {
     final data = {
       'chatId': chatId,
-      'participantsData': participantsData,
       'after': after?.toMap(),
-      'loadedRows': loadedRows,
       'limit': limit,
     };
 

@@ -1495,7 +1495,6 @@ class MessagesService extends GetxController {
     final page = await Chat.getOlderMessagesAsync(
       chat,
       after: _olderCursor,
-      loadedRows: struct.messages.length + struct.reactions.length,
       limit: limit,
       onSupplementalDataLoaded: onSupplementalDataLoaded,
     );
