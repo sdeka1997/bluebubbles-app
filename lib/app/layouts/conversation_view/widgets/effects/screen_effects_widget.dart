@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:bluebubbles/app/animations/balloon_classes.dart';
@@ -35,6 +36,8 @@ class _ScreenEffectsWidgetState extends State<ScreenEffectsWidget> with TickerPr
   late final SpotlightController spotlightController;
   late final LaserController laserController;
   String screenSelected = "";
+  bool _controllersMade = false;
+  StreamSubscription? _effects;
 
   @override
   void initState() {
@@ -52,10 +55,13 @@ class _ScreenEffectsWidgetState extends State<ScreenEffectsWidget> with TickerPr
       spotlightController =
           SpotlightController(vsync: this, windowSize: Size(NavigationSvc.width(context), context.height));
       laserController = LaserController(vsync: this, windowSize: Size(NavigationSvc.width(context), context.height));
+      _controllersMade = true;
     });
 
-    EventDispatcherSvc.stream.listen((event) async {
-      if (event.type == 'play-effect' && mounted && screenSelected.isEmpty) {
+    // App-wide stream: cancelled in dispose, or it keeps this State (and the
+    // chat screen around it) alive after the chat is closed.
+    _effects = EventDispatcherSvc.stream.listen((event) async {
+      if (event.type == 'play-effect' && mounted && _controllersMade && screenSelected.isEmpty) {
         setState(() {
           screenSelected = event.data['type'];
         });
@@ -127,6 +133,23 @@ class _ScreenEffectsWidgetState extends State<ScreenEffectsWidget> with TickerPr
         }
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _effects?.cancel();
+    if (_controllersMade) {
+      // Each effect makes its ticker when it starts and disposes it when it
+      // finishes, so only one still playing has a ticker to release.
+      if (fireworkController.isPlaying) fireworkController.dispose();
+      if (celebrationController.isPlaying) celebrationController.dispose();
+      if (balloonController.isPlaying) balloonController.dispose();
+      if (loveController.isPlaying) loveController.dispose();
+      if (spotlightController.isPlaying) spotlightController.dispose();
+      if (laserController.isPlaying) laserController.dispose();
+      confettiController.dispose();
+    }
+    super.dispose();
   }
 
   @override
