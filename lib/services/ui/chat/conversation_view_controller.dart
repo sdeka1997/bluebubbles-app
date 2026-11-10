@@ -108,6 +108,7 @@ class ConversationViewController extends StatefulController with GetSingleTicker
   bool keyboardOpen = false;
   double _keyboardOffset = 0;
   Timer? _scrollDownDebounce;
+  StreamSubscription<bool>? _keyboardSubscription;
   Future<void> Function(SendData)? sendFunc;
 
   /// When set, [_SendAnimationState] will auto-fire this send as soon as it
@@ -154,7 +155,7 @@ class ConversationViewController extends StatefulController with GetSingleTicker
     super.onInit();
 
     textController.mentionables = mentionables;
-    KeyboardVisibilityController().onChange.listen((bool visible) async {
+    _keyboardSubscription = KeyboardVisibilityController().onChange.listen((bool visible) async {
       keyboardOpen = visible;
       if (scrollController.hasClients && scrollController.positions.length == 1) {
         _keyboardOffset = scrollController.offset;
@@ -199,6 +200,10 @@ class ConversationViewController extends StatefulController with GetSingleTicker
 
   @override
   void onClose() {
+    // The keyboard stream is app-wide: left open, it keeps every closed chat's
+    // controller (and all it cached while scrolling) alive.
+    _keyboardSubscription?.cancel();
+    _scrollDownDebounce?.cancel();
     messageListGate.dispose();
     updateSmartReplyLayout(visible: false, height: 0);
     for (PlayerController a in audioPlayers.values) {
