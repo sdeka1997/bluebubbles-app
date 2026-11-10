@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:ui';
 
 import 'package:bluebubbles/app/layouts/conversation_details/conversation_details.dart';
@@ -8,7 +7,6 @@ import 'package:bluebubbles/app/state/chat_state_scope.dart';
 import 'package:bluebubbles/app/wrappers/theme_switcher.dart';
 import 'package:bluebubbles/app/wrappers/stateful_boilerplate.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
-import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -191,15 +189,6 @@ class _UnreadIcon extends StatefulWidget {
 }
 
 class _UnreadIconState extends State<_UnreadIcon> {
-  late final StreamSubscription<Query<Chat>> sub;
-  bool hasStream = false;
-
-  @override
-  void dispose() {
-    if (!kIsWeb && hasStream) sub.cancel();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Row(

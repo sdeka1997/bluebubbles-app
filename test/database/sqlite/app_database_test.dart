@@ -60,14 +60,13 @@ void main() {
     expect(row.data.values.single.toString().toLowerCase(), 'wal');
   });
 
-  test('every persisted ObjectBox property of the messaging set has a column', () async {
+  test('the messaging tables have every column the entities persist', () async {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
 
-    // Counts from lib/generated/objectbox-model.json, minus ToMany relations,
-    // plus messages.sort_at_us.
-    // Message and Attachment persist `metadata` twice (FlexBuffer + dbMetadata JSON
-    // of the same map); SQLite keeps one metadata_json column for it.
+    // The entities' persisted fields (as the ObjectBox model had them, minus
+    // to-many relations), plus messages.sort_at_us; `metadata` is one
+    // metadata_json column.
     expect((await columnNames(database, 'messages')).length, 46);
     expect(await columnNames(database, 'messages'), containsAll(['sort_at_us', 'chat_id', 'handle_relation_id', 'text']));
     expect((await columnNames(database, 'chats')).length, 35);

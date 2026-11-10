@@ -1,15 +1,11 @@
 import 'package:bluebubbles/database/models.dart';
 // (needed when generating objectbox model code)
 // ignore: unnecessary_import
-import 'package:objectbox/objectbox.dart';
 import 'package:bluebubbles/database/io/relations.dart' show RelList;
 
-@Entity()
 class CustomGroup {
   int? id;
 
-  @Index(type: IndexType.value)
-  @Unique()
   String name;
 
   /// Manual ordering for display in the settings list (lowest first).

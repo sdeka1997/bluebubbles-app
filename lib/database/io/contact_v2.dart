@@ -8,7 +8,6 @@ import 'package:flutter/material.dart';
 
 // Necessary for ObjectBox annotations
 // ignore: unnecessary_import
-import 'package:objectbox/objectbox.dart';
 import 'package:bluebubbles/database/io/relations.dart' show RelList;
 
 /// A phone number with an associated label (e.g., "mobile", "work", "home").
@@ -53,7 +52,6 @@ class ContactEmail {
 
 /// ContactV2 - New contact entity designed for N:M relationship with Handles
 /// This entity follows the architecture outlined in FR-1.md
-@Entity()
 class ContactV2 {
   ContactV2({
     this.id = 0,
@@ -71,7 +69,6 @@ class ContactV2 {
     this.company,
   });
 
-  @Id()
   int id;
 
   /// Display name of the contact
@@ -80,8 +77,6 @@ class ContactV2 {
   /// Contact ID. May be "native", or not, depending on if it
   /// originated from the device's native contact store or was created on the server.
   /// The name is a bit misleading, but I don't want to rename it at this point.
-  @Index()
-  @Unique()
   String nativeContactId;
 
   /// Local file path to the avatar image (if any)
@@ -109,7 +104,6 @@ class ContactV2 {
 
   // --- Labeled phones (JSON-backed) ---
   /// In-memory list of phones with labels. ObjectBox stores [dbPhoneNumbers].
-  @Transient()
   List<ContactPhone> phoneNumbers = [];
 
   String? get dbPhoneNumbers => phoneNumbers.isEmpty ? null : jsonEncode(phoneNumbers.map((e) => e.toMap()).toList());
@@ -122,7 +116,6 @@ class ContactV2 {
 
   // --- Labeled emails (JSON-backed) ---
   /// In-memory list of emails with labels. ObjectBox stores [dbEmailAddresses].
-  @Transient()
   List<ContactEmail> emailAddresses = [];
 
   String? get dbEmailAddresses =>
@@ -138,10 +131,8 @@ class ContactV2 {
   /// This establishes the many-to-many relationship between contacts and handles
   final handles = RelList<Handle>();
 
-  @Transient()
   Widget? _fakeAvatar;
 
-  @Transient()
   Widget get fakeAvatar {
     if (_fakeAvatar != null) return _fakeAvatar!;
     Avatar _avatar = DiceBearBuilder(seed: displayName).build();

@@ -3,21 +3,14 @@ import 'dart:core';
 
 import 'package:bluebubbles/helpers/ui/theme_helpers.dart';
 import 'package:bluebubbles/database/store/sqlite/theme_store.dart';
-import 'package:bluebubbles/generated/objectbox.g.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:flex_color_scheme/flex_color_scheme.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-// (needed when generating objectbox model code)
-// ignore: unnecessary_import
-import 'package:objectbox/objectbox.dart';
-
-@Entity()
 class ThemeStruct {
   int? id;
-  @Unique()
   String name;
   bool gradientBg = false;
   String googleFont;
@@ -54,7 +47,6 @@ class ThemeStruct {
       ThemeStruct(name: row.name, gradientBg: row.gradientBg, googleFont: row.googleFont)..dbThemeData = row.data;
 
   /// The name this theme was read under, so a rename can replace that row.
-  @Transient()
   String? storedName;
 
   static ThemeStore get _store => ThemeStore.current ??= ThemeStore.memory();

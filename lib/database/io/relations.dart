@@ -1,117 +1,96 @@
-import 'package:objectbox/objectbox.dart' as obx;
+import 'dart:collection';
 
-// Relations of the messaging entities (S2 switch plan, commit 3).
+// Relations of the messaging entities: a message's chat and sender, a chat's
+// participants, a handle's contacts, and so on.
 //
-// On the ObjectBox path these behave exactly as ObjectBox's own ToOne/ToMany:
-// every member delegates to it. (They keep ObjectBox's class names because the
-// generator recognises a relation field by that name; the ObjectBox model and
-// generated code stay byte-identical.)
-//
-// An entity read from SQLite has no store to lazy-load from. Its row mapper
-// marks each relation [ToOne.loadedFromSqlite] / [ToMany.loadedFromSqlite]
-// with the stored id, and the repository fills it. Reading a relation the
-// repository did not fill is a bug that would show up as a missing avatar,
-// name or attachment, so a debug assert throws instead.
+// An entity read from SQLite carries only the stored ids. Its row mapper marks
+// each relation [Rel.loadedFromSqlite] / [RelList.loadedFromSqlite], and the
+// repository fills it (relation_fill.dart). Reading a relation the repository
+// did not fill is a bug that would show up as a missing avatar, name or
+// attachment, so a debug assert throws instead. A relation of an entity built
+// in memory (from the server, or new) is filled from the start.
 
-/// The names the entity files use (S2 switch plan section 2).
-typedef Rel<T> = ToOne<T>;
-typedef RelList<T> = ToMany<T>;
+/// A link to one entity, by its local id.
+class Rel<T> {
+  Rel({T? target, int? targetId}) {
+    if (target != null) {
+      this.target = target;
+    } else if (targetId != null) {
+      this.targetId = targetId;
+    }
+  }
 
-class ToOne<T> extends obx.ToOne<T> {
-  ToOne({super.target, super.targetId});
-
-  /// Non-null for an entity read from SQLite.
-  _RowOne<T>? _row;
+  int _id = 0;
+  T? _target;
+  bool _filled = true;
+  String _label = 'relation';
 
   /// Called by the row mapper: [id] is the stored foreign key (null or 0: none).
-  void loadedFromSqlite(int? id, {required String label}) => _row = _RowOne(id ?? 0, label);
+  void loadedFromSqlite(int? id, {required String label}) {
+    _id = id ?? 0;
+    _target = null;
+    _filled = _id == 0;
+    _label = label;
+  }
 
   /// The repository's fill: the target for the stored id (null when the row is gone).
   void fill(T? target) {
-    final row = _row;
-    if (row == null) {
-      super.target = target;
-      return;
-    }
-    row
-      ..target = target
-      ..filled = true;
+    _target = target;
+    _filled = true;
   }
 
-  bool get isFilled => _row?.filled ?? true;
+  bool get isFilled => _filled;
 
-  @override
   T? get target {
-    final row = _row;
-    if (row == null) return super.target;
-    assert(row.filled, '${row.label} read before the repository filled it');
-    return row.target;
+    assert(_filled, '$_label read before the repository filled it');
+    return _target;
   }
 
-  @override
   set target(T? object) {
-    final row = _row;
-    if (row == null) {
-      super.target = object;
-      return;
-    }
-    row
-      ..target = object
-      ..id = object == null ? 0 : ((object as dynamic).id as int? ?? 0)
-      ..filled = true;
+    _target = object;
+    _id = object == null ? 0 : _idOf(object);
+    _filled = true;
   }
 
-  @override
-  int get targetId => _row?.id ?? super.targetId;
+  /// The target's id (0: none). A target saved after it was set reports the
+  /// id it was saved with.
+  int get targetId {
+    final target = _target;
+    return target == null ? _id : _idOf(target);
+  }
 
-  @override
+  /// Points at the entity [id]; its target is unknown until filled.
   set targetId(int? id) {
-    final row = _row;
-    if (row == null) {
-      super.targetId = id;
-      return;
-    }
-    if ((id ?? 0) == row.id) return;
-    row
-      ..id = id ?? 0
-      ..target = null
-      ..filled = row.id == 0;
+    if ((id ?? 0) == targetId) return;
+    _id = id ?? 0;
+    _target = null;
+    _filled = _id == 0;
   }
 
-  @override
-  bool get hasValue => _row == null ? super.hasValue : _row!.id != 0;
+  bool get hasValue => targetId != 0 || _target != null;
+
+  static int _idOf(Object? entity) => ((entity as dynamic).id as int?) ?? 0;
 }
 
-class _RowOne<T> {
-  _RowOne(this.id, this.label) : filled = id == 0;
+/// Links to many entities, in order.
+class RelList<T> extends ListBase<T> {
+  RelList({List<T>? items}) : _items = items ?? <T>[];
 
-  int id;
-  final String label;
-  T? target;
-  bool filled;
-}
+  final List<T> _items;
 
-class ToMany<T> extends obx.ToMany<T> {
-  ToMany({super.items});
-
-  /// Null on the ObjectBox path; for an entity read from SQLite, the label
-  /// until the repository fills it.
+  /// Null when usable; for an entity read from SQLite, the label until the
+  /// repository fills it.
   String? _unfilled;
-  bool _fromSqlite = false;
 
-  void loadedFromSqlite({required String label}) {
-    _fromSqlite = true;
-    _unfilled = label;
-  }
+  void loadedFromSqlite({required String label}) => _unfilled = label;
 
   /// The repository's fill: every stored member, in its order.
   void fill(Iterable<T> items) {
     _unfilled = null;
-    super.addAll(items);
+    _items.addAll(items);
   }
 
   bool get isFilled => _unfilled == null;
-  bool get isFromSqlite => _fromSqlite;
 
   void _check() {
     assert(_unfilled == null, '$_unfilled read before the repository filled it');
@@ -120,18 +99,36 @@ class ToMany<T> extends obx.ToMany<T> {
   @override
   int get length {
     _check();
-    return super.length;
+    return _items.length;
   }
+
+  @override
+  set length(int newLength) => _items.length = newLength;
 
   @override
   T operator [](int index) {
     _check();
-    return super[index];
+    return _items[index];
   }
+
+  @override
+  void operator []=(int index, T value) => _items[index] = value;
+
+  @override
+  void add(T element) => _items.add(element);
+
+  @override
+  void addAll(Iterable<T> iterable) => _items.addAll(iterable);
+
+  @override
+  void insert(int index, T element) => _items.insert(index, element);
+
+  @override
+  void insertAll(int index, Iterable<T> iterable) => _items.insertAll(index, iterable);
 
   @override
   List<T> toList({bool growable = true}) {
     _check();
-    return super.toList(growable: growable);
+    return _items.toList(growable: growable);
   }
 }

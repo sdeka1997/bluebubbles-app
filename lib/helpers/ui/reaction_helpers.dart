@@ -1,4 +1,4 @@
-import 'package:bluebubbles/database/models.dart' hide Entity;
+import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/helpers/types/constants.dart';
 import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart';
