@@ -51,7 +51,7 @@ void main() {
   setUp(() => GetIt.I.registerSingleton<SettingsService>(SettingsService()..settings = Settings()));
   tearDown(() => GetIt.I.unregister<SettingsService>());
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     test('closing the service lets its loaded messages and states be collected', () async {
       final chat = await fixture().chat('c');
       for (var i = 0; i < 300; i++) {
@@ -63,7 +63,7 @@ void main() {
       final liveMessages = refs.messages.where((r) => r.target != null).length;
       final liveStates = refs.states.where((r) => r.target != null).length;
       // ignore: avoid_print
-      print('LEAKCHECK ${fixture().kind}: live messages $liveMessages/250, live states $liveStates/250');
+      print('LEAKCHECK: live messages $liveMessages/250, live states $liveStates/250');
       expect((liveMessages, liveStates), (0, 0));
     });
   });

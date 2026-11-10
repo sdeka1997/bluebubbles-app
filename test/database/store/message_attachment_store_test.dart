@@ -1,7 +1,6 @@
 // MessageActions/MessageInterface and AttachmentActions/AttachmentInterface
-// through MessagingStore (S2 switch plan, commits 4-5), every case on both
-// stores, including the attachment query descriptors (SQL builder vs ObjectBox
-// conditions).
+// through MessagingStore (S2 switch plan, commits 4-5), including the
+// attachment query descriptors (the SQL builder).
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/services/backend/actions/attachment_actions.dart';
 import 'package:bluebubbles/services/backend/actions/message_actions.dart';
@@ -36,7 +35,7 @@ void main() {
   setUpAll(() => isIsolateOverride = true);
   tearDownAll(() => isIsolateOverride = false);
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     group('MessageActions', () {
       test('getMessages returns recent messages from the active store', () async {
         final chat = await fixture().chat('c1');
@@ -197,7 +196,7 @@ void main() {
             ],
           },
         });
-        // Today's behaviour on both stores: the map's message is not linked to
+        // Today's behaviour: the map's message is not linked to
         // the attachments, so a2 is stored but no guid lookup (a link join) finds it.
         final ids = await AttachmentActions.findAttachmentsAsync({});
         expect(ids, [a1.id]);
@@ -237,7 +236,7 @@ void main() {
         expect(await AttachmentActions.findOneAttachmentAsync({'guid': 'a1'}), isNull);
       });
 
-      test('lookups by guid and query only see attachments that belong to a message (ObjectBox link join)', () async {
+      test('lookups by guid and query only see attachments that belong to a message', () async {
         final m1 = await fixture().message('m1', await fixture().chat('c1'), t0);
         await fixture().attachment('linked', m1);
         final loose = await fixture().attachment('loose', null);

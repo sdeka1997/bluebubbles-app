@@ -1,6 +1,6 @@
 // HandleActions/HandleInterface and CustomGroupActions/CustomGroupInterface
-// through MessagingStore (S2 switch plan, commits 4-5), every case on both
-// stores: ObjectBox (the Actions' code before the move) and SQLite (repositories).
+// through MessagingStore (S2 switch plan, commits 4-5), on the SQLite
+// repositories.
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/services/backend/actions/custom_group_actions.dart';
 import 'package:bluebubbles/services/backend/actions/handle_actions.dart';
@@ -19,7 +19,7 @@ void main() {
   });
   tearDownAll(() => isIsolateOverride = false);
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     group('HandleActions', () {
       test('saveHandleAsync inserts, then matches by address and keeps id, ROWID and color', () async {
         final id = await HandleActions.saveHandleAsync({

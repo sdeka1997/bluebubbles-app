@@ -1,5 +1,4 @@
-// Message reads the chat screens use (switch plan commit 8), the same on
-// ObjectBox and SQLite: the links section, bookmarks, and how far down the
+// Message reads the chat screens use (switch plan commit 8): the links section, bookmarks, and how far down the
 // timeline a message sits (jump to a reply or the last read message).
 import 'package:flutter_test/flutter_test.dart';
 
@@ -8,7 +7,7 @@ import '../database/store/store_fixture.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     test('link previews of a chat, newest first', () async {
       final chat = await fixture().chat('c');
       final other = await fixture().chat('other');

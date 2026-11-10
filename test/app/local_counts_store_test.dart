@@ -1,5 +1,5 @@
 // The server panel's local counts come from MessagingStore (switch plan
-// commit 8), the same on ObjectBox and SQLite.
+// commit 8).
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -9,7 +9,7 @@ import '../database/store/store_fixture.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     test('live messages and chats, handles, and attachments by kind', () async {
       final bob = await fixture().handle('bob@x.com', rowId: 1);
       final chat = await fixture().chat('c', handles: [bob]);

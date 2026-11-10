@@ -1,9 +1,8 @@
 // Scrolling up in a chat through MessagesService (S2 switch plan, commit 7):
-// each older page comes from MessagingStore.olderMessagePage. On SQLite a page
-// starts after the (sort_at, id) key of the last message shown, so it is the
-// screen's own order (Message.sort) and arrivals, deletes, ties and late-saved
-// history can't repeat or skip a message (the seq.39 failure). ObjectBox keeps
-// today's query by position until switch plan commit 9 retires it.
+// each older page comes from MessagingStore.olderMessagePage. A page starts
+// after the (sort_at, id) key of the last message shown, so it is the screen's
+// own order (Message.sort) and arrivals, deletes, ties and late-saved history
+// can't repeat or skip a message (the seq.39 failure).
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/env.dart';
@@ -15,7 +14,7 @@ import 'package:get_it/get_it.dart';
 import '../../../database/store/store_fixture.dart';
 
 /// Pages until an empty one; returns the guid of every timeline message (not
-/// reactions: ObjectBox pages carry them, the struct files them apart) in the
+/// reactions: the struct files them apart) in the
 /// order read, and the cursors each page started from.
 Future<(List<String>, List<MessagePageCursor?>)> walk(MessagesService service, {int limit = 25, int maxPages = 400}) async {
   final guids = <String>[];
@@ -40,7 +39,7 @@ void main() {
 
   MessagesService serviceFor(Chat chat) => MessagesService(chat.guid)..chat = chat;
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     test('a chat with reactions walks newest to oldest, every message once, in screen order', () async {
       final chat = await fixture().chat('c');
       final expected = <Message>[];
@@ -75,7 +74,7 @@ void main() {
     });
   });
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     test('delivered before created: pages follow the screen order, which uses the earlier date', () async {
       final chat = await fixture().chat('c');
       final all = <Message>[];
@@ -157,9 +156,9 @@ void main() {
       expect(around.map((m) => m.guid), [for (var i = 60; i >= 40; i--) 'm$i']);
       expect(older.map((m) => m.guid), [for (var i = 39; i >= 30; i--) 'm$i']);
     });
-  }, only: {ActiveStore.sqlite});
+  });
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     test('jumping to a message loads the message and its neighbours', () async {
       final chat = await fixture().chat('c');
       for (var i = 0; i < 60; i++) {

@@ -1,6 +1,6 @@
 // Thread helpers read through MessagingStore (switch plan commit 8): the newest
 // message a chat lists, a thread's copies, the chats to mark read and the
-// thread's name, the same on ObjectBox and SQLite.
+// thread's name.
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -10,7 +10,7 @@ import '../database/store/store_fixture.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     test('newest message a chat lists: no deleted ones, no status items unless asked', () async {
       final chat = await fixture().chat('c');
       await fixture().message('old', chat, t0);

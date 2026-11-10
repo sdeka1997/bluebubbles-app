@@ -1,5 +1,4 @@
-// ChatActions/ChatInterface through MessagingStore. Every behavior runs against
-// the real ObjectBox and SQLite implementations.
+// ChatActions/ChatInterface through MessagingStore, on a real SQLite store.
 import 'package:bluebubbles/env.dart';
 import 'package:bluebubbles/services/backend/actions/chat_actions.dart';
 import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
@@ -11,7 +10,7 @@ void main() {
   setUpAll(() => isIsolateOverride = true);
   tearDownAll(() => isIsolateOverride = false);
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     group('ChatActions', () {
       test('markAllChatsRead updates only the requested chats', () async {
         final selected = await fixture().chat('c-selected', unread: true);

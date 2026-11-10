@@ -1,6 +1,6 @@
 // Contact refreshes find the chats to redraw through MessagingStore (S2 switch
-// plan, commit 7): only live chats that include an updated handle, on both
-// stores, and ContactServiceV2 no longer reads ObjectBox itself.
+// plan, commit 7): only live chats that include an updated handle, and
+// ContactServiceV2 no longer reads ObjectBox itself.
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -10,7 +10,7 @@ import '../../database/store/store_fixture.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     test('live chats with any of the given participants', () async {
       final bob = await fixture().handle('bob@x.com', rowId: 1);
       final amy = await fixture().handle('amy@x.com', rowId: 2);

@@ -1,5 +1,4 @@
-// Reads the settings panels and pickers use (switch plan commit 8), the same on
-// ObjectBox and SQLite.
+// Reads the settings panels and pickers use (switch plan commit 8).
 import 'package:flutter_test/flutter_test.dart';
 
 import '../database/store/store_fixture.dart';
@@ -7,7 +6,7 @@ import '../database/store/store_fixture.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     test('deleted chats, most recently deleted first', () async {
       await fixture().chat('live');
       await fixture().chat('old', deleted: DateTime.utc(2024, 1, 1));

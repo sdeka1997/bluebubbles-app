@@ -28,14 +28,14 @@ void main() {
   });
   tearDown(() => GetIt.I.unregister<SettingsService>());
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     test('a chat saved after the list loaded reaches addChat once; writes to stored chats do not', () async {
       final existing = await fixture().chat('existing', unread: true);
       final service = _ChatsService();
-      final local = fixture().db == null ? null : DbChangeEvents.main.attachLocal(fixture().db!);
+      final local = DbChangeEvents.main.attachLocal(fixture().db);
       addTearDown(() async {
         await service.countSub?.cancel();
-        await local?.cancel();
+        await local.cancel();
       });
 
       service.initDbWatchers();
@@ -50,12 +50,12 @@ void main() {
 
     test('chatsWritten: only chats newer than every chat seen so far', () async {
       final existing = await fixture().chat('existing', unread: true);
-      final local = fixture().db == null ? null : DbChangeEvents.main.attachLocal(fixture().db!);
+      final local = DbChangeEvents.main.attachLocal(fixture().db);
       final seen = <String>[];
       final sub = fixture().store.chatsWritten().listen((chats) => seen.addAll(chats.map((c) => c.guid)));
       addTearDown(() async {
         await sub.cancel();
-        await local?.cancel();
+        await local.cancel();
       });
       await Future.delayed(const Duration(milliseconds: 100));
 

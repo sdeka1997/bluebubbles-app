@@ -1,6 +1,6 @@
 // The chat-stats screen reads through MessagingStore.chatStats (S2 switch plan,
-// commit 7): the same numbers from ObjectBox (ChatStatsQueries) and SQLite
-// (ChatStatsRepo), and the screen itself no longer queries ObjectBox.
+// commit 7) from ChatStatsRepo, and the screen itself no longer queries
+// ObjectBox.
 import 'dart:io';
 
 import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_models.dart';
@@ -11,7 +11,7 @@ import '../../../../database/store/store_fixture.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     test('counts, timestamps, texts and reactions of one chat', () async {
       final bob = await fixture().handle('bob@x.com', rowId: 7);
       final chat = await fixture().chat('c', handles: [bob]);

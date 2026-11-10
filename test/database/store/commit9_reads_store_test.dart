@@ -1,5 +1,5 @@
 // Reads and writes the remaining model lookups move onto (switch plan commit
-// 9), the same on ObjectBox and SQLite.
+// 9).
 import 'package:flutter_test/flutter_test.dart';
 
 import 'store_fixture.dart';
@@ -7,7 +7,7 @@ import 'store_fixture.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  forEachStore((fixture) {
+  storeTests((fixture) {
     test('a chat by its chat identifier, with participants', () async {
       final bob = await fixture().handle('bob@example.com');
       final chat = await fixture().chat('iMessage;-;bob@example.com', handles: [bob], identifier: 'bobexamplecom');
