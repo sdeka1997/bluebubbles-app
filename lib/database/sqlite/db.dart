@@ -63,10 +63,17 @@ abstract class DbReader {
 /// with SQLITE_BUSY when its read turns into a write (drift's `transaction()`
 /// sends a deferred `BEGIN`; see test/database/sqlite/write_contention_test.dart).
 class Db implements DbReader {
-  Db._(this.database);
+  Db._(this.database, {this.inBackground = false});
 
-  /// Opens [file] on a background isolate of its own.
-  factory Db.file(File file) => Db._(AppDatabase(NativeDatabase.createInBackground(file, setup: _setupConnection)));
+  /// Opens [file]. With [inBackground] (the main isolate, which draws the
+  /// screen) the connection runs on a background isolate of its own; a
+  /// worker isolate keeps it on itself, where each statement costs no
+  /// round trip.
+  factory Db.file(File file, {bool inBackground = true}) => Db._(
+      AppDatabase(inBackground
+          ? NativeDatabase.createInBackground(file, setup: _setupConnection)
+          : NativeDatabase(file, setup: _setupConnection)),
+      inBackground: inBackground);
 
   /// An in-memory database on this isolate (tests).
   factory Db.memory() => Db._(AppDatabase(NativeDatabase.memory(setup: _setupConnection)));
@@ -76,6 +83,9 @@ class Db implements DbReader {
   static const busyTimeoutMs = 5000;
 
   final AppDatabase database;
+
+  /// Whether the connection runs on a background isolate ([Db.file]).
+  final bool inBackground;
   final _changes = StreamController<DbChanges>.broadcast(sync: true);
   List<(String, List<Object?>)>? _recorded;
 
