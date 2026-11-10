@@ -23,6 +23,13 @@ class MemTrace {
     });
   }
 
+  /// A timeline line without the memory reading: cheap enough for every page of a chat.
+  static void note(String step) {
+    if (!_enabled) return;
+    final seconds = (_clock.elapsedMilliseconds / 1000).toStringAsFixed(1);
+    debugPrint('BBMEM t=${seconds}s $step');
+  }
+
   static void mark(String step) {
     if (!_enabled) return;
     try {

@@ -26,6 +26,12 @@ import 'handlers/drop_zone_manager.dart';
 import 'handlers/message_animation_orchestrator.dart';
 import 'handlers/smart_replies_manager.dart';
 
+/// How close to the oldest loaded message (in messages) the next older page starts loading.
+const olderPageLead = 12;
+
+/// Whether building the list item at [index] (0 = newest) should start loading the next older page.
+bool needsOlderPage({required int index, required int loaded}) => index >= loaded - olderPageLead;
+
 class MessagesView extends StatefulWidget {
   final MessagesService? customService;
   final ConversationViewController controller;
@@ -686,12 +692,14 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
                                 initialItemCount: _messages.length + 1,
                                 itemBuilder: (BuildContext context, int index, Animation<double> animation) {
                                   try {
-                                    // paginate
+                                    // paginate: the next older page starts loading a few messages
+                                    // before the top, so it is usually there by the time you get there
+                                    if (!noMoreMessages && handlersInitialized && !fetching &&
+                                        needsOlderPage(index: index, loaded: _messages.length)) {
+                                      _loadMoreMessages();
+                                    }
                                     if (index >= _messages.length) {
                                       if (!noMoreMessages && handlersInitialized && index == _messages.length) {
-                                        if (!fetching) {
-                                          _loadMoreMessages();
-                                        }
                                         return const Loader();
                                       }
 
