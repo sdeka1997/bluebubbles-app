@@ -5,7 +5,6 @@ import 'package:bluebubbles/services/backend/actions/chat_actions.dart';
 import 'package:bluebubbles/models/models.dart' show MessageSaveResult;
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
-import 'package:bluebubbles/utils/memory_trace.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get_it/get_it.dart';
 import 'package:bluebubbles/services/isolates/global_isolate.dart';
@@ -371,7 +370,6 @@ class ChatInterface {
     } else {
       chatIds = await GetIt.I<GlobalIsolate>().send<List<int>>(IsolateRequestType.getChatsAsync, input: data);
     }
-    MemTrace.mark('chat list: page at $offset ids');
 
     return MessagingStore.current.chatsByIds(chatIds);
   }

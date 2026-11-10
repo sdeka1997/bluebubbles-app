@@ -323,7 +323,6 @@ class ChatsService {
     this.headless = headless;
     if ((!force && !SettingsSvc.settings.finishedSetup.value) || headless) return;
     Logger.info("Fetching chats...", tag: "ChatBloc");
-    MemTrace.mark('chat list: start');
 
     reset();
 
@@ -339,7 +338,6 @@ class ChatsService {
         }))
             .data['data']['total'] ??
         0;
-    MemTrace.mark('chat list: count $currentCount');
 
     loadedAllChats = Completer();
     if (currentCount != 0) {
@@ -360,7 +358,6 @@ class ChatsService {
     var foldedTwins = const <String>{};
     if (!kIsWeb) {
       foldedTwins = foldedTwinGuids(await MessagingStore.current.threadedChats());
-      MemTrace.mark('chat list: threaded chats read');
     }
 
     final batches = (currentCount / batchSize).ceil();
@@ -368,7 +365,6 @@ class ChatsService {
       final chatBatch = (await Chat.getChatsAsync(limit: batchSize, offset: i * batchSize))
           .where((c) => !foldedTwins.contains(c.guid))
           .toList();
-      MemTrace.mark('chat list: page $i read');
       if (kIsWeb) {
         webCachedHandles.addAll(chatBatch.map((e) => e.handles).flattened.toList());
         final ids = webCachedHandles.map((e) => e.address).toSet();
