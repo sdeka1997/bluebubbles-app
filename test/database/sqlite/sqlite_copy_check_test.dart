@@ -144,7 +144,7 @@ void main() {
 
     final database = AppDatabase.file(file);
     addTearDown(database.close);
-    expect(database.schemaVersion, 2);
+    expect(database.schemaVersion, 3);
     final meta = await readStorageMeta(database);
     expect(meta['check_version'], '4');
     expect(meta['fts_state'], 'ready');

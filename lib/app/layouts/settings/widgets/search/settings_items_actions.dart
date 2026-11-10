@@ -120,7 +120,9 @@ class SettingsItemsActions {
     await SettingsSvc.settings.saveAsync();
 
     await PrefsSvc.theme.setSelectedThemes(darkTheme: "OLED Dark", lightTheme: "Bright White");
-    Database.themes.putMany(ThemesService.defaultThemes);
+    for (final preset in ThemesService.defaultThemes) {
+      preset.save();
+    }
 
     await FCMData.deleteFcmData();
 

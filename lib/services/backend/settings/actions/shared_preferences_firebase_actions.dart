@@ -7,6 +7,7 @@ class SharedPreferencesFirebaseActions {
   static const String _firebaseURLKey = 'firebaseURL';
   static const String _clientIDKey = 'clientID';
   static const String _applicationIDKey = 'applicationID';
+  static const String _movedKey = 'fcmMovedFromDatabase';
 
   final SharedPreferencesService service;
 
@@ -39,6 +40,11 @@ class SharedPreferencesFirebaseActions {
     await _setOrRemoveString(_clientIDKey, clientID);
     await _setOrRemoveString(_applicationIDKey, applicationID);
   }
+
+  /// Whether the push setup was taken from the old ObjectBox row (stage S4).
+  bool movedFromDatabase() => service.i.getBool(_movedKey) ?? false;
+
+  Future<void> setMovedFromDatabase() => service.i.setBool(_movedKey, true);
 
   Future<void> clearConfig() async {
     await service.i.remove(_projectIDKey);

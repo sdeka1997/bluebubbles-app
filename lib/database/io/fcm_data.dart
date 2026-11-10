@@ -1,6 +1,7 @@
 import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/generated/objectbox.g.dart';
 import 'package:bluebubbles/services/services.dart';
+import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:objectbox/objectbox.dart';
 
@@ -40,10 +41,8 @@ class FCMData {
 
   Future<FCMData> save({bool wait = false}) async {
     if (kIsWeb) return this;
-    List<FCMData> data = Database.fcmData.getAll();
-    if (data.length > 1) data.removeRange(1, data.length); // These were being ignored anyway
-    id = !Database.fcmData.isEmpty() ? data.first.id : null;
-    Database.fcmData.put(this);
+    // Stage S4: the shared preferences are the only copy (the native side
+    // reads them too); the old ObjectBox row is only read once, by [getFCM].
     final future = Future(() async {
       await PrefsSvc.firebase.saveConfig(
         projectID: projectID,
@@ -64,15 +63,23 @@ class FCMData {
   }
 
   static Future<void> deleteFcmData() async {
-    Database.fcmData.removeAll();
     await PrefsSvc.firebase.clearConfig();
+    await PrefsSvc.firebase.setMovedFromDatabase();
     SettingsSvc.fcmData = FCMData();
   }
 
   static FCMData getFCM() {
-    final result = Database.fcmData.getAll();
-    if (result.isEmpty) {
-      return FCMData(
+    final saved = fromPrefs();
+    if (!saved.isNull || PrefsSvc.firebase.movedFromDatabase()) return saved;
+    // Installs from before the shared preferences copy (database v4) keep it in ObjectBox.
+    final old = kIsWeb ? null : Database.fcmData.getAll().firstOrNull;
+    if (old == null || old.isNull) return saved;
+    old.save();
+    PrefsSvc.firebase.setMovedFromDatabase();
+    return old;
+  }
+
+  static FCMData fromPrefs() => FCMData(
         projectID: PrefsSvc.firebase.getProjectID(),
         storageBucket: PrefsSvc.firebase.getStorageBucket(),
         apiKey: PrefsSvc.firebase.getApiKey(),
@@ -80,9 +87,6 @@ class FCMData {
         clientID: PrefsSvc.firebase.getClientID(),
         applicationID: PrefsSvc.firebase.getApplicationID(),
       );
-    }
-    return result.first;
-  }
 
   Map<String, dynamic> toMap() => {
         "project_id": projectID,

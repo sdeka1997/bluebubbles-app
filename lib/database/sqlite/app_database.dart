@@ -226,6 +226,11 @@ class CopyCheckpoints extends Table {
   Set<Column> get primaryKey => {entity};
 }
 
+/// The app's themes (stage S4), kept outside drift's generated tables: only
+/// ThemeStore reads or writes them.
+const themesTable = 'CREATE TABLE IF NOT EXISTS themes (name TEXT NOT NULL PRIMARY KEY, '
+    'gradient_bg INTEGER NOT NULL, google_font TEXT NOT NULL, data_json TEXT NOT NULL)';
+
 /// Secondary indexes, by the query shape each serves (SQLITE-PLAN-2 section 3).
 const schemaIndexes = <String>[
   // The chat screen's timeline: one chat, no reactions, not deleted, by (sort_at, id).
@@ -335,13 +340,13 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.file(File file) : this(NativeDatabase.createInBackground(file));
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
       await m.createAll();
-      for (final statement in [...schemaIndexes, ftsTable]) {
+      for (final statement in [...schemaIndexes, ftsTable, themesTable]) {
         await customStatement(statement);
       }
       await rebuildFts(customStatement);
@@ -365,6 +370,8 @@ class AppDatabase extends _$AppDatabase {
         }
         await rebuildFts(customStatement);
       }
+      // v2 -> v3: the themes table (stage S4).
+      if (from < 3) await customStatement(themesTable);
     },
     beforeOpen: (_) async {
       await customStatement('PRAGMA foreign_keys = ON');

@@ -10,6 +10,8 @@ import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/migrations/chat_latest_message_migration.dart';
 import 'package:bluebubbles/database/migrations/message_handle_relationship_migration.dart';
 import 'package:bluebubbles/database/sqlite/storage_state.dart';
+import 'package:bluebubbles/database/store/sqlite/theme_store.dart';
+import 'package:bluebubbles/database/store/sqlite/sqlite_messaging_store.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -114,16 +116,18 @@ class Database {
       Logger.error("Failed to perform database migrations!", error: e, trace: s);
     }
 
-    await seedThemes();
-
     // The SQLite copy (storage_state.dart): main isolate only. On Android a
     // missing or out-of-date copy is made now, behind the progress screen.
     if (!isIsolate) await StorageStartup.start();
-    MessagingStore.select(await openSelectedStore(
+    final selected = await openSelectedStore(
       read: () async => (await inspectStorage(StorageStartup.files)).state,
       onMain: !isIsolate,
       files: StorageStartup.files,
-    ));
+    );
+    MessagingStore.select(selected);
+    ThemeStore.current = await _openThemes(selected);
+
+    await seedThemes();
 
     initComplete.complete();
   }
@@ -339,7 +343,7 @@ class Database {
 
   static Future<void> seedThemes() async {
     try {
-      final isFirstRun = Database.themes.isEmpty();
+      final isFirstRun = ThemeStore.current!.isEmpty;
       final storedThemesVersion = PrefsSvc.database.getThemesVersion();
       final needsReseed = isFirstRun || storedThemesVersion < Database.themesVersion;
       if (isFirstRun) {
@@ -350,15 +354,21 @@ class Database {
       }
       if (needsReseed) {
         for (final preset in ThemesService.defaultThemes) {
-          final existing = ThemeStruct.findOne(preset.name);
-          if (existing != null) preset.id = existing.id;
-          Database.themes.put(preset);
+          preset.save();
         }
         await PrefsSvc.database.setThemesVersion(Database.themesVersion);
       }
     } catch (e, s) {
       Logger.error("Failed to seed themes!", error: e, trace: s);
     }
+  }
+
+  /// The themes of this isolate: the SQLite file's when the app runs on it
+  /// (taking the ObjectBox rows once, stage S4), else the ObjectBox box.
+  static Future<ThemeStore> _openThemes(MessagingStore selected) async {
+    List<ThemeRow> objectBoxRows() => [for (final theme in Database.themes.getAll()) theme.row];
+    if (selected is SqliteMessagingStore) return ThemeStore.open(selected.db, moveFrom: objectBoxRows);
+    return ThemeStore.withSink(objectBoxRows(), _ObjectBoxThemes());
   }
 
   /// Wrapper for store.runInTransaction
@@ -381,6 +391,7 @@ class Database {
     Database.handles.removeAll();
     Database.messages.removeAll();
     Database.themes.removeAll();
+    ThemeStore.current?.clear();
     Database.themeEntries.removeAll();
     Database.customGroups.removeAll();
   }
@@ -397,4 +408,26 @@ class Database {
       Database.customGroups.removeAll();
     });
   }
+}
+
+/// Themes saved to the ObjectBox box: platforms and installs with no SQLite
+/// file, until stage S5 removes ObjectBox.
+class _ObjectBoxThemes implements ThemeSink {
+  ThemeStruct? _find(String name) =>
+      Database.themes.query(ThemeStruct_.name.equals(name)).build().findFirst();
+
+  @override
+  Future<void> put(ThemeRow row, {String? replacing}) async {
+    final existing = _find(replacing ?? row.name) ?? _find(row.name);
+    Database.themes.put(ThemeStruct.fromRow(row)..id = existing?.id);
+  }
+
+  @override
+  Future<void> remove(String name) async {
+    final existing = _find(name);
+    if (existing?.id != null) Database.themes.remove(existing!.id!);
+  }
+
+  @override
+  Future<void> clear() async => Database.themes.removeAll();
 }

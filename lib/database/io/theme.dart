@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:core';
 
 import 'package:bluebubbles/helpers/ui/theme_helpers.dart';
-import 'package:bluebubbles/database/database.dart';
+import 'package:bluebubbles/database/store/sqlite/theme_store.dart';
 import 'package:bluebubbles/generated/objectbox.g.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:flex_color_scheme/flex_color_scheme.dart';
@@ -47,28 +47,35 @@ class ThemeStruct {
       ThemesService.defaultThemes.map((e) => e.name).contains(name) ||
       ThemesService.isAdaptiveBackgroundThemeName(name);
 
+  /// The row this theme is stored as ([ThemeStore]).
+  ThemeRow get row => (name: name, gradientBg: gradientBg, googleFont: googleFont, data: dbThemeData);
+
+  static ThemeStruct fromRow(ThemeRow row) =>
+      ThemeStruct(name: row.name, gradientBg: row.gradientBg, googleFont: row.googleFont)..dbThemeData = row.data;
+
+  /// The name this theme was read under, so a rename can replace that row.
+  @Transient()
+  String? storedName;
+
+  static ThemeStore get _store => ThemeStore.current ??= ThemeStore.memory();
+
   ThemeStruct save({bool updateIfNotAbsent = true}) {
-    Database.runInTransaction(TxMode.write, () {
-      ThemeStruct? existing = ThemeStruct.findOne(name);
-      if (existing != null) {
-        id = existing.id;
-      }
-      try {
-        if (id != null && existing != null && updateIfNotAbsent) {
-          id = Database.themes.put(this);
-        } else if (id == null || existing == null) {
-          id = Database.themes.put(this);
-        }
-      } on UniqueViolationException catch (_) {}
-    });
+    if (kIsWeb) return this;
+    final renamed = storedName != null && storedName != name;
+    if (!renamed && !updateIfNotAbsent && _store.byName(name) != null) return this;
+    _store.put(row, replacing: renamed ? storedName : null);
+    storedName = name;
     return this;
   }
 
   void delete() {
-    if (kIsWeb || isPreset || id == null) return;
-    Database.runInTransaction(TxMode.write, () {
-      Database.themes.remove(id!);
-    });
+    if (kIsWeb || isPreset) return;
+    _store.remove(storedName ?? name);
+  }
+
+  static ThemeStruct? _read(String name) {
+    final row = _store.byName(name);
+    return row == null ? null : (fromRow(row)..storedName = row.name);
   }
 
   static ThemeStruct _clonePreset(dynamic preset) {
@@ -82,9 +89,7 @@ class ThemeStruct {
 
   static ThemeStruct getLightTheme() {
     final name = PrefsSvc.theme.getSelectedLightTheme();
-    final query = Database.themes.query(ThemeStruct_.name.equals(name ?? "Bright White")).build();
-    query.limit = 1;
-    final result = query.findFirst();
+    final result = _read(name ?? "Bright White");
     if (result == null) {
       final preset = ThemesService.defaultThemes.firstWhere((t) => t.name == "Bright White");
       return _clonePreset(preset);
@@ -94,9 +99,7 @@ class ThemeStruct {
 
   static ThemeStruct getDarkTheme() {
     final name = PrefsSvc.theme.getSelectedDarkTheme();
-    final query = Database.themes.query(ThemeStruct_.name.equals(name ?? "OLED Dark")).build();
-    query.limit = 1;
-    final result = query.findFirst();
+    final result = _read(name ?? "OLED Dark");
     if (result == null) {
       final preset = ThemesService.defaultThemes.firstWhere((t) => t.name == "OLED Dark");
       return _clonePreset(preset);
@@ -106,13 +109,7 @@ class ThemeStruct {
 
   static ThemeStruct? findOne(String name) {
     if (kIsWeb) return null;
-    return Database.runInTransaction(TxMode.read, () {
-      final query = Database.themes.query(ThemeStruct_.name.equals(name)).build();
-      query.limit = 1;
-      final result = query.findFirst();
-      query.close();
-      return result;
-    });
+    return _read(name);
   }
 
   static ThemeStruct resolveByName(String? name, Brightness brightness) {
@@ -128,11 +125,13 @@ class ThemeStruct {
 
   static List<ThemeStruct> getThemes() {
     if (kIsWeb) return ThemesService.defaultThemes.map(_clonePreset).toList();
-    List<ThemeStruct> allThemes = Database.themes.getAll();
-    // sometimes the theme box is empty, this ensures it is never empty when queried
-    if (allThemes.isEmpty) Database.themes.putMany(ThemesService.defaultThemes.map(_clonePreset).toList());
-    allThemes = Database.themes.getAll();
-    return allThemes;
+    // sometimes the theme list is empty, this ensures it is never empty when queried
+    if (_store.isEmpty) {
+      for (final preset in ThemesService.defaultThemes) {
+        _store.put(_clonePreset(preset).row);
+      }
+    }
+    return [for (final row in _store.all()) fromRow(row)..storedName = row.name];
   }
 
   Map<String, dynamic> toMap() => {
