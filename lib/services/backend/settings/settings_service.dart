@@ -446,17 +446,22 @@ class SettingsService {
 
     final github = GitHub();
     final stream = github.repositories.listReleases(RepositorySlug('bluebubblesapp', 'bluebubbles-app'));
-    final release = await stream.firstWhere(
-        (element) => !(element.isDraft ?? false) && !(element.isPrerelease ?? false) && element.tagName != null);
-    final version = release.tagName!.split("+").first.replaceAll("v", "");
-    final code = release.tagName!.split("+").last.split('-').first;
-    final isDesktopRelease = release.tagName!.split('+').last.contains('desktop');
+    final release = await stream.firstWhere((element) =>
+        !(element.isDraft ?? false) &&
+        !(element.isPrerelease ?? false) &&
+        element.tagName != null &&
+        ReleaseTag.parse(element.tagName!).isFor(desktop: kIsDesktop));
+    final tag = ReleaseTag.parse(release.tagName!);
+    final version = tag.version;
+    final code = '${tag.code ?? ''}';
+    final isDesktopRelease = tag.platform == 'desktop';
 
     String buildNumber = "";
     if (Platform.isAndroid) {
       buildNumber =
           FilesystemSvc.packageInfo.buildNumber.lastChars(min(4, FilesystemSvc.packageInfo.buildNumber.length));
-      if (int.parse(code) <= int.parse(buildNumber) ||
+      if (tag.code == null ||
+          tag.code! <= (int.tryParse(buildNumber) ?? 0) ||
           PrefsSvc.server.getClientUpdateCheckCode() == code ||
           (Platform.isAndroid && isDesktopRelease)) {
         available = false;
@@ -611,4 +616,28 @@ class SettingsService {
       ],
     );
   }
+}
+
+/// A release tag such as `v2.1.6+desktop.96`, `v2.1.5+android.95` or `v2.1.2+92`.
+class ReleaseTag {
+  ReleaseTag(this.version, this.code, this.platform);
+
+  final String version;
+  final int? code;
+
+  /// `desktop` or `android`, or null for a release shared by every platform.
+  final String? platform;
+
+  static ReleaseTag parse(String tag) {
+    final parts = tag.split("+");
+    final build = parts.length > 1 ? parts.last.split('-').first : '';
+    return ReleaseTag(
+      parts.first.replaceAll("v", ""),
+      int.tryParse(RegExp(r'(\d+)$').firstMatch(build)?.group(1) ?? ''),
+      RegExp(r'^([a-z]+)\.').firstMatch(build)?.group(1),
+    );
+  }
+
+  /// Whether this release is meant for a desktop or a mobile install.
+  bool isFor({required bool desktop}) => platform == null || platform == (desktop ? 'desktop' : 'android');
 }
