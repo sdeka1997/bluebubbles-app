@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:audio_waveforms/audio_waveforms.dart';
@@ -44,6 +45,7 @@ class _AudioPlayerState extends State<AudioPlayer> with AutomaticKeepAliveClient
       vsync: this, duration: const Duration(milliseconds: 400), animationBehavior: AnimationBehavior.preserve);
   final playerState = Rx<PlayerState?>(null);
   final maxDuration = 0.obs;
+  StreamSubscription<PlayerState>? _stateSubscription;
 
   @override
   void initState() {
@@ -54,6 +56,9 @@ class _AudioPlayerState extends State<AudioPlayer> with AutomaticKeepAliveClient
 
   @override
   void dispose() {
+    // The player itself is cached on the chat controller and outlives this
+    // bubble; its state stream would keep this State alive until then.
+    _stateSubscription?.cancel();
     if (attachment == null) {
       controller?.dispose();
     }
@@ -68,7 +73,7 @@ class _AudioPlayerState extends State<AudioPlayer> with AutomaticKeepAliveClient
         ..addListener(() {
           maxDuration.value = controller!.maxDuration;
         });
-      controller!.onPlayerStateChanged.listen((event) {
+      _stateSubscription = controller!.onPlayerStateChanged.listen((event) {
         if ((controller!.playerState == PlayerState.paused || controller!.playerState == PlayerState.stopped) &&
             animController.value > 0) {
           animController.reverse();
