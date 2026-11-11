@@ -2,7 +2,7 @@
 
 See `docs/MODELS.md` for the consolidated cross-directory entity/DTO field reference.
 
-Plain data classes used across multiple layers. Not ObjectBox entities — no `@Entity` annotations. All serializable and safe to cross isolate boundaries.
+Plain data classes used across multiple layers. Not database entities. All serializable and safe to cross isolate boundaries.
 
 Barrel export: `models/models.dart`
 

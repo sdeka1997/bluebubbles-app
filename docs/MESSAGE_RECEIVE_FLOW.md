@@ -17,7 +17,7 @@ Server WebSocket event: "new-message" / "updated-message"
   → IncomingMessageHandler._processNewMessage() or _processUpdatedMessage()
       (out-of-order updates for a not-yet-saved message are parked and
       flushed once the matching new-message lands)
-  → chat.addMessage() → ChatInterface.addMessageToChat() → GlobalIsolate → ChatActions (ObjectBox write)
+  → chat.addMessage() → ChatInterface.addMessageToChat() → GlobalIsolate → ChatActions (SQLite write)
   → hydrate ID → Message object
   → ChatsSvc.updateChat() / addChat()  → ChatState.*Internal()     → Obx() rebuild
   → MessagesSvc.updateMessage() / addNewMessage() → MessageState.*Internal()  → Obx() rebuild
@@ -133,15 +133,15 @@ Routing by `MessageEventType`:
 
 **`ChatInterface.addMessageToChat()`** (`lib/services/backend/interfaces/chat_interface.dart`):
 
-- Packs arguments into a `Map<String, dynamic>` (all values must be primitive — no ObjectBox entities cross the isolate boundary)
+- Packs arguments into a `Map<String, dynamic>` (all values must be primitive — no entities cross the isolate boundary)
 - **If already inside an isolate** (`isIsolate == true`): calls `ChatActions.addMessageToChat(data)` directly
 - **If on the main thread:** dispatches to `GlobalIsolate.send(IsolateRequestType.addMessageToChat, data)` and awaits the response
 - After the isolate returns `{ messageId: int?, isNewer: bool }`, hydrates the result: `Database.messages.get(messageId)` → full `Message` object. If that lookup fails (ID null/stale), falls back to `Message.findOne(guid: ...)`, and as a last resort constructs a `Message.fromMap()` directly rather than crashing on a null unwrap.
 
 **`ChatActions.addMessageToChat()`** (`lib/services/backend/actions/chat_actions.dart`) runs inside the isolate:
-- Upserts the `Message` record into ObjectBox
+- Upserts the `Message` record into SQLite
 - Updates `Chat.latestMessage` pointer if the new message is newer
-- Returns a plain map — never ObjectBox entities
+- Returns a plain map — never entities
 
 Back in `Chat.addMessage()` on the calling side (still a "pure DB" step, not gated on isolate):
 - If `isNewer`, links the hydrated message via `setLatestMessage()`, clears `dateDeleted` if set, and — only if the message isn't from this device and `SettingsSvc.settings.unarchiveOnNewMessage` is enabled — unarchives the chat.
@@ -167,7 +167,7 @@ This happens inside `Chat.addMessage()` (see Step 5), not as a separate call fro
 - If the new message is **newer** and **from this device**: `chat.toggleHasUnreadAsync(false, ...)` — clears the unread badge.
 - If the new message is **newer** and **not from this device**: `chat.toggleHasUnreadAsync(true, ...)` — marks the chat as having an unread message. (`IncomingMessageHandler` then immediately clears this back to `false` in-memory if the chat happens to be the currently-active/open chat — see Step 4, new-message step 8.)
 
-These go through `ChatInterface`/`saveAsync()` → ObjectBox in the isolate, same as the message write.
+These go through `ChatInterface`/`saveAsync()` → SQLite in the isolate, same as the message write.
 
 ---
 

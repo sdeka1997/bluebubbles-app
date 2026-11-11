@@ -5,7 +5,7 @@ import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
-import 'package:bluebubbles/utils/memory_trace.dart';
+import 'package:bluebubbles/utils/startup_timeline.dart';
 
 /// A validated `message-deleted` / `message-restored` event.
 class RecoverableMessageEvent {
@@ -166,13 +166,13 @@ class AppleStateCatchUp {
     var changed = 0;
     final plan = planAppleStateCatchUp(ChatsSvc.allChats.toList(), snapshot,
         shownNotificationIds: await NotificationsSvc.shownChatNotificationIds());
-    MemTrace.mark('catch-up: planned (${plan.deleteChats.length} deleted, '
+    StartupTimeline.mark('catch-up: planned (${plan.deleteChats.length} deleted, '
         '${plan.readStateChanges.length} read changes, ${plan.clearNotificationFor.length} notifications)');
     for (final chat in plan.deleteChats) {
       await ChatsSvc.softDeleteChat(chat);
       changed++;
     }
-    MemTrace.mark('catch-up: deleted chats');
+    StartupTimeline.mark('catch-up: deleted chats');
     for (final entry in plan.readStateChanges.entries) {
       await ChatsSvc.setChatHasUnreadFromServer(entry.key, entry.value);
       changed++;
@@ -180,7 +180,7 @@ class AppleStateCatchUp {
     for (final chat in plan.clearNotificationFor) {
       await ChatInterface.clearNotificationForChat(chatId: chat.id!, chatGuid: chat.guid);
     }
-    MemTrace.mark('catch-up: read state applied');
+    StartupTimeline.mark('catch-up: read state applied');
 
     for (final guid in snapshot.deletedMessages) {
       final message = await MessagingStore.current.messageByGuid(guid);
@@ -188,7 +188,7 @@ class AppleStateCatchUp {
       await RecoverableMessages.apply(guid, hide: true);
       changed++;
     }
-    MemTrace.mark('catch-up: deleted messages hidden');
+    StartupTimeline.mark('catch-up: deleted messages hidden');
 
     if (changed > 0) Logger.info('Caught up $changed change(s) from Apple', tag: 'AppleStateCatchUp');
   }

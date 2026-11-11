@@ -8,7 +8,7 @@ GetIt singleton. The authoritative source for all app settings at runtime.
 
 - Holds the `Settings` object (defined in `lib/database/global/settings.dart`) as `SettingsSvc.settings`
 - All settings fields are `Rx*` observables — widgets can `Obx()` directly on any field
-- Reads/writes settings via `PrefsInterface` → `PrefsActions` → ObjectBox in the GlobalIsolate
+- Reads/writes settings via `PrefsInterface` → `PrefsActions` → SharedPreferences, mirrored to the isolates
 
 **Reading a setting anywhere:**
 ```dart
@@ -30,7 +30,7 @@ Category-scoped `SharedPreferences` action helpers, one file per domain. Accesse
 
 ### `shared_preferences_service.dart` — `SharedPreferencesService` / `PrefsSvc`
 
-Thin wrapper around Flutter's `SharedPreferences` for simple key-value storage that must be available before ObjectBox initializes (e.g. during background isolate startup).
+Thin wrapper around Flutter's `SharedPreferences` for simple key-value storage that must be available before the database opens (e.g. during background isolate startup).
 
 Used for: callback handle storage (background isolate registration), install timestamp, and any other primitive values that need to survive a cold start before the database is ready.
 

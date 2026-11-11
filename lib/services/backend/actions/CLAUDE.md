@@ -1,6 +1,6 @@
 # services/backend/actions/ — Isolate Action Implementations
 
-Actions are pure functions that run **inside** the background isolate. They perform ObjectBox reads/writes and return primitive values (IDs, maps, booleans) — never full model objects with DB relations.
+Actions are pure functions that run **inside** the background isolate. They perform the writes (and the reads those writes need) through `MessagingStore.current` and return primitive values (IDs, maps, booleans). Plain reads don't go through an Action: the caller reads its own connection.
 
 ## File → Resource Mapping
 | File | Resource |
@@ -23,7 +23,7 @@ Actions are pure functions that run **inside** the background isolate. They perf
 ## Rules
 - Actions accept a single `Map<String, dynamic> data` parameter (serializable across isolate boundary)
 - Return types must be primitive or JSON-serializable: `int?`, `bool`, `Map`, `List<int>`, etc.
-- Never return ObjectBox entities or objects with lazy-loaded `ToOne`/`ToMany` relations
+- Never return entities across the isolate boundary; return ids or maps
 - All DB writes go through `Database.runInTransaction(TxMode.write, () { ... })`
 - Actions are registered in `isolate_actions.dart` → `IsolateActons.actions`
 

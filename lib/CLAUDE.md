@@ -9,7 +9,6 @@
 | `helpers/` | Cross-cutting utilities → `helpers/CLAUDE.md` |
 | `models/` | Cross-cutting DTOs and view models → `models/CLAUDE.md` |
 | `utils/` | Low-level pure utilities (logger, color engine, parsers) → `utils/CLAUDE.md` |
-| `generated/` | Auto-generated ObjectBox code — do not edit |
 
 ## Entry Points
 - `main.dart` — app init, theme, routing

@@ -1,6 +1,6 @@
 # database/global/ — Shared DTOs (All Platforms)
 
-Plain Dart classes — no ObjectBox annotations. Safe to use on web. All have `fromMap`/`toMap`.
+Plain Dart classes — not stored as tables. Safe to use on web. All have `fromMap`/`toMap`.
 
 ## Core App Models
 | File | Purpose |

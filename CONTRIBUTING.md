@@ -105,94 +105,15 @@ flutter pub get
 
 ## Architecture Overview
 
-### Database: ObjectBox
+### Database: SQLite
 
-BlueBubbles uses **ObjectBox** as its local database solution for efficient, fast data storage.
+BlueBubbles stores its data in one SQLite file, `bluebubbles.db`, through
+[drift](https://drift.simonbinder.eu/) and raw SQL. Each isolate opens its own connection: reads run
+where they're needed, writes and sync run in the background isolates. See
+`.claude/rules/database.md` and `docs/DECISIONS.md` (ADR-014).
 
-#### How ObjectBox Works
-
-ObjectBox is a NoSQL object database optimized for mobile and IoT. Key features:
-
-- **Direct object persistence**: No ORM mapping overhead
-- **ACID compliance**: Transactions ensure data consistency
-- **Reactive queries**: Automatic UI updates when data changes
-- **Relations**: ToOne, ToMany, and backlinks for entity relationships
-
-#### Efficient vs. Inefficient Operations
-
-**Efficient Operations:**
-
-- `get(id)` - Direct ID lookups are O(1)
-- `getMany([ids])` - Batch retrieval by IDs
-- Indexed queries (e.g., on `guid`, `dateCreated`)
-- Limiting query results with `.limit(n)`
-- Using `.find()` sparingly with proper conditions
-
-**Inefficient Operations:**
-
-- Loading all entities without limits
-- Queries without indexes on frequently searched fields
-- Accessing relationships outside of transactions (causes additional queries)
-- Modifying data without using transactions
-
-**Best Practice:**
-
-```dart
-// Good: Efficient batch retrieval
-final messages = Database.messages.getMany(messageIds).whereType<Message>().toList();
-
-// Bad: Querying in a loop
-for (final id in messageIds) {
-  final message = Database.messages.get(id); // Multiple separate queries
-}
-```
-
-#### Database Models and Relationships
-
-The main ObjectBox entities are:
-
-**Message** (`lib/database/io/message.dart`)
-
-- Represents an iMessage/SMS message
-- Relations:
-  - `ToOne<Handle>` - The sender/recipient handle
-  - `ToMany<Attachment>` - Linked attachments
-  - Associated messages (reactions, edits) via `associatedMessages` list
-
-**Chat** (`lib/database/io/chat.dart`)
-
-- Represents a conversation
-- Relations:
-  - `ToMany<Handle>` - Participants in the chat
-  - `ToMany<Message>` - Messages in the chat
-- Maintains latest message reference
-
-**Handle** (`lib/database/io/handle.dart`)
-
-- Represents a contact address (phone/email)
-- Relations:
-  - `ToMany<ContactV2>` - New contact system (backlink)
-  - `ToMany<Chat>` - Chats this handle participates in
-  - `ToOne<Contact>` - Legacy contact relation (**DEPRECATED** - use ContactV2)
-
-**Attachment** (`lib/database/io/attachment.dart`)
-
-- Represents a file attachment
-- Relations:
-  - `ToOne<Message>` - Parent message
-
-**ContactV2** (`lib/database/io/contact_v2.dart`)
-
-- New contact system (replaces deprecated Contact model)
-- Relations:
-  - `ToMany<Handle>` - Linked handles for this contact
-
-**Contact** (`lib/database/io/contact.dart`) - **DEPRECATED**
-
-- Legacy contact system - **DO NOT USE for new code**
-- Use ContactV2 instead for all contact-related operations
-
-**Important**: Always access ObjectBox relationships within a transaction context to avoid performance issues.
+The main entities are in `lib/database/io/` (`Message`, `Chat`, `Handle`, `Attachment`,
+`ContactV2`); their tables are in `lib/database/sqlite/app_database.dart`.
 
 ### Isolates System
 
@@ -373,7 +294,7 @@ The order matters! Services are initialized in this sequence:
 2. **SharedPreferencesService** - Persistent key-value storage
 3. **SettingsService** - App settings management
 4. **BaseLogger** - Logging infrastructure
-5. **Database** - ObjectBox initialization
+5. **Database** - opens `bluebubbles.db`
 6. **GlobalIsolate & IncrementalSyncIsolate** - Background threads
 7. **HttpService** - Network requests
 8. **MethodChannelService** - Platform channel communication
@@ -582,7 +503,7 @@ This project uses a max line length of **120 characters**.
 
 - [Dart Documentation](https://dart.dev/guides)
 - [Flutter Documentation](https://flutter.dev/docs)
-- [ObjectBox Documentation](https://docs.objectbox.io/)
+- [drift Documentation](https://drift.simonbinder.eu/)
 - [GetX Documentation](https://pub.dev/packages/get)
 
 ## Questions?

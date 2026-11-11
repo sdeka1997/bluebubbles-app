@@ -6,7 +6,7 @@ Each entry documents a significant design choice: what was decided, why, and wha
 
 ## ADR-001: Heavy Processing Runs in a Persistent Background Isolate
 
-**Decision:** All database writes and reads that aren't trivially fast run inside `GlobalIsolate`, a dedicated Dart isolate that is spawned once at app startup and kept alive.
+**Decision (reads amended by ADR-014):** All database writes and reads that aren't trivially fast run inside `GlobalIsolate`, a dedicated Dart isolate that is spawned once at app startup and kept alive.
 
 **Context:** ObjectBox operations — especially bulk inserts during sync, message hydration, and contact lookups — can take tens to hundreds of milliseconds. Running them on the main thread stalls the Flutter rendering pipeline and causes dropped frames.
 
@@ -24,7 +24,7 @@ Each entry documents a significant design choice: what was decided, why, and wha
 
 ---
 
-## ADR-002: Actions Return IDs; Interfaces Hydrate
+## ADR-002: (Superseded by ADR-014) Actions Return IDs; Interfaces Hydrate
 
 **Decision:** Action methods (inside the isolate) return only primitive IDs. Interface methods (on the main thread) convert those IDs back into full model objects via ObjectBox's O(1) `get(id)` lookup.
 
@@ -106,7 +106,7 @@ return chat;
 
 **Decision:** `ChatState`, `MessageState`, `HandleState`, and `AttachmentState` are thin reactive wrapper classes that mirror the fields of `Chat`, `Message`, `Handle`, and `Attachment` as individually observable `Rx*` variables. The UI reads from state objects, never directly from DB entities.
 
-**Context:** These are ObjectBox entities. They carry lazy-loaded relations and cannot be observed for field-level changes without re-querying. Passing entities directly to `Obx()` widgets would cause the entire widget to rebuild on any field change.
+**Context:** Entities are plain objects read from the database and cannot be observed for field-level changes without re-querying. Passing entities directly to `Obx()` widgets would cause the entire widget to rebuild on any field change.
 
 **Rationale:**
 - `Obx()` rebuilds only the sub-tree that reads a specific `Rx*` field. If only `isPinned` changes, only the widget reading `chatState.isPinned` rebuilds — not the avatar, title, or subtitle.
@@ -176,7 +176,7 @@ Obx(() => Column(children: [
 
 ---
 
-## ADR-008: Platform DB Abstraction via `io/` and `html/` Directories
+## ADR-008: (Superseded by ADR-014) Platform DB Abstraction via `io/` and `html/` Directories
 
 **Decision:** ObjectBox entity classes are duplicated into `lib/database/io/` (native/desktop) and `lib/database/html/` (web stub). Conditional imports in `lib/database/models.dart` select the right one at compile time.
 
@@ -301,3 +301,33 @@ Obx(() => Column(children: [
 - New UI features must be built as small composable widgets from the start — retrofitting decomposition is expensive.
 - Prefer creating a new file per logical widget over adding private classes to an existing large file.
 - The `lib/app/layouts/conversation_view/widgets/message/` directory is the canonical example of correct decomposition: 54+ files, each handling one narrow responsibility.
+
+---
+
+## ADR-014: One SQLite File; Reads on the Caller's Isolate, Writes in the Background
+
+**Decision:** All app data lives in `bluebubbles.db` (SQLite through drift, raw SQL in the
+repositories). Each isolate opens its own connection. Reads run on the isolate that needs them and
+return finished entities (relations and reactions filled in the same read). Writes and sync run in
+the background isolates through `Db.write`, and committed changes reach the main isolate as
+`DbChanges`. Supersedes ADR-002 and ADR-008, and the read half of ADR-001.
+
+**Context:** ObjectBox could not page a chat in the screen's own order, so older pages repeated or
+skipped messages. It also held about 1 GB of memory-mapped data on a large phone. Under ADR-002 each
+page of a chat crossed the isolate boundary as ids and was read again on the main thread, about three
+reads per page. SQLite with WAL lets several connections read while one writes.
+
+**Rationale:**
+- Keyset paging on `(sort_at, id)` matches `Message.sort`, so pages never repeat or skip.
+- A page is one read; there is nothing to send across isolates and read again.
+- Bulk writes and sync stay off the UI thread; `BEGIN IMMEDIATE` makes a second writer wait
+  instead of failing.
+- Web has no database, so the `html/` stubs went away; web code paths guard with `kIsWeb`.
+
+**Consequences:**
+- Actions are for writes. A plain read doesn't need an Action or an isolate round trip.
+- A schema change needs a `schemaVersion` bump and an `onUpgrade` step that can safely run again.
+- The `objectbox/` folder of older builds is left untouched, so a rollback still opens it.
+
+**Key files:** `lib/database/sqlite/`, `lib/database/store/`, `.claude/rules/database.md`
+

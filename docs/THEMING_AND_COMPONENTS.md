@@ -446,7 +446,7 @@ Consuming components:
   need to set its own barrier/background).
 - **Persistence entity**: `ThemeStruct` (`lib/database/io/theme.dart`, `@Entity()`) — `name`
   (unique), `gradientBg`, `googleFont`, and `data` (a `ThemeData`, serialized to/from JSON for
-  ObjectBox — encodes the full `textTheme`, every M3 `colorScheme` role, and the
+  SQLite (`themes` table) — encodes the full `textTheme`, every M3 `colorScheme` role, and the
   `BubbleColors`/`BubbleText` extensions). `isPreset` is true if the name matches a built-in
   preset or an adaptive-background theme name. `getLightTheme()`/`getDarkTheme()` resolve the
   user's current selection (`PrefsSvc.theme.getSelectedLightTheme()/getSelectedDarkTheme()`,

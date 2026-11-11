@@ -29,8 +29,9 @@
                         │
 ┌───────────────────────▼─────────────────────────┐
 │               Database Layer                     │
-│  lib/database/io/      ObjectBox entities        │
-│  lib/database/html/    Web stubs                 │
+│  lib/database/io/      Entities                  │
+│  lib/database/sqlite/  SQLite schema, repos      │
+│  lib/database/store/   MessagingStore            │
 │  lib/database/global/  Platform-agnostic DTOs    │
 └─────────────────────────────────────────────────┘
 ```
@@ -73,11 +74,13 @@ Every Interface method checks this flag to **prevent an isolate from spawning su
 
 Without this flag, isolate code that calls an Interface would invoke `GlobalIsolate.send()` from within the isolate — spinning up another isolate unnecessarily and risking deadlocks. The flag lets the same interface method work correctly in both execution contexts without duplication.
 
-### Interface → Action → Hydration
+### Reads, writes and isolates
 
-Actions (`lib/services/backend/actions/`) perform pure ObjectBox operations and return **primitive IDs**. Interfaces (`lib/services/backend/interfaces/`) route to the right context and then **hydrate** those IDs back into full model objects on the main thread via `Database.entityBox.get(id)` — an O(1) lookup.
-
-Objects and ObjectBox relations cannot be safely passed across isolate boundaries. IDs are plain integers and serialize trivially.
+Writes and sync run in the background isolates: Interfaces (`lib/services/backend/interfaces/`) send
+them to Actions (`lib/services/backend/actions/`), which write through `MessagingStore.current` and
+return ids or maps. Reads don't cross isolates: each isolate has its own SQLite connection, and
+`MessagingStore.current` returns finished entities (a chat page comes with attachments, linked
+messages and reactions). Committed writes reach the main isolate as `DbChanges` events. See ADR-014.
 
 ---
 
@@ -98,9 +101,9 @@ Inside components and state classes, `Rx*` observables (`RxBool`, `RxString`, `R
 
 ### ChatState & MessageState
 
-`lib/app/state/chat_state.dart` and `message_state.dart` are thin reactive wrappers around the ObjectBox entities `Chat` and `Message`.
+`lib/app/state/chat_state.dart` and `message_state.dart` are thin reactive wrappers around the entities `Chat` and `Message`.
 
-**Why they exist:** ObjectBox entities are heavy (they carry lazy-loaded relations, full field sets, and require a DB context to resolve links). Re-querying the DB on every UI event would be expensive and could block the main thread. Instead, the relevant fields that the UI cares about are mirrored as `Rx*` fields inside a state object.
+**Why they exist:** entities are plain objects with no change notifications. Re-querying the DB on every UI event would be expensive and could block the main thread. Instead, the relevant fields that the UI cares about are mirrored as `Rx*` fields inside a state object.
 
 **Update discipline:** Only `*Internal` methods (e.g., `updateIsPinnedInternal()`) modify a state object's observables. These are called exclusively by service-layer code after a confirmed DB write. UI widgets are never allowed to call them directly. This guarantees that the DB and the in-memory state stay in sync and that no widget can create a stale-read situation by writing state independently.
 
@@ -158,15 +161,12 @@ All three variants share the same controller. Skin-specific logic never leaks in
 
 ## Platform Abstraction
 
-ObjectBox does not support web. The database layer is split:
-
 | Directory | Platform | Contents |
 |-----------|----------|---------|
-| `lib/database/io/` | Android, iOS, Desktop | `@Entity` annotated ObjectBox classes |
-| `lib/database/html/` | Web | Stub implementations with equivalent API shapes |
-| `lib/database/global/` | All | Plain Dart DTOs with no DB annotations |
+| `lib/database/io/` | Android, iOS, Desktop | Entity classes stored in SQLite (`lib/database/sqlite/`) |
+| `lib/database/global/` | All | Plain Dart DTOs, not stored as tables |
 
-Conditional imports resolve the correct module at compile time. Service and UI code imports from `lib/database/models.dart` which handles the branching transparently.
+Web has no local database; DB entry points return early under `kIsWeb`.
 
 ---
 
