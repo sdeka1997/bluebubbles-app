@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:bluebubbles/database/sqlite/db_change_events.dart';
@@ -20,9 +21,24 @@ const storageFileName = 'bluebubbles.db';
 /// it stays as it was for a rollback to one of them.
 Future<MessagingStore> openStorage(Directory directory, {required bool onMain}) async {
   await closeStorage();
-  final db = Db.file(File(join(directory.path, storageFileName)));
+  final path = join(directory.path, storageFileName);
+  if (onMain) await Isolate.run(() => _migrate(path));
+  final db = Db.file(File(path));
   _open = (db: db, changes: onMain ? DbChangeEvents.main.attachLocal(db) : DbChangeEvents.postFrom(db));
   return MessagingStore(db);
+}
+
+/// Opens [path] once off the main isolate, so a schema upgrade and the
+/// compaction after it (seconds on a full phone) never hold up a frame, and
+/// before any other isolate opens the file.
+Future<void> _migrate(String path) async {
+  final db = Db.file(File(path));
+  try {
+    await db.select('PRAGMA user_version');
+    await db.vacuumIfPending();
+  } finally {
+    await db.close();
+  }
 }
 
 Future<void> closeStorage() async {

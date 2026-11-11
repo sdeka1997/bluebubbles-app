@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
+import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart' show emptySummaryInfoJson, plainTextBodyJson;
 
 part 'app_database.g.dart';
 
@@ -207,23 +208,13 @@ class CustomGroupChats extends Table {
   bool get withoutRowId => true;
 }
 
-/// Key/value state of the SQLite file: schema, copy state, verification result.
+/// Key/value state of the SQLite file: `fts_state`, `vacuum_pending`.
 class StorageMeta extends Table {
   TextColumn get key => text()();
   TextColumn get value => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {key};
-}
-
-/// How far the ObjectBox copy got per entity: the highest ObjectBox id copied.
-class CopyCheckpoints extends Table {
-  TextColumn get entity => text()();
-  IntColumn get lastSourceId => integer()();
-  IntColumn get rowsCopied => integer()();
-
-  @override
-  Set<Column> get primaryKey => {entity};
 }
 
 /// The app's themes (stage S4), kept outside drift's generated tables: only
@@ -329,7 +320,6 @@ const _danglingCleanup = <String>[
     CustomGroups,
     CustomGroupChats,
     StorageMeta,
-    CopyCheckpoints,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -337,10 +327,42 @@ class AppDatabase extends _$AppDatabase {
 
   AppDatabase.inMemory() : this(NativeDatabase.memory());
 
+  /// v3 -> v4: [plainTextBody] bodies and empty summary infos become NULL
+  /// (the mappers rebuild them), the copy's checkpoint table goes, and the
+  /// next open compacts the file ([Db.vacuumIfPending]). Every step can run
+  /// again: a kill midway finishes on the next open.
+  Future<void> _shrinkMessages() async {
+    await customStatement(
+        "UPDATE messages SET message_summary_info_json = NULL WHERE message_summary_info_json IN ('[]', ?)",
+        [emptySummaryInfoJson]);
+    var after = 0;
+    while (true) {
+      final rows = await customSelect(
+        'SELECT id, text, attributed_body_json AS b FROM messages WHERE id > ? AND text IS NOT NULL '
+        "AND attributed_body_json LIKE '[{\"string\":%' ORDER BY id LIMIT 5000",
+        variables: [Variable.withInt(after)],
+      ).get();
+      if (rows.isEmpty) break;
+      after = rows.last.read<int>('id');
+      final plain = [
+        for (final r in rows)
+          if (r.read<String>('b') == plainTextBodyJson(r.read<String>('text'))) r.read<int>('id')
+      ];
+      for (var i = 0; i < plain.length; i += 500) {
+        final chunk = plain.sublist(i, i + 500 > plain.length ? plain.length : i + 500);
+        await customStatement(
+            'UPDATE messages SET attributed_body_json = NULL WHERE id IN (${List.filled(chunk.length, '?').join(', ')})',
+            chunk);
+      }
+    }
+    await customStatement('DROP TABLE IF EXISTS copy_checkpoints');
+    await customStatement("INSERT OR REPLACE INTO storage_meta (key, value) VALUES ('vacuum_pending', '1')");
+  }
+
   AppDatabase.file(File file) : this(NativeDatabase.createInBackground(file));
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -372,6 +394,7 @@ class AppDatabase extends _$AppDatabase {
       }
       // v2 -> v3: the themes table (stage S4).
       if (from < 3) await customStatement(themesTable);
+      if (from < 4) await _shrinkMessages();
     },
     beforeOpen: (_) async {
       await customStatement('PRAGMA foreign_keys = ON');

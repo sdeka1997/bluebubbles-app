@@ -41,6 +41,38 @@ int sortAtMicros(DateTime? dateCreated, DateTime? dateDelivered) {
   return delivered != null && delivered < created ? delivered : created;
 }
 
+/// The body Apple sends for plain text: one run over all of [text] (UTF-16
+/// units, as Dart counts them), message part 0 and no other attribute the app
+/// keeps. About half of all messages; stored as NULL and rebuilt on read.
+List<AttributedBody> plainTextBody(String text) => [
+      AttributedBody(string: text, runs: [Run(range: [0, text.length], attributes: Attributes(messagePart: 0))]),
+    ];
+
+/// [plainTextBody] as the column held it before schema v4.
+String plainTextBodyJson(String text) => jsonEncode([for (final b in plainTextBody(text)) b.toMap()]);
+
+/// NULL when the body is [plainTextBody] of the text, else the body's JSON
+/// (`[]` for no body).
+String? attributedBodyColumn(Message m) {
+  final json = m.dbAttributedBody;
+  final text = m.text;
+  return text != null && json == plainTextBodyJson(text) ? null : json;
+}
+
+List<AttributedBody> attributedBodyFromColumn(String? json, String? text) => json != null
+    ? (jsonDecode(json) as List).map((e) => AttributedBody.fromMap(e)).toList()
+    : (text == null ? <AttributedBody>[] : plainTextBody(text));
+
+/// The summary info of a message never edited or unsent: every part empty.
+const emptySummaryInfoJson = '[{"retractedParts":[],"editedContent":{},"originalTextRange":{},"editedParts":[]}]';
+
+/// NULL when no entry says anything (no retracted or edited part, no edit
+/// history), which is almost every message.
+String? summaryInfoColumn(Message m) => m.messageSummaryInfo.every((s) =>
+        s.retractedParts.isEmpty && s.editedContent.isEmpty && s.originalTextRange.isEmpty && s.editedParts.isEmpty)
+    ? null
+    : m.dbMessageSummaryInfo;
+
 Map<String, Object?> messageToRow(Message m) => {
   'id': m.id,
   'original_rowid': m.originalROWID,
@@ -74,8 +106,8 @@ Map<String, Object?> messageToRow(Message m) => {
   'big_emoji': _bool(m.bigEmoji),
   'error': m.error,
   'chat_id': _targetId(m.chat.targetId),
-  'attributed_body_json': m.dbAttributedBody,
-  'message_summary_info_json': m.dbMessageSummaryInfo,
+  'attributed_body_json': attributedBodyColumn(m),
+  'message_summary_info_json': summaryInfoColumn(m),
   'payload_data_json': m.dbPayloadData,
   'metadata_json': m.dbMetadata,
   'has_apple_payload_data': _bool(m.hasApplePayloadData),
@@ -132,7 +164,7 @@ Message messageFromRow(Map<String, Object?> r) {
     isBookmarked: _boolOr(r['is_bookmarked'], false),
   )
     ..bigEmoji = _boolOrNull(r['big_emoji'])
-    ..dbAttributedBody = r['attributed_body_json'] as String?
+    ..attributedBody = attributedBodyFromColumn(r['attributed_body_json'] as String?, r['text'] as String?)
     ..dbMessageSummaryInfo = r['message_summary_info_json'] as String?
     ..dbPayloadData = r['payload_data_json'] as String?
     ..dbMetadata = r['metadata_json'] as String?;
