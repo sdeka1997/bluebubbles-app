@@ -7,8 +7,12 @@ enum ReactionTailDirection { left, right }
 class ReactionClipper extends CustomClipper<Path> {
   final ReactionTailDirection tailDirection;
 
+  /// False for a badge stacked behind another: its tail would show between them.
+  final bool tail;
+
   ReactionClipper({
     required this.tailDirection,
+    this.tail = true,
   });
 
   @override
@@ -17,10 +21,12 @@ class ReactionClipper extends CustomClipper<Path> {
     final path = Path();
     if (tailDirection == ReactionTailDirection.right) {
       path.addArc(Rect.fromLTWH(0, 0, square * 0.8, square * 0.8), 0, 2 * pi);
+      if (!tail) return path;
       path.addArc(Rect.fromLTWH(square * 0.55, square * 0.55, square * 0.3, square * 0.3), 0, 2 * pi);
       path.addArc(Rect.fromLTWH(square * 0.825, square * 0.825, square * 0.175, square * 0.175), 0, 2 * pi);
     } else if (tailDirection == ReactionTailDirection.left) {
       path.addArc(Rect.fromLTWH(square * 0.2, 0, square * 0.8, square * 0.8), 0, 2 * pi);
+      if (!tail) return path;
       path.addArc(Rect.fromLTWH(square * 0.2, square * 0.55, square * 0.3, square * 0.3), 0, 2 * pi);
       path.addArc(Rect.fromLTWH(0, square * 0.825, square * 0.175, square * 0.175), 0, 2 * pi);
     }
@@ -29,15 +35,19 @@ class ReactionClipper extends CustomClipper<Path> {
 
   @override
   bool shouldReclip(covariant ReactionClipper oldClipper) {
-    return oldClipper.tailDirection != tailDirection;
+    return oldClipper.tailDirection != tailDirection || oldClipper.tail != tail;
   }
 }
 
 class ReactionBorderClipper extends CustomClipper<Path> {
   final ReactionTailDirection tailDirection;
 
+  /// False for a badge stacked behind another: its tail would show between them.
+  final bool tail;
+
   ReactionBorderClipper({
     required this.tailDirection,
+    this.tail = true,
   });
 
   @override
@@ -46,11 +56,13 @@ class ReactionBorderClipper extends CustomClipper<Path> {
     final path = Path();
     if (tailDirection == ReactionTailDirection.right) {
       path.addArc(Rect.fromLTWH(0, 0, square * 0.8 + 3, square * 0.8 + 3), 0, 2 * pi);
+      if (!tail) return path;
       path.addArc(Rect.fromLTWH(square * 0.55, square * 0.55, square * 0.3 + 3, square * 0.3 + 3), 0, 2 * pi);
       path.addArc(Rect.fromLTWH(square * 0.825 + 0.5, square * 0.825 + 0.5, square * 0.175 + 2.5, square * 0.175 + 2.5),
           0, 2 * pi);
     } else if (tailDirection == ReactionTailDirection.left) {
       path.addArc(Rect.fromLTWH(size.width - (square * 0.8 + 3), 0, square * 0.8 + 3, square * 0.8 + 3), 0, 2 * pi);
+      if (!tail) return path;
       path.addArc(
           Rect.fromLTWH(size.width - (square * 0.8 + 3), square * 0.55, square * 0.3 + 3, square * 0.3 + 3), 0, 2 * pi);
       path.addArc(Rect.fromLTWH(0, square * 0.825 + 1, square * 0.175 + 1.5, square * 0.175 + 1.5), 0, 2 * pi);
@@ -60,6 +72,6 @@ class ReactionBorderClipper extends CustomClipper<Path> {
 
   @override
   bool shouldReclip(covariant ReactionBorderClipper oldClipper) {
-    return oldClipper.tailDirection != tailDirection;
+    return oldClipper.tailDirection != tailDirection || oldClipper.tail != tail;
   }
 }
