@@ -298,6 +298,18 @@ void main() {
       expect((await chats.byId(1))!.latestMessage?.guid, 'text');
       expect((await chats.byId(2))!.latestMessage?.guid, 'ok');
     });
+
+    test('relistShownByEvents finds its candidates in one statement, not two reads per chat', () async {
+      final seed = Seed();
+      for (var c = 1; c <= 20; c++) {
+        seed
+          ..chat(c, latestMessageId: c, latestMs: baseMs + c)
+          ..message(c, c, baseMs + c, guid: 'text-$c');
+      }
+      await seed.into(db);
+      final statements = await db.recordStatements(() => db.write((tx) => chats.relistShownByEvents(tx, [for (var c = 1; c <= 20; c++) c])));
+      expect(statements.where((s) => s.$1.trimLeft().toUpperCase().startsWith('SELECT')), hasLength(1));
+    });
   });
 
   group('latest pointer: from changed messages only (keepNewestOf)', () {

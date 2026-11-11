@@ -174,15 +174,19 @@ class ChatRepo {
   }
 
   /// [relistChatsShownByEvents]: refreshes the chats of [chatIds] whose
-  /// pointer is at a status item. Returns the ids that changed.
+  /// pointer is at a status item. Returns the ids that changed. The candidates
+  /// come from one keyed join per 500 chats; startup passes every chat.
   Future<List<int>> relistShownByEvents(WriteTx tx, Iterable<int> chatIds) async {
     final changed = <int>[];
-    for (final chatId in chatIds.toSet()) {
-      final current = await _pointer(tx, chatId);
-      if (current?.$1 == null) continue;
-      final latest = await MessageRepo(tx).row(current!.$1!);
-      if (latest == null || listsThread(latest)) continue;
-      if (await refreshLatest(tx, chatId)) changed.add(chatId);
+    for (final chunk in chatIds.toSet().toList().slices(500)) {
+      final rows = await tx.select(
+          'SELECT chats.id FROM chats JOIN messages ON messages.id = chats.latest_message_id '
+          'WHERE chats.id IN (${sqlPlaceholders(chunk.length)}) AND coalesce(messages.item_type, 0) != 0',
+          chunk);
+      for (final row in rows) {
+        final chatId = row['id'] as int;
+        if (await refreshLatest(tx, chatId)) changed.add(chatId);
+      }
     }
     return changed;
   }

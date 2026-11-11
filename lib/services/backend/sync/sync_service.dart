@@ -98,6 +98,7 @@ class SyncService {
         final total = (payload['metadata'] as Map?)?['total'] as num?;
         if (page.isEmpty || (total != null && offset >= total.toInt()) || page.length < pageSize) break;
       }
+      StartupTimeline.mark('sync: chat metadata downloaded');
 
       final refresh = await MessagingStore.current.refreshChatMetadata(remoteChats);
       final localChats = await MessagingStore.current.allChats();
