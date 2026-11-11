@@ -85,7 +85,7 @@ class SyncService {
       var offset = 0;
       final remoteChats = <Map<String, dynamic>>[];
       while (true) {
-        final response = await HttpSvc.chat.query(offset: offset, limit: pageSize);
+        final response = await HttpSvc.chat.queryGrouping(offset: offset, limit: pageSize);
         if (response.statusCode != 200) {
           throw StateError('chat metadata query returned ${response.statusCode}');
         }

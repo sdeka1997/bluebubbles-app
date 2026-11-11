@@ -29,6 +29,13 @@ class ChatApi {
     });
   }
 
+  /// Only what the startup check groups and spam-files chats by (guid, the
+  /// three group ids, newest group name, spam flag), a quarter the size of
+  /// whole chats. A server without this option sends whole chats, which
+  /// carry the same fields.
+  Future<Response> queryGrouping({int offset = 0, int limit = 1000}) =>
+      query(withQuery: const ['grouping'], offset: offset, limit: limit);
+
   /// Get the messages for the specified chat (using [guid]). Use [withQuery]
   /// to specify what you would like in the response or how to query the DB.
   ///
