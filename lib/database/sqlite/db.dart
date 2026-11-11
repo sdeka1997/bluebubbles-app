@@ -165,6 +165,16 @@ class Db implements DbReader {
     return recorded;
   }
 
+  /// Rewrites the file without its free pages when the v4 migration left
+  /// `vacuum_pending` (VACUUM can't run in a transaction). A kill midway
+  /// leaves the flag and the next open runs it again.
+  Future<void> vacuumIfPending() async {
+    if ((await select("SELECT 1 FROM storage_meta WHERE key = 'vacuum_pending'")).isEmpty) return;
+    await database.customStatement('VACUUM');
+    await database.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    await database.customStatement("DELETE FROM storage_meta WHERE key = 'vacuum_pending'");
+  }
+
   Future<void> close() async {
     await _changes.close();
     await database.close();

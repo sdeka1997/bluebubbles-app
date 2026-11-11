@@ -71,7 +71,7 @@ void main() {
     tearDown(() => db.close());
 
     test('opens at schema v2 with foreign keys on', () async {
-      expect(db.database.schemaVersion, 3);
+      expect(db.database.schemaVersion, 4);
       expect((await rows(db, 'PRAGMA foreign_keys')).single.values.single, 1);
     });
 
@@ -177,7 +177,7 @@ void main() {
 
       final db = Db.file(file);
       addTearDown(db.close);
-      expect((await rows(db, 'PRAGMA user_version')).single.values.single, 3);
+      expect((await rows(db, 'PRAGMA user_version')).single.values.single, 4);
       expect(await schema(db), await schema(fresh), reason: 'a migrated file has exactly the schema of a new one');
       for (final table in ['messages', 'attachments', 'chat_handles', 'contact_handles', 'custom_group_chats']) {
         expect(await foreignKeys(db, table), await foreignKeys(fresh, table), reason: table);
@@ -202,7 +202,7 @@ void main() {
       expect(meta, containsPair('copy_state', 'verified'));
       expect(meta, containsPair('check_version', '3'));
       expect(meta, containsPair('fts_state', 'ready'));
-      expect(await rows(db, 'SELECT * FROM copy_checkpoints'), [{'entity': 'messages', 'last_source_id': 3, 'rows_copied': 3}]);
+      // v4 drops the copy's checkpoints (schema_v4_test.dart).
       expect(await ftsIds(db, 'world'), [1]);
       expect(await ftsIds(db, 'ird on'), [3]);
       await db.write((tx) => tx.execute("INSERT INTO messages_fts (messages_fts, rank) VALUES ('integrity-check', 1)"));

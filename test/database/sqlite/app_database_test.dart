@@ -15,7 +15,6 @@ const requiredStageOneTables = <String>{
   'custom_groups',
   'custom_group_chats',
   'storage_meta',
-  'copy_checkpoints',
 };
 
 Future<int> pragmaInt(AppDatabase database, String pragma) async {
@@ -45,7 +44,7 @@ void main() {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
 
-    expect(database.schemaVersion, 3);
+    expect(database.schemaVersion, 4);
     expect(await pragmaInt(database, 'foreign_keys'), 1);
     expect(await tableNames(database), containsAll(requiredStageOneTables));
   });
