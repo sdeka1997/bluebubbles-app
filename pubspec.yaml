@@ -195,6 +195,8 @@ dependencies:
   rxdart: any
   uuid: any
 dependency_overrides:
+  audio_waveforms: # 2.0.2 + upstream PR #515 ("codec is released already"); see packages/audio_waveforms/README.md
+    path: packages/audio_waveforms
   clock: ^1.1.2 # encrypter_plus
   flutter_local_notifications_windows: # no identity + crashing fixes + suppressPopup
     git:
