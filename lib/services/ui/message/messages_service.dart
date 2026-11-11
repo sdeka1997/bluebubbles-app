@@ -1491,13 +1491,8 @@ class MessagesService extends GetxController {
   /// advances the cursor (the newest page the first time, and after [close]).
   /// Returns the page, newest first.
   @visibleForTesting
-  Future<List<Message>> loadOlderPage({int limit = 25, Function? onSupplementalDataLoaded}) async {
-    final page = await Chat.getOlderMessagesAsync(
-      chat,
-      after: _olderCursor,
-      limit: limit,
-      onSupplementalDataLoaded: onSupplementalDataLoaded,
-    );
+  Future<List<Message>> loadOlderPage({int limit = 25}) async {
+    final page = await Chat.getOlderMessagesAsync(chat, after: _olderCursor, limit: limit);
     _olderCursor = page.next ?? _olderCursor;
     struct.addMessages(page.messages);
     return page.messages;
@@ -1526,35 +1521,11 @@ class MessagesService extends GetxController {
 
       final traceClock = Stopwatch()..start();
       MemTrace.note('chat ${chat.id} page at $offset: loading');
-      _messages = await loadOlderPage(
-        limit: limit,
-        onSupplementalDataLoaded: () {
-          MemTrace.note('chat ${chat.id} page at $offset: reactions loaded after ${traceClock.elapsedMilliseconds}ms');
-          // Phase 2 complete - reactions have been loaded into message.associatedMessages
-          Logger.info("[loadChunk] Supplemental data loaded, syncing MessageStates for ${_messages.length} messages",
-              tag: "MessageReactivity");
-
-          // Ensure MessageStates exist first (in case they weren't created yet)
-          _ensureMessageStates(_messages);
-
-          // Sync associatedMessages into MessageState observables
-          for (final message in _messages) {
-            if (message.guid != null && message.associatedMessages.isNotEmpty) {
-              final messageState = messageStates[message.guid];
-              if (messageState != null) {
-                // Clear and repopulate the observable list to trigger reactivity
-                messageState.associatedMessages.clear();
-                messageState.associatedMessages.addAll(message.associatedMessages);
-                messageState.hasReactions.value = message.associatedMessages.isNotEmpty;
-
-                Logger.debug(
-                    "[loadChunk] Synced ${message.associatedMessages.length} reactions into MessageState for ${message.guid}",
-                    tag: "MessageReactivity");
-              }
-            }
-          }
-        },
-      );
+      _messages = await loadOlderPage(limit: limit);
+      // Reactions come with the page; a message already on screen takes them over.
+      for (final m in _messages) {
+        messageStates[m.guid]?.updateAssociatedMessagesInternal(m.associatedMessages);
+      }
 
       Logger.debug("[loadChunk] Loaded ${_messages.length} messages from local DB");
       MemTrace.note('chat ${chat.id} page at $offset: ${_messages.length} messages after ${traceClock.elapsedMilliseconds}ms');

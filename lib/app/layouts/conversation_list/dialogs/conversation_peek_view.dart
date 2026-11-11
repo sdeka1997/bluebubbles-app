@@ -9,7 +9,6 @@ import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/app/layouts/conversation_view/pages/conversation_view.dart';
 import 'package:bluebubbles/app/wrappers/theme_switcher.dart';
 import 'package:bluebubbles/app/wrappers/titlebar_wrapper.dart';
-import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
 import 'package:bluebubbles/services/backend/interfaces/custom_group_interface.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:defer_pointer/defer_pointer.dart';
@@ -22,14 +21,9 @@ import 'package:get/get.dart';
 
 Future<void> peekChat(BuildContext context, Chat c, Offset offset) async {
   HapticFeedback.mediumImpact();
-  // The newest page with attachments, and its reactions before the peek opens.
+  // The newest page, with attachments and reactions, before the peek opens.
   final page = await Chat.getOlderMessagesAsync(c);
   final messages = page.messages.where((e) => e.associatedMessageGuid == null).toList();
-  final reactions = MessageHelper.normalizedAssociatedMessages(
-      await ChatInterface.loadSupplementalData(messageGuids: messages.map((e) => e.guid!).toList()));
-  for (final m in messages) {
-    m.associatedMessages = reactions.where((e) => e.associatedMessageGuid == m.guid).toList();
-  }
   await Navigator.push(
     Get.context!,
     PageRouteBuilder(

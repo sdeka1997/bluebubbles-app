@@ -1157,8 +1157,11 @@ class ChatsService {
 
     // Perform the actual DB deletion
     // The same 25 newest messages Chat.getMessages(chat) returned here before.
-    final messageIds = await MessagingStore.current.messagePageIds(chat.id!, chat.handles.toList(),
-        offset: 0, limit: 25, includeDeleted: false);
+    final messageIds = [
+      for (final m in await MessagingStore.current
+          .chatMessages(chat.id!, chat.handles.toList(), offset: 0, limit: 25, includeDeleted: false))
+        m.id!
+    ];
     await ChatInterface.deleteChat(
       chatId: chat.id!,
       messageIds: messageIds,
