@@ -4,7 +4,7 @@
 Detailed coding standards live in `.claude/rules/`:
 - `frontend.md` — widget patterns, state, theming, naming
 - `api.md` — HTTP calls, interface→action pattern, error handling
-- `database.md` — ObjectBox entities, queries, transactions, serialization
+- `database.md` — SQLite schema, reads/writes, relations, schema changes
 - `services.md` — service access, event dispatch, method channels, navigation
 - `git.md` — commit message format
 
@@ -24,9 +24,9 @@ Detailed coding standards live in `.claude/rules/`:
 - Load the relevant rule file(s) from `.claude/rules/` before writing code
 
 ## Code Generation
-After editing `@Entity` classes in `lib/database/io/`:
+After changing a table in `lib/database/sqlite/app_database.dart`:
 → `dart run build_runner build`
-→ Never edit `lib/generated/objectbox.g.dart` directly
+→ Never edit `lib/database/sqlite/app_database.g.dart` directly
 
 ## Lint / Style
 - `bash scripts/dart-fix-common-issues.sh` — runs `dart fix --apply` for common issues

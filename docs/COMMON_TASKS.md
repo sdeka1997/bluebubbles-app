@@ -240,6 +240,6 @@ Full component/theming reference: `docs/CUSTOM_COMPONENTS.md`.
 # Auto-fix common lint issues
 bash scripts/dart-fix-common-issues.sh
 
-# Regenerate ObjectBox after editing @Entity classes
+# Regenerate drift code after changing a table in lib/database/sqlite/app_database.dart
 dart run build_runner build
 ```

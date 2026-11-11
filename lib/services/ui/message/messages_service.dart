@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:bluebubbles/utils/memory_trace.dart';
 import 'package:bluebubbles/app/state/attachment_state.dart';
 import 'package:bluebubbles/app/state/message_state.dart';
 import 'package:bluebubbles/helpers/types/extensions/extensions.dart';
@@ -1519,8 +1518,6 @@ class MessagesService extends GetxController {
     try {
       Logger.debug("[loadChunk] Starting to load messages (offset: $offset, limit: $limit)", tag: "MessageReactivity");
 
-      final traceClock = Stopwatch()..start();
-      MemTrace.note('chat ${chat.id} page at $offset: loading');
       _messages = await loadOlderPage(limit: limit);
       // Reactions come with the page; a message already on screen takes them over.
       for (final m in _messages) {
@@ -1528,7 +1525,6 @@ class MessagesService extends GetxController {
       }
 
       Logger.debug("[loadChunk] Loaded ${_messages.length} messages from local DB");
-      MemTrace.note('chat ${chat.id} page at $offset: ${_messages.length} messages after ${traceClock.elapsedMilliseconds}ms');
       if (_messages.isEmpty) {
         // get from server and save
         final fromServer = await ChatsSvc.getMessages(chat.guid, offset: offset, limit: limit);

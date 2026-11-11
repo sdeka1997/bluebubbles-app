@@ -42,4 +42,4 @@ Chat list state: `ChatsSvc` → `lib/services/ui/chat/chats_service.dart`
 
 ## Search Notes
 - Prefer typed search mode (`SearchMode`) over string literals (`"local"`, `"network"`).
-- Keep SQL/ObjectBox query-building and message/chat hydration in `search_query_helper.dart`, not inline in `search_view.dart`.
+- Keep SQL query-building and message/chat hydration in `search_query_helper.dart`, not inline in `search_view.dart`.

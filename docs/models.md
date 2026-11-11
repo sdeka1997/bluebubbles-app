@@ -7,21 +7,21 @@
 ## Import Rule
 
 Always import through `lib/database/models.dart` -- the barrel that handles platform-conditional imports.
-Never import directly from `lib/database/io/` or the web stub directory (`lib/models/html/`).
+Import models through `lib/database/models.dart`.
 
 ---
 
-## ObjectBox Entities (`lib/database/io/`)
+## Entities (`lib/database/io/`)
 
 Native and desktop (Android, iOS, Windows, macOS, Linux). Not used on web.
 
-After any `@Entity` annotation change: run `dart run build_runner build`. Never edit `objectbox.g.dart` directly.
+Stored in SQLite (`lib/database/sqlite/`). A new persisted field needs a column, a mapper entry and a schema step: see `.claude/rules/database.md`.
 
 ### Chat (`chat.dart`)
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | `int?` | ObjectBox PK -- nullable, assigned on first put |
+| `id` | `int?` | SQLite row id -- null until the first save |
 | `guid` | `String` | `@Unique @Index(value)` -- server-assigned unique identifier |
 | `chatIdentifier` | `String?` | iMessage chat address |
 | `isArchived` | `bool?` | -- |
@@ -90,7 +90,7 @@ Relations:
 | `errorMessage` | `String?` | Human-readable send-error description |
 | `dateRead` / `dateDelivered` / `dateEdited` | `DateTime?` | Getter/setter pairs backed by `Rxn<DateTime>` |
 | `isDelivered` | `bool` | Getter/setter backed by `RxBool`; getter also returns `true` if `dateDelivered != null` |
-| `associatedMessages` | `List<Message>` | Plain field (reactions, replies), **not** an ObjectBox `ToMany` |
+| `associatedMessages` | `List<Message>` | Plain field (reactions, replies), **not** a stored relation; filled with each page read |
 
 Relations:
 - `chat` -- `ToOne<Chat>`
@@ -145,7 +145,7 @@ Current contact system. N:M relationship with Handle.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | `int` | `@Id()` -- non-nullable, defaults to `0` until ObjectBox assigns one |
+| `id` | `int` | `@Id()` -- non-nullable, defaults to `0` until the first save assigns one |
 | `displayName` | `String` | Required, non-nullable |
 | `nativeContactId` | `String` | `@Unique @Index()` -- device contact record ID (or a synthesized ID for server-only contacts, despite the name) |
 | `avatarPath` | `String?` | Cached avatar file path |
@@ -171,56 +171,18 @@ Relations: `handles` -- `ToMany<Handle>` (N:M, owning side)
 | File | Class | Purpose |
 |------|-------|---------|
 | `fcm_data.dart` | `FCMData` | Firebase project/API config (`projectID`, `storageBucket`, `apiKey`, `firebaseURL`, `clientID`, `applicationID`) -- persisted per device |
-| `launch_at_startup.dart` | -- | **Not an ObjectBox entity.** Plain static utility class wrapping the `launch_at_startup` package plus Windows/Linux/Flatpak autostart shell integration (`enable()`, `disable()`, `shortcutPath`, `setup()`). Stores no data of its own |
+| `launch_at_startup.dart` | -- | **Not stored.** Plain static utility class wrapping the `launch_at_startup` package plus Windows/Linux/Flatpak autostart shell integration (`enable()`, `disable()`, `shortcutPath`, `setup()`). Stores no data of its own |
 | `klipy.dart` | -- | **Not a data model.** Placeholder (`const KLIPY_API_KEY = ""`) so native/desktop builds compile without the real key, which lives in the untracked web `html/klipy.dart` |
 
 ---
 
-## ObjectBox Conventions
+## Storage Conventions
 
-```dart
-@Entity()
-class MyEntity {
-  int? id;                           // always nullable PK
-
-  @Index(type: IndexType.value)
-  @Unique()
-  String guid;
-
-  @Property(uid: 1234567890)         // required when adding a field to existing entity
-  String? optionalField;
-
-  @Transient()
-  String? computedField;             // never persisted
-}
-```
-
-ToMany update -- always clear+addAll+applyToDb:
-```dart
-chat.handles.clear();
-chat.handles.addAll(newList);
-chat.handles.applyToDb();
-Database.chats.put(chat);
-```
-
-ToOne:
-```dart
-message.handleRelation.target = handle;
-Database.messages.put(message);
-```
-
-Always close queries:
-```dart
-final q = (Database.messages.query(...)).build();
-final results = q.find();
-q.close();
-```
-
----
+See `.claude/rules/database.md` (schema, reads/writes, relations, schema changes).
 
 ## Global DTOs (`lib/database/global/`)
 
-Plain Dart classes -- no ObjectBox annotations. Safe on all platforms. All implement `fromMap`/`toMap`.
+Plain Dart classes -- not stored as tables. Safe on all platforms. All implement `fromMap`/`toMap`.
 
 ### Settings (`settings.dart`)
 
@@ -275,7 +237,7 @@ Adding a new setting: add an `Rx*` field to `settings.dart`, persist in `toMap()
 
 ## Cross-Cutting Models (`lib/models/`)
 
-Pure data classes used across multiple layers. Not ObjectBox entities. Safe across isolate boundaries.
+Pure data classes used across multiple layers. Not database entities. Safe across isolate boundaries.
 
 Barrel: `lib/models/models.dart`
 
@@ -300,4 +262,4 @@ Barrel: `lib/models/models.dart`
 | `text_entity_match.dart` | A matched text entity (phone, email, URL) from ML Kit |
 | `theme_pair.dart` | Light + dark ThemeData pair for a named theme |
 
-Rules: no Rx* fields, no DB annotations, no GetX. When an action needs to return structured data without an ObjectBox entity, create a model here.
+Rules: no Rx* fields, no DB annotations, no GetX. When an action needs to return structured data without an entity, create a model here.

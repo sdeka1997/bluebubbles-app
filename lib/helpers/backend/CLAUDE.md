@@ -18,7 +18,7 @@
 1. `FilesystemService`
 2. `SharedPreferencesService` (`PrefsSvc`)
 3. `SettingsService` + Logger
-4. Database (ObjectBox)
+4. Database (SQLite, `Database.init`)
 5. `GlobalIsolate` + `IncrementalSyncIsolate`
 6. `HttpService`, `MethodChannelService`, `LifecycleService` (in parallel)
 7. `ContactServiceV2`, `ChatsService`, `SocketService`, `NotificationsService`

@@ -23,5 +23,6 @@ Advanced color space math for theme generation — not for direct use in widgets
 - `emoji.dart` — emoji data and character utilities
 - `emoticons.dart` — text emoticon → emoji conversion table
 - `share.dart` — system share sheet wrapper
+- `startup_timeline.dart` — `StartupTimeline.mark(step)`: launch/chat-list/sync timeline in logcat under `BBTIME` (Android only), read by the phone timing scripts
 - `window_effects.dart` — desktop window transparency (Mica, acrylic) via `flutter_acrylic`
 - `media_kit_hot_restart_fix.dart` / `media_kit_hot_restart_fix_web.dart` — workaround for `media_kit` player state surviving Flutter hot restart

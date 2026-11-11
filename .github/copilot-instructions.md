@@ -13,7 +13,7 @@ Load the relevant rule file(s) before writing any code:
 
 - **Frontend / Flutter UI** → [.claude/rules/frontend.md](../.claude/rules/frontend.md)
 - **HTTP & backend operations** → [.claude/rules/api.md](../.claude/rules/api.md)
-- **ObjectBox database** → [.claude/rules/database.md](../.claude/rules/database.md)
+- **SQLite database** → [.claude/rules/database.md](../.claude/rules/database.md)
 - **Services, events, method channels** → [.claude/rules/services.md](../.claude/rules/services.md)
 - **Git commit format** → [.claude/rules/git.md](../.claude/rules/git.md)
 
@@ -33,7 +33,7 @@ Many directories contain a `CLAUDE.md` with context specific to that layer. Alwa
 
 - `lib/CLAUDE.md` — Dart/Flutter code conventions
 - `android/CLAUDE.md` — Android native layer
-- `lib/database/CLAUDE.md`, `lib/database/io/CLAUDE.md` — ObjectBox entities
+- `lib/database/CLAUDE.md`, `lib/database/io/CLAUDE.md` — entities and SQLite storage
 - `lib/services/CLAUDE.md` — service layer guidance
 - `lib/helpers/CLAUDE.md` — helper utilities
 - `macos/CLAUDE.md`, `linux/CLAUDE.md` — desktop platform layers
