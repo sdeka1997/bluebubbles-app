@@ -306,9 +306,10 @@ class MessagePageCursor {
   String toString() => 'MessagePageCursor($key)';
 }
 
-/// One page of a chat's timeline: message ids newest first, and where the next
-/// older page starts ([next] is the request's cursor when nothing came back).
-typedef MessagePage = ({List<int> ids, MessagePageCursor? next});
+/// One page of a chat's timeline, newest first, read once: each message with
+/// its attachments, linked messages and reactions. [next] is where the next
+/// older page starts (the request's cursor when nothing came back).
+typedef MessagePage = ({List<Message> messages, MessagePageCursor? next});
 
 /// The chat-stats screen's reads for one chat (ChatStatsRepo). Timestamps are epoch milliseconds; participants
 /// are local handle ids, [kMeParticipantId] for me.
@@ -363,8 +364,6 @@ abstract interface class ChatStore {
     required bool checkForMessageText,
   });
 
-  Future<List<int>> supplementalMessageIds(List<String> messageGuids);
-
   Future<List<int>> syncLatestMessages(List<String> chatGuids, {required bool toggleUnread});
 
   /// Address-only lookup used by the legacy one-to-one GUID fallback before
@@ -385,7 +384,10 @@ abstract interface class ChatStore {
   /// The former one-write contact match after bulkSyncChats.
   Future<void> linkContactToHandle(ContactV2 contact, int handleId);
 
-  Future<List<int>> messagePageIds(
+  /// [chatId]'s messages newest created first, from [offset], at most [limit]
+  /// (all of them when 0), with attachments, linked messages and reactions;
+  /// leaves out messages from senders the chat can't place.
+  Future<List<Message>> chatMessages(
     int chatId,
     List<Handle> participants, {
     required int offset,
@@ -400,7 +402,7 @@ abstract interface class ChatStore {
   /// [limit] messages of [chatId] either side of the message [aroundId] and that
   /// message, newest first: what jumping to a search result loads. [next] is
   /// where scrolling up continues.
-  Future<MessagePage> messagePageAround(int chatId, List<Handle> participants, int aroundId, {required int limit});
+  Future<MessagePage> messagePageAround(int chatId, int aroundId, {required int limit});
 
   /// Messages whose text contains [term] (ASCII letters in either case), newest
   /// created first, with their chat and attachments: not reactions, not

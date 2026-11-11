@@ -8,7 +8,7 @@ import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/services/backend/interfaces/chat_interface.dart';
-import 'package:bluebubbles/database/store/messaging_store.dart' show MessagePageCursor, MessagingStore;
+import 'package:bluebubbles/database/store/messaging_store.dart' show MessagePage, MessagePageCursor, MessagingStore;
 import 'package:dio/dio.dart';
 import 'package:faker/faker.dart';
 import 'package:flutter/foundation.dart';
@@ -559,123 +559,27 @@ class Chat {
 
   // count() method moved to ChatsService
 
-  /// Fetch messages asynchronously with progressive loading
-  /// Returns messages with attachments, then loads reactions in background
+  /// [chat]'s messages newest created first, from [offset], at most [limit]
+  /// (all of them when 0), with attachments and reactions.
   static Future<List<Message>> getMessagesAsync(Chat chat,
-      {int offset = 0,
-      int limit = 25,
-      bool includeDeleted = false,
-      Function? onSupplementalDataLoaded}) async {
+      {int offset = 0, int limit = 25, bool includeDeleted = false}) async {
     if (kIsWeb || chat.id == null) return [];
-
-    final totalStopwatch = Stopwatch()..start();
-
-    // PHASE 1: Query messages with attachments using interface/actions pattern
-    final messages = await ChatInterface.getMessagesAsync(
-      chatId: chat.id!,
-      chatGuid: chat.guid,
-      participantsData: chat.handles.map((e) => e.toMap()).toList(),
-      offset: offset,
-      limit: limit,
-      includeDeleted: includeDeleted,
-    );
-
-    if (messages.isEmpty) {
-      return messages;
-    }
-
-    // PHASE 2: Load reactions in background (non-blocking)
-    final messageGuids = messages.map((e) => e.guid!).toList();
-
-    // Don't await - let this run in background and call callback when done
-    _loadSupplementalDataAsync(messages, messageGuids, totalStopwatch, onSupplementalDataLoaded);
-
-    totalStopwatch.stop();
-    Logger.debug("[getMessagesAsync] RETURNED (Phase 1 complete): ${totalStopwatch.elapsedMilliseconds}ms");
-
-    // Return messages immediately (reactions/attachments will be added later)
-    return messages;
+    return MessagingStore.current
+        .chatMessages(chat.id!, chat.handles.toList(), offset: offset, limit: limit, includeDeleted: includeDeleted);
   }
 
   /// The page of [chat]'s timeline just older than [after] (the newest page
-  /// when null), with attachments; reactions load in the background as in
-  /// [getMessagesAsync].
-  static Future<({List<Message> messages, MessagePageCursor? next})> getOlderMessagesAsync(Chat chat,
-      {MessagePageCursor? after, int limit = 25, Function? onSupplementalDataLoaded}) async {
+  /// when null).
+  static Future<MessagePage> getOlderMessagesAsync(Chat chat, {MessagePageCursor? after, int limit = 25}) async {
     if (kIsWeb || chat.id == null) return (messages: <Message>[], next: after);
-    final totalStopwatch = Stopwatch()..start();
-    final page = await ChatInterface.getOlderMessagePage(chatId: chat.id!, after: after, limit: limit);
-    if (page.messages.isNotEmpty) {
-      _loadSupplementalDataAsync(
-          page.messages, page.messages.map((e) => e.guid!).toList(), totalStopwatch, onSupplementalDataLoaded);
-    }
-    return page;
+    return MessagingStore.current.olderMessagePage(chat.id!, after: after, limit: limit);
   }
 
   /// [limit] messages of [chat] either side of [around] and [around] itself,
-  /// newest first, with attachments; reactions load in the background.
-  static Future<({List<Message> messages, MessagePageCursor? next})> getMessagesAroundAsync(Chat chat, Message around,
-      {int limit = 25, Function? onSupplementalDataLoaded}) async {
+  /// newest first.
+  static Future<MessagePage> getMessagesAroundAsync(Chat chat, Message around, {int limit = 25}) async {
     if (kIsWeb || chat.id == null || around.id == null) return (messages: <Message>[], next: null);
-    final totalStopwatch = Stopwatch()..start();
-    final page = await ChatInterface.getMessagePageAround(
-      chatId: chat.id!,
-      participantsData: chat.handles.map((e) => e.toMap()).toList(),
-      aroundId: around.id!,
-      limit: limit,
-    );
-    if (page.messages.isNotEmpty) {
-      _loadSupplementalDataAsync(
-          page.messages, page.messages.map((e) => e.guid!).toList(), totalStopwatch, onSupplementalDataLoaded);
-    }
-    return page;
-  }
-
-  /// Load reactions in background and append to messages
-  static Future<void> _loadSupplementalDataAsync(
-    List<Message> messages,
-    List<String> messageGuids,
-    Stopwatch totalStopwatch,
-    Function? onComplete,
-  ) async {
-    final supplementalStopwatch = Stopwatch()..start();
-
-    try {
-      var associatedMessages = await ChatInterface.loadSupplementalData(
-        messageGuids: messageGuids,
-      );
-
-      Logger.debug("[getMessagesAsync] Phase 2 - Supplemental query: ${supplementalStopwatch.elapsedMilliseconds}ms");
-
-      // Normalize reactions
-      associatedMessages = MessageHelper.normalizedAssociatedMessages(associatedMessages);
-
-      // Append reactions to original messages
-      int messagesWithReactions = 0;
-      for (Message m in messages) {
-        final messageReactions = associatedMessages.where((e) => e.associatedMessageGuid == m.guid).toList();
-        m.associatedMessages = messageReactions;
-        if (messageReactions.isNotEmpty) {
-          messagesWithReactions++;
-          Logger.debug("[getMessagesAsync] Phase 2 - Added ${messageReactions.length} reactions to message ${m.guid}",
-              tag: "MessageReactivity");
-        }
-      }
-
-      supplementalStopwatch.stop();
-      Logger.debug(
-          "[getMessagesAsync] Phase 2 - COMPLETE: ${supplementalStopwatch.elapsedMilliseconds}ms (${associatedMessages.length} reactions on $messagesWithReactions messages)");
-
-      // Notify caller that supplemental data has been loaded
-      if (onComplete != null) {
-        Logger.debug("[getMessagesAsync] Phase 2 - Calling onComplete callback", tag: "MessageReactivity");
-        onComplete();
-      } else {
-        Logger.warn("[getMessagesAsync] Phase 2 - No onComplete callback provided!", tag: "MessageReactivity");
-      }
-    } catch (ex, stacktrace) {
-      Logger.error("Failed to load supplemental data for messages", error: ex, trace: stacktrace);
-    }
+    return MessagingStore.current.messagePageAround(chat.id!, around.id!, limit: limit);
   }
 
   void webSyncParticipants() {}

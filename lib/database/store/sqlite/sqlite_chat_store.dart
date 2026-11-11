@@ -20,7 +20,7 @@ import 'package:collection/collection.dart';
 
 /// ChatActions on SQLite. Every former ObjectBox write transaction is one
 /// [Db.write]; address formatting and contact lookup stay in ChatActions.
-mixin SqliteChatStore implements ChatStore, SqliteStorePart {
+mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
   @override
   Future<List<Chat>> markChatsRead(List<int> chatIds) {
     return db.write((tx) async {
@@ -222,10 +222,6 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
   }
 
   @override
-  Future<List<int>> supplementalMessageIds(List<String> messageGuids) async =>
-      [for (final message in await MessageRepo(db).reactionsFor(messageGuids)) message.id!];
-
-  @override
   Future<List<int>> syncLatestMessages(List<String> chatGuids, {required bool toggleUnread}) {
     return db.write((tx) async {
       final chats = ChatRepo(tx);
@@ -334,7 +330,7 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
   }
 
   @override
-  Future<List<int>> messagePageIds(
+  Future<List<Message>> chatMessages(
     int chatId,
     List<Handle> participants, {
     required int offset,
@@ -347,7 +343,7 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
         'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? '
         'AND date_created_us IS NOT NULL $deleted'
         'ORDER BY date_created_us DESC, id DESC LIMIT ? OFFSET ?',
-        [chatId, limit, offset],
+        [chatId, limit == 0 ? -1 : limit, offset],
       );
       final messages = rows.map(messageFromRow).toList();
       await MessageRepo(reader).attachmentsFor(messages);
@@ -367,8 +363,8 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
             storedByRowId[message.handleId];
         return handle == null && message.originalROWID != null;
       });
-      return messages.map((e) => e.id!).toList();
-    });
+      return messages;
+    }).then(_withReactions);
   }
 
   /// Keyset paging on (sort_at, id) through [MessageRepo]: its timeline
@@ -379,7 +375,7 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
     final key = after?.key;
     final page = key == null ? await repo.newest([chatId], limit: limit) : await repo.olderThan([chatId], key, limit: limit);
     return (
-      ids: [for (final m in page) m.id!],
+      messages: await _withReactions(page),
       next: page.isEmpty ? after : MessagePageCursor(MessageKey.of(page.last)),
     );
   }
@@ -387,15 +383,33 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
   /// The keyset neighbours of the message's (sort_at, id) key, so ties and
   /// delivered-before-created messages land where the screen shows them.
   @override
-  Future<MessagePage> messagePageAround(int chatId, List<Handle> participants, int aroundId, {required int limit}) async {
+  Future<MessagePage> messagePageAround(int chatId, int aroundId, {required int limit}) async {
     final repo = MessageRepo(db);
-    final target = (await repo.byIds([aroundId]))[aroundId];
-    if (target == null) return (ids: <int>[], next: null);
+    final target = await repo.row(aroundId);
+    if (target == null) return (messages: <Message>[], next: null);
     final page = await repo.around([chatId], MessageKey.of(target), before: limit, after: limit);
     return (
-      ids: [for (final m in page) m.id!],
+      messages: await _withReactions(page),
       next: page.isEmpty ? null : MessagePageCursor(MessageKey.of(page.last)),
     );
+  }
+
+  /// Fills [messages]' linked messages and sets each one's reactions on it,
+  /// newest first (the order the reaction row has always shown). A reaction's
+  /// target is the message it is set on: no second read of it.
+  Future<List<Message>> _withReactions(List<Message> messages) async {
+    if (messages.isEmpty) return messages;
+    await fillLinkedMessages(messages);
+    final byGuid = {for (final m in messages) if (m.guid != null) m.guid!: m};
+    final on = <String, List<Message>>{};
+    for (final reaction in (await MessageRepo(db).reactionsFor(byGuid.keys)).reversed) {
+      reaction.reactionTarget = byGuid[reaction.associatedMessageGuid];
+      (on[reaction.associatedMessageGuid!] ??= []).add(reaction);
+    }
+    for (final m in messages) {
+      m.associatedMessages = on[m.guid] ?? [];
+    }
+    return messages;
   }
 
   @override

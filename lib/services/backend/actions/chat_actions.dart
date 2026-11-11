@@ -91,9 +91,6 @@ class ChatActions {
     );
   }
 
-  static Future<List<int>> loadSupplementalData(dynamic data) =>
-      MessagingStore.current.supplementalMessageIds((data['messageGuids'] as List).cast<String>());
-
   static Future<List<int>> syncLatestMessages(dynamic data) => MessagingStore.current.syncLatestMessages(
         (data['chatGuids'] as List).cast<String>(),
         toggleUnread: data['toggleUnread'] as bool,
@@ -139,45 +136,6 @@ class ChatActions {
     }
 
     return {'chatIds': result.chatIds, 'affectedHandleIds': affectedHandleIds};
-  }
-
-  static Future<List<int>> getMessagesAsync(dynamic data) {
-    final participants = (data['participantsData'] as List)
-        .cast<Map<String, dynamic>>()
-        .map(Handle.fromMap)
-        .toList();
-    return MessagingStore.current.messagePageIds(
-      data['chatId'] as int,
-      participants,
-      offset: data['offset'] as int? ?? 0,
-      limit: data['limit'] as int? ?? 25,
-      includeDeleted: data['includeDeleted'] as bool? ?? false,
-    );
-  }
-
-  /// `{'ids': [...], 'next': MessagePageCursor.toMap() or null}`.
-  static Future<Map<String, dynamic>> getOlderMessagePage(dynamic data) async {
-    final page = await MessagingStore.current.olderMessagePage(
-      data['chatId'] as int,
-      after: MessagePageCursor.fromMap(data['after']),
-      limit: data['limit'] as int? ?? 25,
-    );
-    return {'ids': page.ids, 'next': page.next?.toMap()};
-  }
-
-  /// `{'ids': [...], 'next': MessagePageCursor.toMap() or null}`.
-  static Future<Map<String, dynamic>> getMessagePageAround(dynamic data) async {
-    final participants = (data['participantsData'] as List)
-        .cast<Map<String, dynamic>>()
-        .map(Handle.fromMap)
-        .toList();
-    final page = await MessagingStore.current.messagePageAround(
-      data['chatId'] as int,
-      participants,
-      data['aroundId'] as int,
-      limit: data['limit'] as int? ?? 25,
-    );
-    return {'ids': page.ids, 'next': page.next?.toMap()};
   }
 
   static Future<List<int>> getParticipantsAsync(dynamic data) =>

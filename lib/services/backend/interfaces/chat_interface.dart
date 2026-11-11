@@ -194,27 +194,6 @@ class ChatInterface {
     return MessageSaveResult(message, isNewer);
   }
 
-  static Future<List<Message>> loadSupplementalData({
-    required List<String> messageGuids,
-  }) async {
-    final data = {
-      'messageGuids': messageGuids,
-    };
-
-    // Get reaction IDs from isolate
-    final reactionIds = isIsolate
-        ? await ChatActions.loadSupplementalData(data)
-        : await GetIt.I<GlobalIsolate>().send<List<int>>(IsolateRequestType.loadSupplementalData, input: data);
-
-    // Hydrate the reaction messages on the main thread with proper DB connection
-    // This ensures handleRelation and other ToOne relationships are loaded correctly
-    if (reactionIds.isEmpty) {
-      return <Message>[];
-    }
-
-    return MessagingStore.current.messagesByIds(reactionIds);
-  }
-
   static Future<({List<Chat> chats, List<int> affectedHandleIds})> bulkSyncChats(
       {required List<Map<String, dynamic>> chatsData}) async {
     final data = {
@@ -236,82 +215,6 @@ class ChatInterface {
 
     final chats = await MessagingStore.current.chatsByIds(chatIds);
     return (chats: chats, affectedHandleIds: affectedHandleIds);
-  }
-
-  static Future<List<Message>> getMessagesAsync({
-    required int chatId,
-    required String chatGuid,
-    required List<Map<String, dynamic>> participantsData,
-    int offset = 0,
-    int limit = 25,
-    bool includeDeleted = false,
-    bool hydrateAttachments = true,
-  }) async {
-    final data = {
-      'chatId': chatId,
-      'chatGuid': chatGuid,
-      'participantsData': participantsData,
-      'offset': offset,
-      'limit': limit,
-      'includeDeleted': includeDeleted,
-    };
-
-    late List<int> messageIds;
-    if (isIsolate) {
-      messageIds = await ChatActions.getMessagesAsync(data);
-    } else {
-      messageIds = await GetIt.I<GlobalIsolate>().send<List<int>>(IsolateRequestType.getMessagesAsync, input: data);
-    }
-
-    return MessagingStore.current.messagesByIds(messageIds);
-  }
-
-  /// The page of the chat's timeline just older than [after] (the newest
-  /// page when null), hydrated on this isolate.
-  static Future<({List<Message> messages, MessagePageCursor? next})> getOlderMessagePage({
-    required int chatId,
-    MessagePageCursor? after,
-    int limit = 25,
-  }) async {
-    final data = {
-      'chatId': chatId,
-      'after': after?.toMap(),
-      'limit': limit,
-    };
-
-    final result = isIsolate
-        ? await ChatActions.getOlderMessagePage(data)
-        : await GetIt.I<GlobalIsolate>().send<Map<String, dynamic>>(IsolateRequestType.getOlderMessagePage, input: data);
-    final ids = (result['ids'] as List).cast<int>();
-    return (
-      messages: await MessagingStore.current.messagesByIds(ids),
-      next: MessagePageCursor.fromMap(result['next']),
-    );
-  }
-
-  /// [limit] messages either side of [aroundId] and that message, hydrated on
-  /// this isolate, and where scrolling up continues.
-  static Future<({List<Message> messages, MessagePageCursor? next})> getMessagePageAround({
-    required int chatId,
-    required List<Map<String, dynamic>> participantsData,
-    required int aroundId,
-    int limit = 25,
-  }) async {
-    final data = {
-      'chatId': chatId,
-      'participantsData': participantsData,
-      'aroundId': aroundId,
-      'limit': limit,
-    };
-
-    final result = isIsolate
-        ? await ChatActions.getMessagePageAround(data)
-        : await GetIt.I<GlobalIsolate>().send<Map<String, dynamic>>(IsolateRequestType.getMessagePageAround, input: data);
-    final ids = (result['ids'] as List).cast<int>();
-    return (
-      messages: await MessagingStore.current.messagesByIds(ids),
-      next: MessagePageCursor.fromMap(result['next']),
-    );
   }
 
   static Future<List<Handle>> getParticipantsAsync({
