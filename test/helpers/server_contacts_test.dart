@@ -84,4 +84,25 @@ void main() {
     expect(contactIdsToRemove(['phone-17', 'A', 'B'], ['A', 'C']), {'phone-17', 'B'});
     expect(contactIdsToRemove(['A'], ['A']), isEmpty);
   });
+
+
+  group('photos version', () {
+    test('is read from the response metadata', () {
+      expect(photosVersionOf({'data': [], 'metadata': {'photosVersion': '1.0.277.x'}}), '1.0.277.x');
+    });
+
+    test('is null from a server that does not send one', () {
+      expect(photosVersionOf({'data': []}), isNull);
+      expect(photosVersionOf('not a map'), isNull);
+    });
+
+    // Photos are 98% of the contacts download (4.2 MB of 4.3 MB for 277
+    // contacts), so they are fetched only when they may have changed.
+    test('photos are fetched only when the version differs from the saved photos', () {
+      expect(photosNeeded(server: 'v2', saved: 'v1'), isTrue);
+      expect(photosNeeded(server: 'v1', saved: 'v1'), isFalse);
+      expect(photosNeeded(server: 'v1', saved: null), isTrue);
+      expect(photosNeeded(server: null, saved: 'v1'), isTrue, reason: 'a server without versions always sends photos');
+    });
+  });
 }

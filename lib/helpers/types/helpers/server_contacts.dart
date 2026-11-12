@@ -44,3 +44,16 @@ List<ServerContact> contactsFromServer(Iterable<dynamic> data) {
 /// when the app read the phone's own contacts.
 Set<String> contactIdsToRemove(Iterable<String> stored, Iterable<String> fromServer) =>
     stored.toSet().difference(fromServer.toSet());
+
+
+/// The server's name for the current state of its contact photos, or null from
+/// a server that doesn't send one.
+String? photosVersionOf(dynamic body) {
+  if (body is! Map) return null;
+  final metadata = body['metadata'];
+  return metadata is Map ? metadata['photosVersion']?.toString() : null;
+}
+
+/// Whether to download the contact photos: only when they may differ from the
+/// ones saved from [saved]. A server that sends no version always needs them.
+bool photosNeeded({required String? server, required String? saved}) => server == null || server != saved;

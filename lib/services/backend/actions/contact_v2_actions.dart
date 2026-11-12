@@ -61,25 +61,40 @@ class ContactV2Actions {
       // app mirrors the iPhone, so names, photos and who-is-who come from the
       // same iCloud cards the iPhone uses, never from the phone's own contacts.
       Logger.info('[ContactV2] Starting contact fetch from server...');
-      final response = await HttpSvc.contact.fetchAll(withAvatars: true);
+      // Photos are almost all of the download, so they come only when the server's
+      // photos version differs from the one the saved photos came from. Without
+      // them, avatarPaths stays empty and the store keeps every saved photo.
+      var response = await HttpSvc.contact.fetchAll();
+      final withPhotos = photosNeeded(server: photosVersionOf(response.data), saved: await _savedPhotosVersion());
+      if (withPhotos && response.statusCode == 200) response = await HttpSvc.contact.fetchAll(withAvatars: true);
       final fetched = response.statusCode == 200 && response.data['data'] is List;
       if (fetched) {
+        var photosSaved = true;
         for (final card in contactsFromServer(response.data['data'] as List)) {
           final contactId = card.contact.nativeContactId;
-          if (card.avatar != null) {
+          if (!withPhotos) {
+            // Keep the saved photo.
+          } else if (card.avatar != null) {
+            String? savedPath;
             try {
-              final savedPath = await _saveContactAvatar(contactId, base64Decode(card.avatar!));
-              // A null path means the disk write failed — leave the key unset so
-              // the existing avatarPath is preserved instead of being wiped.
-              if (savedPath != null) avatarPaths[contactId] = savedPath;
+              savedPath = await _saveContactAvatar(contactId, base64Decode(card.avatar!));
             } catch (_) {}
+            // A null path means the disk write failed — leave the key unset so
+            // the existing avatarPath is preserved instead of being wiped.
+            if (savedPath != null) {
+              avatarPaths[contactId] = savedPath;
+            } else {
+              photosSaved = false;
+            }
           } else {
             // Server reports no avatar for this contact — record the removal explicitly.
             avatarPaths[contactId] = null;
           }
           networkContacts.add(card.contact);
         }
-        Logger.info('[ContactV2] Fetched ${networkContacts.length} contacts from server');
+        // Recorded only when every photo was saved, so a failed one is retried.
+        if (withPhotos && photosSaved) await _savePhotosVersion(photosVersionOf(response.data));
+        Logger.info('[ContactV2] Fetched ${networkContacts.length} contacts from server (photos: $withPhotos)');
       } else {
         // Keep what's stored rather than wiping every name on a failed fetch.
         Logger.warn('[ContactV2] Server contacts unavailable (status ${response.statusCode})');
@@ -164,6 +179,32 @@ class ContactV2Actions {
   /// Manually trigger a contact refresh
   static Future<List<int>> refreshContacts(dynamic data) async {
     return await syncContactsToHandles(data);
+  }
+
+  /// The photos version kept beside the saved photos, so deleting the photos also
+  /// forgets it and the next sync downloads them again.
+  static File get _photosVersionFile => File(p.join(FilesystemSvc.contactAvatarsPath, '.photos-version'));
+
+  static Future<String?> _savedPhotosVersion() async {
+    try {
+      return await _photosVersionFile.readAsString();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _savePhotosVersion(String? version) async {
+    try {
+      final file = _photosVersionFile;
+      if (version == null) {
+        if (await file.exists()) await file.delete();
+      } else {
+        await file.parent.create(recursive: true);
+        await file.writeAsString(version);
+      }
+    } catch (e) {
+      Logger.warn('[ContactV2] Could not record the contact photos version: $e');
+    }
   }
 
   /// Save a contact avatar to disk and return the file path
