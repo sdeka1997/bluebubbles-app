@@ -36,11 +36,8 @@ class UrlPreview extends StatefulWidget {
 }
 
 class _UrlPreviewState extends State<UrlPreview>
-    with AutomaticKeepAliveClientMixin, TickerProviderStateMixin, ThemeHelpers {
+    with TickerProviderStateMixin, ThemeHelpers {
   late final UrlPreviewController controller;
-
-  @override
-  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -71,7 +68,6 @@ class _UrlPreviewState extends State<UrlPreview>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     final card = iOS ? CupertinoUrlPreview(controller: controller) : ExpressiveUrlPreview(controller: controller);
 
     // Reply bubbles are laid out compactly and carry no image or affordance, so

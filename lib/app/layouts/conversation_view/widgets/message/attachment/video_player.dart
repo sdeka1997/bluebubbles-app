@@ -219,7 +219,7 @@ class MuteButton extends StatelessWidget {
   }
 }
 
-class _VideoPlayerState extends State<VideoPlayer> with AutomaticKeepAliveClientMixin, ThemeHelpers {
+class _VideoPlayerState extends State<VideoPlayer> with ThemeHelpers {
   Attachment get attachment => widget.attachment;
 
   PlatformFile get file => widget.file;
@@ -452,7 +452,6 @@ class _VideoPlayerState extends State<VideoPlayer> with AutomaticKeepAliveClient
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     final currentChat = widget.controller?.chat ?? ChatStateScope.maybeChatOf(context);
     if (videoController != null) {
       return MouseRegion(
@@ -652,9 +651,6 @@ class _VideoPlayerState extends State<VideoPlayer> with AutomaticKeepAliveClient
                       ))),
     );
   }
-
-  @override
-  bool get wantKeepAlive => true;
 }
 
 class FullscreenButton extends StatelessWidget {

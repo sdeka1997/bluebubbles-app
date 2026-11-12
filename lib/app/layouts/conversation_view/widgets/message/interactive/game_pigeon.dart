@@ -18,17 +18,13 @@ class GamePigeon extends StatefulWidget {
   State<StatefulWidget> createState() => _GamePigeonState();
 }
 
-class _GamePigeonState extends State<GamePigeon> with AutomaticKeepAliveClientMixin {
+class _GamePigeonState extends State<GamePigeon> {
   iMessageAppData get data => widget.data;
   dynamic get file => File(content.path!);
   dynamic content;
 
   @override
-  bool get wantKeepAlive => true;
-
-  @override
   Widget build(BuildContext context) {
-    super.build(context);
     if (content == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;

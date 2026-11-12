@@ -27,7 +27,7 @@ class EmbeddedMedia extends StatefulWidget {
   State<EmbeddedMedia> createState() => _EmbeddedMediaState();
 }
 
-class _EmbeddedMediaState extends State<EmbeddedMedia> with AutomaticKeepAliveClientMixin, ThemeHelpers {
+class _EmbeddedMediaState extends State<EmbeddedMedia> with ThemeHelpers {
   late MessageState _ms;
   MessageState get controller => _ms;
   Worker? _refreshWorker;
@@ -104,11 +104,7 @@ class _EmbeddedMediaState extends State<EmbeddedMedia> with AutomaticKeepAliveCl
   }
 
   @override
-  bool get wantKeepAlive => true;
-
-  @override
   Widget build(BuildContext context) {
-    super.build(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [

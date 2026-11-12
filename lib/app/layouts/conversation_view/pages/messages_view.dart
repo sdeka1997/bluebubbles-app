@@ -390,8 +390,7 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
     // Older (paginated) messages are appended after the already-loaded ones since
     // the list is sorted newest-first. When that holds, insert only the new items
     // via the SliverAnimatedList API instead of swapping _listKey, which would tear
-    // down the whole sliver (and its AutomaticKeepAlive cache of loaded images/url
-    // previews), causing them to redecode when scrolling back down.
+    // down the whole sliver and rebuild every row on screen.
     final addedCount = _messages.length - previousLength;
     final isSimpleAppend = addedCount > 0 &&
         const ListEquality().equals(_messages.sublist(0, previousLength), previousMessages);
@@ -654,12 +653,12 @@ class MessagesViewState extends State<MessagesView> with MessagesServiceMixin, T
                         controller: scrollController,
                         reverse: true,
                         physics: ThemeSwitcher.getScrollPhysics(),
-                        // MessageHolder implements AutomaticKeepAliveClientMixin, so already-built
-                        // messages survive scrolling arbitrarily far away without needing a large
-                        // cache extent (which forces eager build/layout of everything within its
-                        // window on every layout pass. A 10k px extent visibly stuttered chat open
-                        // for exactly that reason). This is just a small bump over the 250px default
-                        // for minor smoothing of local scroll gestures.
+                        // Rows are built as they come near the screen and released once they leave
+                        // it; nothing in a row keeps itself alive (chat_rows_not_kept_alive_test), so
+                        // memory follows what is on screen, not how far back you scrolled. A large
+                        // extent forces eager build/layout of everything within its window on every
+                        // layout pass (a 10k px extent visibly stuttered chat open), so this is just
+                        // a small bump over the 250px default to smooth local scroll gestures.
                         scrollCacheExtent: const ScrollCacheExtent.pixels(500),
                         slivers: <Widget>[
                           SliverToBoxAdapter(

@@ -15,15 +15,11 @@ class ApplePay extends StatefulWidget {
   State<StatefulWidget> createState() => _ApplePayState();
 }
 
-class _ApplePayState extends State<ApplePay> with AutomaticKeepAliveClientMixin {
+class _ApplePayState extends State<ApplePay> {
   iMessageAppData get data => widget.data;
 
   @override
-  bool get wantKeepAlive => true;
-
-  @override
   Widget build(BuildContext context) {
-    super.build(context);
     final message = MessageStateScope.messageOf(context);
     const icon = Icons.apple;
     final str = data.userInfo?.subcaption;

@@ -35,7 +35,7 @@ Called from `MessagePartContent` when `message.hasApplePayloadData || message.is
 
 ## Key Patterns
 
-- All interactive widgets use `AutomaticKeepAliveClientMixin` to preserve state during scroll (prevents re-fetching URL metadata on every scroll).
+- No widget in a message row keeps itself alive (`test/app/chat_rows_not_kept_alive_test.dart`): a kept-alive row is never released, so a long scroll held every row passed. Rows rebuild from the message, `MessageMetadataStore` and the disk caches, so scrolling back does not re-fetch URL metadata.
 - Tap handling is wrapped in `Obx()` to observe selection mode — in selection mode, taps select the message rather than triggering the interactive action.
 - URL previews use `MetadataHelper.fetchForMessage()`, which returns a `MetadataFetchResult` and
   never throws — see `lib/helpers/network/metadata/CLAUDE.md`.

@@ -34,7 +34,7 @@ class ImageViewer extends StatefulWidget {
   State<StatefulWidget> createState() => _ImageViewerState();
 }
 
-class _ImageViewerState extends State<ImageViewer> with AutomaticKeepAliveClientMixin, LivePhotoMixin, ThemeHelpers {
+class _ImageViewerState extends State<ImageViewer> with LivePhotoMixin, ThemeHelpers {
   Attachment get attachment => widget.attachment;
   PlatformFile get file => widget.file;
   ConversationViewController? get controller => widget.controller;
@@ -86,8 +86,6 @@ class _ImageViewerState extends State<ImageViewer> with AutomaticKeepAliveClient
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
-
     // Handle demo attachments
     if (attachment.guid!.contains("demo")) {
       return Image.asset(attachment.transferName!, fit: BoxFit.cover);
@@ -502,7 +500,4 @@ class _ImageViewerState extends State<ImageViewer> with AutomaticKeepAliveClient
       actions: [BBDialogAction(text: "Close", onPressed: () => Navigator.of(context, rootNavigator: true).pop())],
     );
   }
-
-  @override
-  bool get wantKeepAlive => true;
 }

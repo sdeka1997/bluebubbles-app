@@ -26,7 +26,7 @@ class ContactCard extends StatefulWidget {
   State<ContactCard> createState() => _ContactCardState();
 }
 
-class _ContactCardState extends State<ContactCard> with AutomaticKeepAliveClientMixin, ThemeHelpers {
+class _ContactCardState extends State<ContactCard> with ThemeHelpers {
   ContactV2? contact;
 
   @override
@@ -88,7 +88,6 @@ class _ContactCardState extends State<ContactCard> with AutomaticKeepAliveClient
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     return SizedBox(
       height: 60,
       width: 250,
@@ -146,7 +145,4 @@ class _ContactCardState extends State<ContactCard> with AutomaticKeepAliveClient
       ),
     );
   }
-
-  @override
-  bool get wantKeepAlive => true;
 }

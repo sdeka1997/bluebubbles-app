@@ -27,7 +27,7 @@ class InteractiveHolder extends StatefulWidget {
   State<StatefulWidget> createState() => _InteractiveHolderState();
 }
 
-class _InteractiveHolderState extends State<InteractiveHolder> with AutomaticKeepAliveClientMixin, ThemeHelpers {
+class _InteractiveHolderState extends State<InteractiveHolder> with ThemeHelpers {
   late MessageState _ms;
   MessageState get controller => _ms;
 
@@ -42,11 +42,7 @@ class _InteractiveHolderState extends State<InteractiveHolder> with AutomaticKee
   }
 
   @override
-  bool get wantKeepAlive => true;
-
-  @override
   Widget build(BuildContext context) {
-    super.build(context);
     return Obx(() {
       // Observe selection state
       final selected = !iOS && (controller.cvController?.selected.any((m) => m.guid == message.guid) ?? false);

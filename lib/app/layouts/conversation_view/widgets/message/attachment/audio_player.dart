@@ -33,7 +33,7 @@ class AudioPlayer extends StatefulWidget {
   }
 }
 
-class _AudioPlayerState extends State<AudioPlayer> with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
+class _AudioPlayerState extends State<AudioPlayer> with SingleTickerProviderStateMixin {
   Attachment? get attachment => widget.attachment;
 
   PlatformFile get file => widget.file;
@@ -89,7 +89,6 @@ class _AudioPlayerState extends State<AudioPlayer> with AutomaticKeepAliveClient
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     return Padding(
         padding: const EdgeInsets.all(5),
         child: Column(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -148,13 +147,10 @@ class _AudioPlayerState extends State<AudioPlayer> with AutomaticKeepAliveClient
             ),
         ]));
   }
-
-  @override
-  bool get wantKeepAlive => true;
 }
 
 class _DesktopAudioPlayerState extends State<AudioPlayer>
-    with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   Attachment? get attachment => widget.attachment;
 
   PlatformFile get file => widget.file;
@@ -211,7 +207,6 @@ class _DesktopAudioPlayerState extends State<AudioPlayer>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     return Padding(
         padding: const EdgeInsets.all(5),
         child: Row(
@@ -254,7 +249,4 @@ class _DesktopAudioPlayerState extends State<AudioPlayer>
           ],
         ));
   }
-
-  @override
-  bool get wantKeepAlive => true;
 }

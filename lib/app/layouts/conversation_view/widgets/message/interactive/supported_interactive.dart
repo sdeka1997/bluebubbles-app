@@ -19,17 +19,13 @@ class SupportedInteractive extends StatefulWidget {
   State<StatefulWidget> createState() => _SupportedInteractiveState();
 }
 
-class _SupportedInteractiveState extends State<SupportedInteractive> with AutomaticKeepAliveClientMixin {
+class _SupportedInteractiveState extends State<SupportedInteractive> {
   iMessageAppData get data => widget.data;
   dynamic get file => File(content.path!);
   dynamic content;
 
   @override
-  bool get wantKeepAlive => true;
-
-  @override
   Widget build(BuildContext context) {
-    super.build(context);
     if (content == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;

@@ -21,7 +21,7 @@ class UnsupportedInteractive extends StatefulWidget {
 }
 
 class _UnsupportedInteractiveState extends State<UnsupportedInteractive>
-    with AutomaticKeepAliveClientMixin, ThemeHelpers {
+    with ThemeHelpers {
   iMessageAppData? get data => widget.payloadData;
   dynamic get file => File(content.path!);
 
@@ -52,11 +52,7 @@ class _UnsupportedInteractiveState extends State<UnsupportedInteractive>
   }
 
   @override
-  bool get wantKeepAlive => true;
-
-  @override
   Widget build(BuildContext context) {
-    super.build(context);
     final message = MessageStateScope.messageOf(context);
     if (content == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {

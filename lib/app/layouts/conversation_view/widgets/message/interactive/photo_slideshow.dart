@@ -31,7 +31,7 @@ class PhotoSlideshow extends StatefulWidget {
   State<StatefulWidget> createState() => _PhotoSlideshowState();
 }
 
-class _PhotoSlideshowState extends State<PhotoSlideshow> with AutomaticKeepAliveClientMixin, ThemeHelpers {
+class _PhotoSlideshowState extends State<PhotoSlideshow> with ThemeHelpers {
   iMessageAppData get data => widget.data;
 
   String? _previewImagePath;
@@ -51,9 +51,6 @@ class _PhotoSlideshowState extends State<PhotoSlideshow> with AutomaticKeepAlive
   late MessageState _ms;
   Worker? _refreshWorker;
   Message get message => _ms.message;
-
-  @override
-  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -146,7 +143,6 @@ class _PhotoSlideshowState extends State<PhotoSlideshow> with AutomaticKeepAlive
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     if (_previewImagePath == null && !_previewFetchStarted) {
       _previewFetchStarted = true;
       final manual = _refreshRequested;
