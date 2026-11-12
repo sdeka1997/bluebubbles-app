@@ -442,14 +442,7 @@ class StartupTasks {
     Logger.info("Refreshing server details in background...");
     unawaited(SettingsSvc.refreshServerDetails());
 
-    // Only register FCM device on startup
-    // Don't await. Let this happen in background
-    Logger.info("Registering FCM device in background...");
-    FirebaseSvc.registerDevice().catchError((e, s) {
-      Logger.warn("Failed to register FCM device on startup!", error: e, trace: s);
-      showToast("Failed to register FCM device!", isError: true);
-      return null; // Return null on error
-    });
+    // Push registration runs in NetworkTasks.onConnect, once the server answers.
 
     // We don't need to check for updates immediately, so delay it so other
     // code has a chance to run and we don't block the UI thread.

@@ -40,6 +40,14 @@ class NetworkTasks {
       }
     }
 
+    // Push registration needs the server, so it runs once the server answers rather
+    // than at launch, when Android may still be holding the app's network. It is
+    // cheap to repeat: the server keeps one entry per device name.
+    unawaited(FirebaseSvc.registerDevice().catchError((e, s) {
+      Logger.warn("Failed to register FCM device!", error: e, trace: s);
+      showToast("Failed to register FCM device!", isError: true);
+    }));
+
     // When we re-connect, try an incremental sync.
     // The sync function has a guard based on time to ensure that it doesn't
     // get invoked multiple times in quick succession.
