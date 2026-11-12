@@ -1,0 +1,673 @@
+diff --git a/lib/app/layouts/conversation_list/dialogs/conversation_peek_view.dart b/lib/app/layouts/conversation_list/dialogs/conversation_peek_view.dart
+index 3b8503e..bb900cd 100644
+--- a/lib/app/layouts/conversation_list/dialogs/conversation_peek_view.dart
++++ b/lib/app/layouts/conversation_list/dialogs/conversation_peek_view.dart
+@@ -22,14 +22,9 @@ import 'package:get/get.dart';
+ 
+ Future<void> peekChat(BuildContext context, Chat c, Offset offset) async {
+   HapticFeedback.mediumImpact();
+-  // The newest page with attachments, and its reactions before the peek opens.
++  // The newest page, with attachments and reactions, before the peek opens.
+   final page = await Chat.getOlderMessagesAsync(c);
+   final messages = page.messages.where((e) => e.associatedMessageGuid == null).toList();
+-  final reactions = MessageHelper.normalizedAssociatedMessages(
+-      await ChatInterface.loadSupplementalData(messageGuids: messages.map((e) => e.guid!).toList()));
+-  for (final m in messages) {
+-    m.associatedMessages = reactions.where((e) => e.associatedMessageGuid == m.guid).toList();
+-  }
+   await Navigator.push(
+     Get.context!,
+     PageRouteBuilder(
+diff --git a/lib/database/io/chat.dart b/lib/database/io/chat.dart
+index 97e0b83..c744b00 100644
+--- a/lib/database/io/chat.dart
++++ b/lib/database/io/chat.dart
+@@ -559,123 +559,27 @@ class Chat {
+ 
+   // count() method moved to ChatsService
+ 
+-  /// Fetch messages asynchronously with progressive loading
+-  /// Returns messages with attachments, then loads reactions in background
++  /// [chat]'s messages newest created first, from [offset], at most [limit]
++  /// (all of them when 0), with attachments and reactions.
+   static Future<List<Message>> getMessagesAsync(Chat chat,
+-      {int offset = 0,
+-      int limit = 25,
+-      bool includeDeleted = false,
+-      Function? onSupplementalDataLoaded}) async {
++      {int offset = 0, int limit = 25, bool includeDeleted = false}) async {
+     if (kIsWeb || chat.id == null) return [];
+-
+-    final totalStopwatch = Stopwatch()..start();
+-
+-    // PHASE 1: Query messages with attachments using interface/actions pattern
+-    final messages = await ChatInterface.getMessagesAsync(
+-      chatId: chat.id!,
+-      chatGuid: chat.guid,
+-      participantsData: chat.handles.map((e) => e.toMap()).toList(),
+-      offset: offset,
+-      limit: limit,
+-      includeDeleted: includeDeleted,
+-    );
+-
+-    if (messages.isEmpty) {
+-      return messages;
+-    }
+-
+-    // PHASE 2: Load reactions in background (non-blocking)
+-    final messageGuids = messages.map((e) => e.guid!).toList();
+-
+-    // Don't await - let this run in background and call callback when done
+-    _loadSupplementalDataAsync(messages, messageGuids, totalStopwatch, onSupplementalDataLoaded);
+-
+-    totalStopwatch.stop();
+-    Logger.debug("[getMessagesAsync] RETURNED (Phase 1 complete): ${totalStopwatch.elapsedMilliseconds}ms");
+-
+-    // Return messages immediately (reactions/attachments will be added later)
+-    return messages;
++    return MessagingStore.current
++        .chatMessages(chat.id!, chat.handles.toList(), offset: offset, limit: limit, includeDeleted: includeDeleted);
+   }
+ 
+   /// The page of [chat]'s timeline just older than [after] (the newest page
+-  /// when null), with attachments; reactions load in the background as in
+-  /// [getMessagesAsync].
+-  static Future<({List<Message> messages, MessagePageCursor? next})> getOlderMessagesAsync(Chat chat,
+-      {MessagePageCursor? after, int limit = 25, Function? onSupplementalDataLoaded}) async {
++  /// when null).
++  static Future<MessagePage> getOlderMessagesAsync(Chat chat, {MessagePageCursor? after, int limit = 25}) async {
+     if (kIsWeb || chat.id == null) return (messages: <Message>[], next: after);
+-    final totalStopwatch = Stopwatch()..start();
+-    final page = await ChatInterface.getOlderMessagePage(chatId: chat.id!, after: after, limit: limit);
+-    if (page.messages.isNotEmpty) {
+-      _loadSupplementalDataAsync(
+-          page.messages, page.messages.map((e) => e.guid!).toList(), totalStopwatch, onSupplementalDataLoaded);
+-    }
+-    return page;
++    return MessagingStore.current.olderMessagePage(chat.id!, after: after, limit: limit);
+   }
+ 
+   /// [limit] messages of [chat] either side of [around] and [around] itself,
+-  /// newest first, with attachments; reactions load in the background.
+-  static Future<({List<Message> messages, MessagePageCursor? next})> getMessagesAroundAsync(Chat chat, Message around,
+-      {int limit = 25, Function? onSupplementalDataLoaded}) async {
++  /// newest first.
++  static Future<MessagePage> getMessagesAroundAsync(Chat chat, Message around, {int limit = 25}) async {
+     if (kIsWeb || chat.id == null || around.id == null) return (messages: <Message>[], next: null);
+-    final totalStopwatch = Stopwatch()..start();
+-    final page = await ChatInterface.getMessagePageAround(
+-      chatId: chat.id!,
+-      participantsData: chat.handles.map((e) => e.toMap()).toList(),
+-      aroundId: around.id!,
+-      limit: limit,
+-    );
+-    if (page.messages.isNotEmpty) {
+-      _loadSupplementalDataAsync(
+-          page.messages, page.messages.map((e) => e.guid!).toList(), totalStopwatch, onSupplementalDataLoaded);
+-    }
+-    return page;
+-  }
+-
+-  /// Load reactions in background and append to messages
+-  static Future<void> _loadSupplementalDataAsync(
+-    List<Message> messages,
+-    List<String> messageGuids,
+-    Stopwatch totalStopwatch,
+-    Function? onComplete,
+-  ) async {
+-    final supplementalStopwatch = Stopwatch()..start();
+-
+-    try {
+-      var associatedMessages = await ChatInterface.loadSupplementalData(
+-        messageGuids: messageGuids,
+-      );
+-
+-      Logger.debug("[getMessagesAsync] Phase 2 - Supplemental query: ${supplementalStopwatch.elapsedMilliseconds}ms");
+-
+-      // Normalize reactions
+-      associatedMessages = MessageHelper.normalizedAssociatedMessages(associatedMessages);
+-
+-      // Append reactions to original messages
+-      int messagesWithReactions = 0;
+-      for (Message m in messages) {
+-        final messageReactions = associatedMessages.where((e) => e.associatedMessageGuid == m.guid).toList();
+-        m.associatedMessages = messageReactions;
+-        if (messageReactions.isNotEmpty) {
+-          messagesWithReactions++;
+-          Logger.debug("[getMessagesAsync] Phase 2 - Added ${messageReactions.length} reactions to message ${m.guid}",
+-              tag: "MessageReactivity");
+-        }
+-      }
+-
+-      supplementalStopwatch.stop();
+-      Logger.debug(
+-          "[getMessagesAsync] Phase 2 - COMPLETE: ${supplementalStopwatch.elapsedMilliseconds}ms (${associatedMessages.length} reactions on $messagesWithReactions messages)");
+-
+-      // Notify caller that supplemental data has been loaded
+-      if (onComplete != null) {
+-        Logger.debug("[getMessagesAsync] Phase 2 - Calling onComplete callback", tag: "MessageReactivity");
+-        onComplete();
+-      } else {
+-        Logger.warn("[getMessagesAsync] Phase 2 - No onComplete callback provided!", tag: "MessageReactivity");
+-      }
+-    } catch (ex, stacktrace) {
+-      Logger.error("Failed to load supplemental data for messages", error: ex, trace: stacktrace);
+-    }
++    return MessagingStore.current.messagePageAround(chat.id!, around.id!, limit: limit);
+   }
+ 
+   void webSyncParticipants() {}
+diff --git a/lib/database/store/messaging_store.dart b/lib/database/store/messaging_store.dart
+index d1ea1f3..0c44096 100644
+--- a/lib/database/store/messaging_store.dart
++++ b/lib/database/store/messaging_store.dart
+@@ -306,9 +306,10 @@ class MessagePageCursor {
+   String toString() => 'MessagePageCursor($key)';
+ }
+ 
+-/// One page of a chat's timeline: message ids newest first, and where the next
+-/// older page starts ([next] is the request's cursor when nothing came back).
+-typedef MessagePage = ({List<int> ids, MessagePageCursor? next});
++/// One page of a chat's timeline, newest first, read once: each message with
++/// its attachments, linked messages and reactions. [next] is where the next
++/// older page starts (the request's cursor when nothing came back).
++typedef MessagePage = ({List<Message> messages, MessagePageCursor? next});
+ 
+ /// The chat-stats screen's reads for one chat (ChatStatsRepo). Timestamps are epoch milliseconds; participants
+ /// are local handle ids, [kMeParticipantId] for me.
+@@ -363,8 +364,6 @@ abstract interface class ChatStore {
+     required bool checkForMessageText,
+   });
+ 
+-  Future<List<int>> supplementalMessageIds(List<String> messageGuids);
+-
+   Future<List<int>> syncLatestMessages(List<String> chatGuids, {required bool toggleUnread});
+ 
+   /// Address-only lookup used by the legacy one-to-one GUID fallback before
+@@ -385,7 +384,10 @@ abstract interface class ChatStore {
+   /// The former one-write contact match after bulkSyncChats.
+   Future<void> linkContactToHandle(ContactV2 contact, int handleId);
+ 
+-  Future<List<int>> messagePageIds(
++  /// [chatId]'s messages newest created first, from [offset], at most [limit]
++  /// (all of them when 0), with attachments, linked messages and reactions;
++  /// leaves out messages from senders the chat can't place.
++  Future<List<Message>> chatMessages(
+     int chatId,
+     List<Handle> participants, {
+     required int offset,
+@@ -400,7 +402,7 @@ abstract interface class ChatStore {
+   /// [limit] messages of [chatId] either side of the message [aroundId] and that
+   /// message, newest first: what jumping to a search result loads. [next] is
+   /// where scrolling up continues.
+-  Future<MessagePage> messagePageAround(int chatId, List<Handle> participants, int aroundId, {required int limit});
++  Future<MessagePage> messagePageAround(int chatId, int aroundId, {required int limit});
+ 
+   /// Messages whose text contains [term] (ASCII letters in either case), newest
+   /// created first, with their chat and attachments: not reactions, not
+diff --git a/lib/database/store/sqlite/sqlite_chat_store.dart b/lib/database/store/sqlite/sqlite_chat_store.dart
+index 445cda7..b2d2be4 100644
+--- a/lib/database/store/sqlite/sqlite_chat_store.dart
++++ b/lib/database/store/sqlite/sqlite_chat_store.dart
+@@ -20,7 +20,7 @@ import 'package:collection/collection.dart';
+ 
+ /// ChatActions on SQLite. Every former ObjectBox write transaction is one
+ /// [Db.write]; address formatting and contact lookup stay in ChatActions.
+-mixin SqliteChatStore implements ChatStore, SqliteStorePart {
++mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
+   @override
+   Future<List<Chat>> markChatsRead(List<int> chatIds) {
+     return db.write((tx) async {
+@@ -221,10 +221,6 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
+     });
+   }
+ 
+-  @override
+-  Future<List<int>> supplementalMessageIds(List<String> messageGuids) async =>
+-      [for (final message in await MessageRepo(db).reactionsFor(messageGuids)) message.id!];
+-
+   @override
+   Future<List<int>> syncLatestMessages(List<String> chatGuids, {required bool toggleUnread}) {
+     return db.write((tx) async {
+@@ -334,7 +330,7 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
+   }
+ 
+   @override
+-  Future<List<int>> messagePageIds(
++  Future<List<Message>> chatMessages(
+     int chatId,
+     List<Handle> participants, {
+     required int offset,
+@@ -347,7 +343,7 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
+         'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? '
+         'AND date_created_us IS NOT NULL $deleted'
+         'ORDER BY date_created_us DESC, id DESC LIMIT ? OFFSET ?',
+-        [chatId, limit, offset],
++        [chatId, limit == 0 ? -1 : limit, offset],
+       );
+       final messages = rows.map(messageFromRow).toList();
+       await MessageRepo(reader).attachmentsFor(messages);
+@@ -367,8 +363,8 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
+             storedByRowId[message.handleId];
+         return handle == null && message.originalROWID != null;
+       });
+-      return messages.map((e) => e.id!).toList();
+-    });
++      return messages;
++    }).then(_withReactions);
+   }
+ 
+   /// Keyset paging on (sort_at, id) through [MessageRepo]: its timeline
+@@ -379,7 +375,7 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
+     final key = after?.key;
+     final page = key == null ? await repo.newest([chatId], limit: limit) : await repo.olderThan([chatId], key, limit: limit);
+     return (
+-      ids: [for (final m in page) m.id!],
++      messages: await _withReactions(page),
+       next: page.isEmpty ? after : MessagePageCursor(MessageKey.of(page.last)),
+     );
+   }
+@@ -387,17 +383,35 @@ mixin SqliteChatStore implements ChatStore, SqliteStorePart {
+   /// The keyset neighbours of the message's (sort_at, id) key, so ties and
+   /// delivered-before-created messages land where the screen shows them.
+   @override
+-  Future<MessagePage> messagePageAround(int chatId, List<Handle> participants, int aroundId, {required int limit}) async {
++  Future<MessagePage> messagePageAround(int chatId, int aroundId, {required int limit}) async {
+     final repo = MessageRepo(db);
+-    final target = (await repo.byIds([aroundId]))[aroundId];
+-    if (target == null) return (ids: <int>[], next: null);
++    final target = await repo.row(aroundId);
++    if (target == null) return (messages: <Message>[], next: null);
+     final page = await repo.around([chatId], MessageKey.of(target), before: limit, after: limit);
+     return (
+-      ids: [for (final m in page) m.id!],
++      messages: await _withReactions(page),
+       next: page.isEmpty ? null : MessagePageCursor(MessageKey.of(page.last)),
+     );
+   }
+ 
++  /// Fills [messages]' linked messages and sets each one's reactions on it,
++  /// newest first (the order the reaction row has always shown). A reaction's
++  /// target is the message it is set on: no second read of it.
++  Future<List<Message>> _withReactions(List<Message> messages) async {
++    if (messages.isEmpty) return messages;
++    await fillLinkedMessages(messages);
++    final byGuid = {for (final m in messages) if (m.guid != null) m.guid!: m};
++    final on = <String, List<Message>>{};
++    for (final reaction in (await MessageRepo(db).reactionsFor(byGuid.keys)).reversed) {
++      reaction.reactionTarget = byGuid[reaction.associatedMessageGuid];
++      (on[reaction.associatedMessageGuid!] ??= []).add(reaction);
++    }
++    for (final m in messages) {
++      m.associatedMessages = on[m.guid] ?? [];
++    }
++    return messages;
++  }
++
+   @override
+   Future<List<Message>> searchMessages(String term,
+           {int? chatId, bool? isFromMe, int? senderRowId, DateTime? since, int limit = 50}) =>
+diff --git a/lib/services/backend/actions/chat_actions.dart b/lib/services/backend/actions/chat_actions.dart
+index e2308dd..0989579 100644
+--- a/lib/services/backend/actions/chat_actions.dart
++++ b/lib/services/backend/actions/chat_actions.dart
+@@ -91,9 +91,6 @@ class ChatActions {
+     );
+   }
+ 
+-  static Future<List<int>> loadSupplementalData(dynamic data) =>
+-      MessagingStore.current.supplementalMessageIds((data['messageGuids'] as List).cast<String>());
+-
+   static Future<List<int>> syncLatestMessages(dynamic data) => MessagingStore.current.syncLatestMessages(
+         (data['chatGuids'] as List).cast<String>(),
+         toggleUnread: data['toggleUnread'] as bool,
+@@ -141,45 +138,6 @@ class ChatActions {
+     return {'chatIds': result.chatIds, 'affectedHandleIds': affectedHandleIds};
+   }
+ 
+-  static Future<List<int>> getMessagesAsync(dynamic data) {
+-    final participants = (data['participantsData'] as List)
+-        .cast<Map<String, dynamic>>()
+-        .map(Handle.fromMap)
+-        .toList();
+-    return MessagingStore.current.messagePageIds(
+-      data['chatId'] as int,
+-      participants,
+-      offset: data['offset'] as int? ?? 0,
+-      limit: data['limit'] as int? ?? 25,
+-      includeDeleted: data['includeDeleted'] as bool? ?? false,
+-    );
+-  }
+-
+-  /// `{'ids': [...], 'next': MessagePageCursor.toMap() or null}`.
+-  static Future<Map<String, dynamic>> getOlderMessagePage(dynamic data) async {
+-    final page = await MessagingStore.current.olderMessagePage(
+-      data['chatId'] as int,
+-      after: MessagePageCursor.fromMap(data['after']),
+-      limit: data['limit'] as int? ?? 25,
+-    );
+-    return {'ids': page.ids, 'next': page.next?.toMap()};
+-  }
+-
+-  /// `{'ids': [...], 'next': MessagePageCursor.toMap() or null}`.
+-  static Future<Map<String, dynamic>> getMessagePageAround(dynamic data) async {
+-    final participants = (data['participantsData'] as List)
+-        .cast<Map<String, dynamic>>()
+-        .map(Handle.fromMap)
+-        .toList();
+-    final page = await MessagingStore.current.messagePageAround(
+-      data['chatId'] as int,
+-      participants,
+-      data['aroundId'] as int,
+-      limit: data['limit'] as int? ?? 25,
+-    );
+-    return {'ids': page.ids, 'next': page.next?.toMap()};
+-  }
+-
+   static Future<List<int>> getParticipantsAsync(dynamic data) =>
+       MessagingStore.current.participantIds(data['chatId'] as int);
+ 
+diff --git a/lib/services/backend/interfaces/chat_interface.dart b/lib/services/backend/interfaces/chat_interface.dart
+index f9fe90d..669dc85 100644
+--- a/lib/services/backend/interfaces/chat_interface.dart
++++ b/lib/services/backend/interfaces/chat_interface.dart
+@@ -194,27 +194,6 @@ class ChatInterface {
+     return MessageSaveResult(message, isNewer);
+   }
+ 
+-  static Future<List<Message>> loadSupplementalData({
+-    required List<String> messageGuids,
+-  }) async {
+-    final data = {
+-      'messageGuids': messageGuids,
+-    };
+-
+-    // Get reaction IDs from isolate
+-    final reactionIds = isIsolate
+-        ? await ChatActions.loadSupplementalData(data)
+-        : await GetIt.I<GlobalIsolate>().send<List<int>>(IsolateRequestType.loadSupplementalData, input: data);
+-
+-    // Hydrate the reaction messages on the main thread with proper DB connection
+-    // This ensures handleRelation and other ToOne relationships are loaded correctly
+-    if (reactionIds.isEmpty) {
+-      return <Message>[];
+-    }
+-
+-    return MessagingStore.current.messagesByIds(reactionIds);
+-  }
+-
+   static Future<({List<Chat> chats, List<int> affectedHandleIds})> bulkSyncChats(
+       {required List<Map<String, dynamic>> chatsData}) async {
+     final data = {
+@@ -238,82 +217,6 @@ class ChatInterface {
+     return (chats: chats, affectedHandleIds: affectedHandleIds);
+   }
+ 
+-  static Future<List<Message>> getMessagesAsync({
+-    required int chatId,
+-    required String chatGuid,
+-    required List<Map<String, dynamic>> participantsData,
+-    int offset = 0,
+-    int limit = 25,
+-    bool includeDeleted = false,
+-    bool hydrateAttachments = true,
+-  }) async {
+-    final data = {
+-      'chatId': chatId,
+-      'chatGuid': chatGuid,
+-      'participantsData': participantsData,
+-      'offset': offset,
+-      'limit': limit,
+-      'includeDeleted': includeDeleted,
+-    };
+-
+-    late List<int> messageIds;
+-    if (isIsolate) {
+-      messageIds = await ChatActions.getMessagesAsync(data);
+-    } else {
+-      messageIds = await GetIt.I<GlobalIsolate>().send<List<int>>(IsolateRequestType.getMessagesAsync, input: data);
+-    }
+-
+-    return MessagingStore.current.messagesByIds(messageIds);
+-  }
+-
+-  /// The page of the chat's timeline just older than [after] (the newest
+-  /// page when null), hydrated on this isolate.
+-  static Future<({List<Message> messages, MessagePageCursor? next})> getOlderMessagePage({
+-    required int chatId,
+-    MessagePageCursor? after,
+-    int limit = 25,
+-  }) async {
+-    final data = {
+-      'chatId': chatId,
+-      'after': after?.toMap(),
+-      'limit': limit,
+-    };
+-
+-    final result = isIsolate
+-        ? await ChatActions.getOlderMessagePage(data)
+-        : await GetIt.I<GlobalIsolate>().send<Map<String, dynamic>>(IsolateRequestType.getOlderMessagePage, input: data);
+-    final ids = (result['ids'] as List).cast<int>();
+-    return (
+-      messages: await MessagingStore.current.messagesByIds(ids),
+-      next: MessagePageCursor.fromMap(result['next']),
+-    );
+-  }
+-
+-  /// [limit] messages either side of [aroundId] and that message, hydrated on
+-  /// this isolate, and where scrolling up continues.
+-  static Future<({List<Message> messages, MessagePageCursor? next})> getMessagePageAround({
+-    required int chatId,
+-    required List<Map<String, dynamic>> participantsData,
+-    required int aroundId,
+-    int limit = 25,
+-  }) async {
+-    final data = {
+-      'chatId': chatId,
+-      'participantsData': participantsData,
+-      'aroundId': aroundId,
+-      'limit': limit,
+-    };
+-
+-    final result = isIsolate
+-        ? await ChatActions.getMessagePageAround(data)
+-        : await GetIt.I<GlobalIsolate>().send<Map<String, dynamic>>(IsolateRequestType.getMessagePageAround, input: data);
+-    final ids = (result['ids'] as List).cast<int>();
+-    return (
+-      messages: await MessagingStore.current.messagesByIds(ids),
+-      next: MessagePageCursor.fromMap(result['next']),
+-    );
+-  }
+-
+   static Future<List<Handle>> getParticipantsAsync({
+     required int chatId,
+     required String chatGuid,
+diff --git a/lib/services/isolates/global_isolate.dart b/lib/services/isolates/global_isolate.dart
+index 90e10a4..34e0d43 100644
+--- a/lib/services/isolates/global_isolate.dart
++++ b/lib/services/isolates/global_isolate.dart
+@@ -738,12 +738,8 @@ enum IsolateRequestType {
+   softDeleteChat,
+   unDeleteChat,
+   addMessageToChat,
+-  loadSupplementalData,
+   syncLatestMessages,
+   bulkSyncChats,
+-  getMessagesAsync,
+-  getOlderMessagePage,
+-  getMessagePageAround,
+   getParticipantsAsync,
+   clearTranscriptAsync,
+   getChatsAsync,
+diff --git a/lib/services/isolates/isolate_actions.dart b/lib/services/isolates/isolate_actions.dart
+index b27a6b7..ee4da08 100644
+--- a/lib/services/isolates/isolate_actions.dart
++++ b/lib/services/isolates/isolate_actions.dart
+@@ -75,12 +75,8 @@ class IsolateActons {
+     IsolateRequestType.softDeleteChat: ChatActions.softDeleteChat,
+     IsolateRequestType.unDeleteChat: ChatActions.unDeleteChat,
+     IsolateRequestType.addMessageToChat: ChatActions.addMessageToChat,
+-    IsolateRequestType.loadSupplementalData: ChatActions.loadSupplementalData,
+     IsolateRequestType.syncLatestMessages: ChatActions.syncLatestMessages,
+     IsolateRequestType.bulkSyncChats: ChatActions.bulkSyncChats,
+-    IsolateRequestType.getMessagesAsync: ChatActions.getMessagesAsync,
+-    IsolateRequestType.getOlderMessagePage: ChatActions.getOlderMessagePage,
+-    IsolateRequestType.getMessagePageAround: ChatActions.getMessagePageAround,
+     IsolateRequestType.getParticipantsAsync: ChatActions.getParticipantsAsync,
+     IsolateRequestType.clearTranscriptAsync: ChatActions.clearTranscriptAsync,
+     IsolateRequestType.getChatsAsync: ChatActions.getChatsAsync,
+diff --git a/lib/services/ui/chat/chats_service.dart b/lib/services/ui/chat/chats_service.dart
+index 07f077c..bc0b41d 100644
+--- a/lib/services/ui/chat/chats_service.dart
++++ b/lib/services/ui/chat/chats_service.dart
+@@ -1157,8 +1157,11 @@ class ChatsService {
+ 
+     // Perform the actual DB deletion
+     // The same 25 newest messages Chat.getMessages(chat) returned here before.
+-    final messageIds = await MessagingStore.current.messagePageIds(chat.id!, chat.handles.toList(),
+-        offset: 0, limit: 25, includeDeleted: false);
++    final messageIds = [
++      for (final m in await MessagingStore.current
++          .chatMessages(chat.id!, chat.handles.toList(), offset: 0, limit: 25, includeDeleted: false))
++        m.id!
++    ];
+     await ChatInterface.deleteChat(
+       chatId: chat.id!,
+       messageIds: messageIds,
+diff --git a/lib/services/ui/message/messages_service.dart b/lib/services/ui/message/messages_service.dart
+index 8db0a21..eb35352 100644
+--- a/lib/services/ui/message/messages_service.dart
++++ b/lib/services/ui/message/messages_service.dart
+@@ -1491,13 +1491,8 @@ class MessagesService extends GetxController {
+   /// advances the cursor (the newest page the first time, and after [close]).
+   /// Returns the page, newest first.
+   @visibleForTesting
+-  Future<List<Message>> loadOlderPage({int limit = 25, Function? onSupplementalDataLoaded}) async {
+-    final page = await Chat.getOlderMessagesAsync(
+-      chat,
+-      after: _olderCursor,
+-      limit: limit,
+-      onSupplementalDataLoaded: onSupplementalDataLoaded,
+-    );
++  Future<List<Message>> loadOlderPage({int limit = 25}) async {
++    final page = await Chat.getOlderMessagesAsync(chat, after: _olderCursor, limit: limit);
+     _olderCursor = page.next ?? _olderCursor;
+     struct.addMessages(page.messages);
+     return page.messages;
+@@ -1526,35 +1521,11 @@ class MessagesService extends GetxController {
+ 
+       final traceClock = Stopwatch()..start();
+       MemTrace.note('chat ${chat.id} page at $offset: loading');
+-      _messages = await loadOlderPage(
+-        limit: limit,
+-        onSupplementalDataLoaded: () {
+-          MemTrace.note('chat ${chat.id} page at $offset: reactions loaded after ${traceClock.elapsedMilliseconds}ms');
+-          // Phase 2 complete - reactions have been loaded into message.associatedMessages
+-          Logger.info("[loadChunk] Supplemental data loaded, syncing MessageStates for ${_messages.length} messages",
+-              tag: "MessageReactivity");
+-
+-          // Ensure MessageStates exist first (in case they weren't created yet)
+-          _ensureMessageStates(_messages);
+-
+-          // Sync associatedMessages into MessageState observables
+-          for (final message in _messages) {
+-            if (message.guid != null && message.associatedMessages.isNotEmpty) {
+-              final messageState = messageStates[message.guid];
+-              if (messageState != null) {
+-                // Clear and repopulate the observable list to trigger reactivity
+-                messageState.associatedMessages.clear();
+-                messageState.associatedMessages.addAll(message.associatedMessages);
+-                messageState.hasReactions.value = message.associatedMessages.isNotEmpty;
+-
+-                Logger.debug(
+-                    "[loadChunk] Synced ${message.associatedMessages.length} reactions into MessageState for ${message.guid}",
+-                    tag: "MessageReactivity");
+-              }
+-            }
+-          }
+-        },
+-      );
++      _messages = await loadOlderPage(limit: limit);
++      // Reactions come with the page; a message already on screen takes them over.
++      for (final m in _messages) {
++        messageStates[m.guid]?.updateAssociatedMessagesInternal(m.associatedMessages);
++      }
+ 
+       Logger.debug("[loadChunk] Loaded ${_messages.length} messages from local DB");
+       MemTrace.note('chat ${chat.id} page at $offset: ${_messages.length} messages after ${traceClock.elapsedMilliseconds}ms');
+diff --git a/test/database/store/message_page_test.dart b/test/database/store/message_page_test.dart
+new file mode 100644
+index 0000000..dc43da4
+--- /dev/null
++++ b/test/database/store/message_page_test.dart
+@@ -0,0 +1,70 @@
++// S5 step 5: a page of a chat's timeline is one read. The store returns the
++// messages themselves (attachments, linked messages and reactions filled), so
++// no caller re-reads them by id or fetches the reactions in a second pass.
++import 'package:bluebubbles/database/models.dart';
++import 'package:flutter_test/flutter_test.dart';
++
++import 'store_fixture.dart';
++
++void main() {
++  storeTests((fixture) {
++    test('an older page comes back with its reactions on it', () async {
++      final chat = await fixture().chat('c');
++      for (var i = 0; i < 10; i++) {
++        await fixture().message('m$i', chat, t0 + i * 1000);
++      }
++      await fixture().message('r9', chat, t0 + 9 * 1000 + 1, reactsTo: 'm9');
++      await fixture().message('r3', chat, t0 + 3 * 1000 + 1, reactsTo: 'm3');
++
++      final page = await fixture().store.olderMessagePage(chat.id!, limit: 25);
++
++      expect(page.messages.map((m) => m.guid), [for (var i = 9; i >= 0; i--) 'm$i']);
++      final byGuid = {for (final m in page.messages) m.guid: m};
++      expect(byGuid['m9']!.associatedMessages.map((m) => m.guid), ['r9']);
++      expect(byGuid['m3']!.associatedMessages.map((m) => m.guid), ['r3']);
++      expect(byGuid['m5']!.associatedMessages, isEmpty);
++    });
++
++    test('a page around a message comes back with its reactions on it', () async {
++      final chat = await fixture().chat('c');
++      final shown = <Message>[];
++      for (var i = 0; i < 10; i++) {
++        shown.add(await fixture().message('m$i', chat, t0 + i * 1000));
++      }
++      await fixture().message('r5', chat, t0 + 5 * 1000 + 1, reactsTo: 'm5');
++
++      final page = await fixture().store.messagePageAround(chat.id!, shown[5].id!, limit: 2);
++
++      expect(page.messages.map((m) => m.guid), ['m7', 'm6', 'm5', 'm4', 'm3']);
++      expect(page.messages[2].associatedMessages.map((m) => m.guid), ['r5']);
++    });
++
++    test('limit 0 reads the whole chat (export), with reactions', () async {
++      final chat = await fixture().chat('c');
++      for (var i = 0; i < 40; i++) {
++        await fixture().message('m$i', chat, t0 + i * 1000);
++      }
++      await fixture().message('r1', chat, t0 + 1000 + 1, reactsTo: 'm1');
++
++      final all = await fixture().store.chatMessages(chat.id!, chat.handles.toList(), offset: 0, limit: 0, includeDeleted: true);
++
++      expect(all.where((m) => m.associatedMessageGuid == null), hasLength(40));
++      expect(all.firstWhere((m) => m.guid == 'm1').associatedMessages.map((m) => m.guid), ['r1']);
++    });
++
++    test('a page reads each message row once: none is re-read by id', () async {
++      final chat = await fixture().chat('c');
++      for (var i = 0; i < 30; i++) {
++        await fixture().message('m$i', chat, t0 + i * 1000);
++        if (i.isEven) await fixture().message('r$i', chat, t0 + i * 1000 + 1, reactsTo: 'm$i');
++      }
++
++      final statements = await fixture().db.recordStatements(() async {
++        await fixture().store.olderMessagePage(chat.id!, limit: 25);
++      });
++
++      final rereads = statements.where((s) => s.$1.contains('FROM messages WHERE id IN')).toList();
++      expect(rereads, isEmpty, reason: rereads.map((s) => s.$1).join('\n'));
++    });
++  });
++}

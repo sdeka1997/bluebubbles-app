@@ -1,0 +1,15 @@
+sqlite: incremental-sync markers through SyncMarker of the active store
+
+S2 switch plan commit 6, first slice. IncrementalSyncManager reads and saves
+its markers (ROWID checkpoint, catch-up total, end-of-sync timestamp and
+bookmark) through SyncMarker.of(settings, MessagingStore.current.kind): the
+ObjectBox keys while ObjectBox is active (today, so nothing changes), the
+sqlite* keys once SQLite is. SyncActions.performIncrementalSync starts from
+IncrementalSyncManager.resumingFrom(marker); SyncService.startFullSync sets
+the active store's timestamp. The end-of-sync save moved to saveMarkers().
+
+incremental_sync_marker_test (13): checkpoint, catch-up total, end markers
+and resume on both stores' markers; ObjectBox is the default; a first SQLite
+sync starts from the ObjectBox marker; the rollback drill: a sync on SQLite
+writes only SQLite and the sqlite* marker, the ObjectBox store and marker are
+unchanged, and an ObjectBox build resumes from its own marker.
