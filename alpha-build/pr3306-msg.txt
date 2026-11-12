@@ -1,0 +1,22 @@
+feat: bring Find My closer to the iPhone app
+
+Map framing, selection, and drawer layout now follow the iPhone Find My app.
+
+- Cache each friend's/device's last known location (per server + iCloud account)
+  so the map still shows them when Apple returns no current fix.
+- Frame the map per tab: People = your location plus the nearby cluster;
+  Devices/Items = the cluster holding most products (your location ignored).
+- Group overlapping device/item markers into count capsules below street zoom;
+  tapping a capsule zooms in and splits it. Friends are never grouped.
+- One selection for map and list: tapping a marker or a row zooms to it,
+  raises its marker, and expands the row into an inset card (name, distance,
+  street, status) with Directions and, for saved contacts, Contact.
+  The card is scrolled into view after the expand animation settles.
+- Apple-style row text: distance (Nearby / 2.4 mi / 1,671 mi, km outside
+  US/UK) and "place · N min. ago".
+- Devices fall back to Apple's crowdSourcedLocation when location is empty
+  (e.g. Wi-Fi iPads), preferring whichever fix is newer.
+- AirPods are listed under Devices; Items holds AirTags and other accessories.
+- Favorites (server favorite_order) are listed first in the Friends tab.
+- Contact lookup falls back to the raw Find My address when the handle is not
+  in the local database; display names are never treated as addresses.

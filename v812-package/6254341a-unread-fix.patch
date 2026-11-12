@@ -1,0 +1,56 @@
+From 6254341a8e50954931ee770eb01882ead8c1b65c Mon Sep 17 00:00:00 2001
+From: Swapnav Deka <sdeka1997@gmail.com>
+Date: Wed, 7 Oct 2026 20:26:01 +0000
+Subject: [PATCH] fix(readsync): detect manually restored unread badges
+
+---
+ .../server/databases/imessage/snapshot/ChatStateSnapshot.ts  | 2 --
+ packages/server/test/chatStateSnapshot.test.ts               | 5 ++++-
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/packages/server/src/server/databases/imessage/snapshot/ChatStateSnapshot.ts b/packages/server/src/server/databases/imessage/snapshot/ChatStateSnapshot.ts
+index 03b857e5..1a48a75a 100644
+--- a/packages/server/src/server/databases/imessage/snapshot/ChatStateSnapshot.ts
++++ b/packages/server/src/server/databases/imessage/snapshot/ChatStateSnapshot.ts
+@@ -62,7 +62,6 @@ export function buildChatTransitionQuery(): string {
+             JOIN chat_message_join j ON j.message_id = m.ROWID
+             WHERE m.is_read = 0
+                 AND m.is_from_me = 0
+-                AND m.date_read = 0
+                 AND m.item_type = 0
+                 AND COALESCE(m.associated_message_type, 0) = 0
+         )
+@@ -156,7 +155,6 @@ export function buildChatSnapshotQuery(): string {
+             SUM(
+                 CASE
+                     WHEN m.is_read = 0
+-                        AND m.date_read = 0
+                         AND m.item_type = 0
+                         AND COALESCE(m.associated_message_type, 0) = 0
+                         AND m.is_from_me = 0
+diff --git a/packages/server/test/chatStateSnapshot.test.ts b/packages/server/test/chatStateSnapshot.test.ts
+index 11f7f399..9d3f1fba 100644
+--- a/packages/server/test/chatStateSnapshot.test.ts
++++ b/packages/server/test/chatStateSnapshot.test.ts
+@@ -24,7 +24,8 @@ test("transition query derives read state from unread-only message candidates",
+     assert.match(sql, /FROM message m/i);
+     assert.match(sql, /m\.is_read = 0/i);
+     assert.match(sql, /m\.is_from_me = 0/i);
+-    assert.match(sql, /m\.date_read = 0/i);
++    // Ventura preserves date_read when a user manually marks a previously read chat unread.
++    assert.doesNotMatch(sql, /m\.date_read = 0/i);
+     assert.match(sql, /m\.item_type = 0/i);
+     assert.match(sql, /COALESCE\(m\.associated_message_type, 0\) = 0/i);
+     assert.match(sql, /CAST\s*\(\s*c\.ROWID\s+AS TEXT\s*\)\s+AS row_id/i);
+@@ -76,6 +77,8 @@ test("snapshot query excludes system events and tapbacks from the unread tally",
+     assert.match(sql, /item_type = 0/i);
+     assert.match(sql, /associated_message_type/i);
+     assert.match(sql, /is_from_me = 0/i);
++    // A manually restored unread badge must count even when Apple retains the old read date.
++    assert.doesNotMatch(sql, /date_read = 0/i);
+ });
+ 
+ /** The pointer must stay TEXT; Apple timestamps exceed exact Number range. */
+-- 
+2.54.0
+

@@ -1,0 +1,12 @@
+diff --git a/lib/services/backend/java_dart_interop/method_channel_handlers.dart b/lib/services/backend/java_dart_interop/method_channel_handlers.dart
+--- a/lib/services/backend/java_dart_interop/method_channel_handlers.dart
++++ b/lib/services/backend/java_dart_interop/method_channel_handlers.dart
+@@ -366,7 +366,7 @@ class MethodChannelHandlers {
+           MethodChannelInboundMethods.chatDeleted, payload.data, 'MethodChannel', useQueue: false);
+       return _ok();
+     } catch (e, s) {
+-      return Future.error(e, s);
++      Error.throwWithStackTrace(e, s);
+     }
+   }
+ 

@@ -1,0 +1,274 @@
+diff --git a/lib/database/io/message.dart b/lib/database/io/message.dart
+index 9341748f1..17df4a0a6 100644
+--- a/lib/database/io/message.dart
++++ b/lib/database/io/message.dart
+@@ -486,6 +486,12 @@ class Message {
+     await MessageInterface.softDeleteMessage(guid: guid);
+   }
+ 
++  /// Un-hides a message Apple moved back out of Recently Deleted.
++  static Future<void> restore(String guid) async {
++    if (kIsWeb) return;
++    await MessageInterface.restoreMessage(guid: guid);
++  }
++
+   /// Re-links messages whose `handleId` (the sender's server-side ROWID)
+   /// matches [handleId] to [localHandleId]'s `handleRelation`. Used by the
+   /// Developer Tools "Handle Auditing" remediation flow, after a handle's
+diff --git a/lib/services/backend/action_handler.dart b/lib/services/backend/action_handler.dart
+index 3831e1759..566d44bbf 100644
+--- a/lib/services/backend/action_handler.dart
++++ b/lib/services/backend/action_handler.dart
+@@ -19,6 +19,29 @@ class ActionHandler extends GetxService {
+   /// `new-message` processing is skipped (the updated-message will handle it).
+   final List<String> outOfOrderTempGuids = [];
+ 
++  /// Applies an Apple-side single-message delete or restore.
++  ///
++  /// Routed through MessagesService rather than written straight to the DB:
++  /// the conversation view filters on dateDeleted, but a struct that is
++  /// already built keeps showing the message until it is removed from it.
++  Future<void> handleRecoverableMessageEvent({
++    required String? chatGuid,
++    required String? messageGuid,
++    required bool deleted,
++  }) async {
++    if (chatGuid == null || messageGuid == null) return;
++
++    final message = Message.findOne(guid: messageGuid);
++    if (message == null) return;
++
++    final service = MessagesSvc(chatGuid);
++    if (deleted) {
++      await service.softDeleteMessage(message);
++    } else {
++      await service.restoreMessage(message);
++    }
++  }
++
+   Future<Chat> handleNewOrUpdatedChat(Chat partialData) async {
+     final chat = await ChatsSvc.fetchChat(partialData.guid) ?? partialData;
+ 
+@@ -156,6 +179,15 @@ class ActionHandler extends GetxService {
+           await ChatsSvc.setChatHasUnread(chat, !data["read"]!, privateMark: false);
+         }
+         return;
++      case "message-deleted":
++      case "message-restored":
++        // Apple moved a single message into, or back out of, Recently Deleted.
++        await handleRecoverableMessageEvent(
++          chatGuid: data["chatGuid"],
++          messageGuid: data["messageGuid"],
++          deleted: event == "message-deleted",
++        );
++        return;
+       case "typing-indicator":
+         final chat = ChatsSvc.findChatByGuid(data["guid"]);
+         if (chat != null) {
+diff --git a/lib/services/backend/actions/message_actions.dart b/lib/services/backend/actions/message_actions.dart
+index 240f6ca46..fd03b068a 100644
+--- a/lib/services/backend/actions/message_actions.dart
++++ b/lib/services/backend/actions/message_actions.dart
+@@ -105,6 +105,28 @@ class MessageActions {
+     });
+   }
+ 
++  /// Clears [Message.dateDeleted], putting a message Apple took back out of
++  /// Recently Deleted in front of the user again. The inverse of
++  /// [softDeleteMessage]; the conversation view filters on dateDeleted being
++  /// null, so clearing it is all that is needed to un-hide the message.
++  static Future<void> restoreMessage(dynamic data) async {
++    final guid = data['guid'] as String;
++
++    Database.runInTransaction(TxMode.write, () {
++      final messageBox = Database.messages;
++
++      final query = messageBox.query(Message_.guid.equals(guid)).build();
++      query.limit = 1;
++      final toRestore = query.findFirst();
++      query.close();
++
++      if (toRestore != null && toRestore.dateDeleted != null) {
++        toRestore.dateDeleted = null;
++        messageBox.put(toRestore);
++      }
++    });
++  }
++
+   static Future<Map<String, dynamic>> fetchAssociatedMessagesAsync(dynamic data) async {
+     final messageGuid = data['messageGuid'] as String;
+     final threadOriginatorGuid = data['threadOriginatorGuid'] as String?;
+diff --git a/lib/services/backend/interfaces/message_interface.dart b/lib/services/backend/interfaces/message_interface.dart
+index a3733d2ef..df55194b8 100644
+--- a/lib/services/backend/interfaces/message_interface.dart
++++ b/lib/services/backend/interfaces/message_interface.dart
+@@ -72,6 +72,20 @@ class MessageInterface {
+     }
+   }
+ 
++  static Future<void> restoreMessage({
++    required String guid,
++  }) async {
++    final data = {
++      'guid': guid,
++    };
++
++    if (isIsolate) {
++      return await MessageActions.restoreMessage(data);
++    } else {
++      return await GetIt.I<GlobalIsolate>().send<void>(IsolateRequestType.restoreMessage, input: data);
++    }
++  }
++
+   static Future<Map<String, dynamic>> fetchAssociatedMessagesAsync({
+     required String messageGuid,
+     required int? messageId,
+diff --git a/lib/services/backend/java_dart_interop/method_channel_constants.dart b/lib/services/backend/java_dart_interop/method_channel_constants.dart
+index 1eb17e2e3..67b6afd5e 100644
+--- a/lib/services/backend/java_dart_interop/method_channel_constants.dart
++++ b/lib/services/backend/java_dart_interop/method_channel_constants.dart
+@@ -11,6 +11,8 @@ abstract class MethodChannelInboundMethods {
+   static const String replyChat = 'ReplyChat';
+   static const String markChatRead = 'MarkChatRead';
+   static const String chatReadStatusChanged = 'chat-read-status-changed';
++  static const String messageDeleted = 'message-deleted';
++  static const String messageRestored = 'message-restored';
+   static const String mediaColors = 'MediaColors';
+   static const String incomingFacetime = 'incoming-facetime';
+   static const String ftCallStatusChanged = 'ft-call-status-changed';
+diff --git a/lib/services/backend/java_dart_interop/method_channel_handlers.dart b/lib/services/backend/java_dart_interop/method_channel_handlers.dart
+index 92c60abf1..a34a9709b 100644
+--- a/lib/services/backend/java_dart_interop/method_channel_handlers.dart
++++ b/lib/services/backend/java_dart_interop/method_channel_handlers.dart
+@@ -38,6 +38,8 @@ class MethodChannelHandlers {
+       MethodChannelInboundMethods.replyChat: _handleReplyChat,
+       MethodChannelInboundMethods.markChatRead: _handleMarkChatRead,
+       MethodChannelInboundMethods.chatReadStatusChanged: _handleChatReadStatusChanged,
++      MethodChannelInboundMethods.messageDeleted: _handleRecoverableMessageEvent,
++      MethodChannelInboundMethods.messageRestored: _handleRecoverableMessageEvent,
+       MethodChannelInboundMethods.mediaColors: _handleMediaColors,
+       MethodChannelInboundMethods.incomingFacetime: _handleIncomingFacetime,
+       MethodChannelInboundMethods.ftCallStatusChanged: _handleFtCallStatusChanged,
+@@ -355,6 +357,36 @@ class MethodChannelHandlers {
+     }
+   }
+ 
++  /// Apple moved a single message into, or back out of, Recently Deleted.
++  ///
++  /// Writes straight to the database. The headless DartWorker has no
++  /// MessagesService or ChatsService registered, so touching either would
++  /// throw `GetIt ... not registered` and the push would retry and be
++  /// dropped; when the UI is alive it handles the socket event instead and
++  /// this returns early.
++  Future<bool> _handleRecoverableMessageEvent(MethodCall call, Map<String, dynamic>? arguments) async {
++    if (!service.headless && LifecycleSvc.isAlive) return _ok();
++    await Database.waitForInit();
++    Logger.info('Received ${call.method} from FCM');
++
++    try {
++      if (isNullOrEmpty(arguments)) return await _retry();
++      final payload = ServerPayload.fromJson(arguments!);
++      final messageGuid = payload.data['messageGuid'];
++      if (messageGuid is! String || messageGuid.isEmpty) return await _retry();
++      if (Message.findOne(guid: messageGuid) == null) return await _ok();
++
++      if (call.method == MethodChannelInboundMethods.messageDeleted) {
++        await Message.softDelete(messageGuid);
++      } else {
++        await Message.restore(messageGuid);
++      }
++      return await _ok();
++    } catch (e, s) {
++      return Future.error(e, s);
++    }
++  }
++
+   Future<bool> _handleMediaColors(MethodCall call, Map<String, dynamic>? _) async {
+     await Database.waitForInit();
+     if (!SettingsSvc.settings.colorsFromMedia.value) return _ok();
+diff --git a/lib/services/isolates/global_isolate.dart b/lib/services/isolates/global_isolate.dart
+index e9508526c..77fed0592 100644
+--- a/lib/services/isolates/global_isolate.dart
++++ b/lib/services/isolates/global_isolate.dart
+@@ -789,6 +789,7 @@ enum IsolateRequestType {
+   replaceMessage,
+   deleteMessage,
+   softDeleteMessage,
++  restoreMessage,
+   fetchAssociatedMessagesAsync,
+   saveMessageAsync,
+   findOneAsync,
+diff --git a/lib/services/isolates/isolate_actions.dart b/lib/services/isolates/isolate_actions.dart
+index 5afb11433..489fd28b9 100644
+--- a/lib/services/isolates/isolate_actions.dart
++++ b/lib/services/isolates/isolate_actions.dart
+@@ -56,6 +56,7 @@ class IsolateActons {
+     IsolateRequestType.replaceMessage: MessageActions.replaceMessage,
+     IsolateRequestType.deleteMessage: MessageActions.deleteMessage,
+     IsolateRequestType.softDeleteMessage: MessageActions.softDeleteMessage,
++    IsolateRequestType.restoreMessage: MessageActions.restoreMessage,
+     IsolateRequestType.fetchAssociatedMessagesAsync: MessageActions.fetchAssociatedMessagesAsync,
+     IsolateRequestType.saveMessageAsync: MessageActions.saveMessageAsync,
+     IsolateRequestType.findOneAsync: MessageActions.findOneAsync,
+diff --git a/lib/services/network/api/server_api.dart b/lib/services/network/api/server_api.dart
+index c9066fc4e..13721e179 100644
+--- a/lib/services/network/api/server_api.dart
++++ b/lib/services/network/api/server_api.dart
+@@ -73,6 +73,20 @@ class ServerApi {
+     });
+   }
+ 
++  /// Fetch every message Apple currently holds in Recently Deleted, grouped
++  /// by chat, so a client that was offline can catch up on the
++  /// single-message deletes and restores it missed.
++  Future<Response> getRecoverableMessageSnapshot({CancelToken? cancelToken}) async {
++    return _svc.runApiGuarded(() async {
++      final response = await _svc.dio.get(
++        "${_svc.apiRoot}/server/recoverable-messages/snapshot",
++        queryParameters: _svc.buildQueryParams(),
++        cancelToken: cancelToken,
++      );
++      return _svc.returnSuccessOrError(response);
++    });
++  }
++
+   /// Restart the server app services
+   Future<Response> softRestart({CancelToken? cancelToken}) async {
+     return _svc.runApiGuarded(() async {
+diff --git a/lib/services/ui/message/messages_service.dart b/lib/services/ui/message/messages_service.dart
+index 8e95cf687..891c45374 100644
+--- a/lib/services/ui/message/messages_service.dart
++++ b/lib/services/ui/message/messages_service.dart
+@@ -1278,6 +1278,18 @@ class MessagesService extends GetxController {
+     await _updateLatestMessageAfterDeletion(deletedGuid);
+   }
+ 
++  /// Un-hide a message Apple moved back out of Recently Deleted (clears
++  /// dateDeleted) and put it back into the struct and MessageState.
++  /// The inverse of [softDeleteMessage]; if the restored message is newer than
++  /// the chat's current latest, the chat's latest message is updated too.
++  Future<void> restoreMessage(Message message) async {
++    final restoredGuid = message.guid!;
++    await Message.restore(restoredGuid);
++    message.dateDeleted = null;
++    struct.addMessages([message]);
++    ChatsSvc.updateChatLatestMessage(tag, message);
++  }
++
+   /// If [deletedGuid] was the chat's latest message, fetches the new latest from the
+   /// database and updates both [ChatState] and the [Chat] DB record.
+   Future<void> _updateLatestMessageAfterDeletion(String deletedGuid) async {
+diff --git a/macos/Flutter/Flutter-Debug.xcconfig b/macos/Flutter/Flutter-Debug.xcconfig
+index c2efd0b60..4b81f9b2d 100644
+--- a/macos/Flutter/Flutter-Debug.xcconfig
++++ b/macos/Flutter/Flutter-Debug.xcconfig
+@@ -1 +1,2 @@
++#include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
+ #include "ephemeral/Flutter-Generated.xcconfig"
+diff --git a/macos/Flutter/Flutter-Release.xcconfig b/macos/Flutter/Flutter-Release.xcconfig
+index c2efd0b60..5caa9d157 100644
+--- a/macos/Flutter/Flutter-Release.xcconfig
++++ b/macos/Flutter/Flutter-Release.xcconfig
+@@ -1 +1,2 @@
++#include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
+ #include "ephemeral/Flutter-Generated.xcconfig"

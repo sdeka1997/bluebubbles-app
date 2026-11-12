@@ -1,0 +1,1159 @@
+diff --git a/lib/database/sqlite/attachment_repo.dart b/lib/database/sqlite/attachment_repo.dart
+index 0acf94313..4bae4d9e9 100644
+--- a/lib/database/sqlite/attachment_repo.dart
++++ b/lib/database/sqlite/attachment_repo.dart
+@@ -40,6 +40,48 @@ class AttachmentRepo {
+     return result;
+   }
+ 
++  /// Attachment GUIDs considered by storage analysis/deletion after applying
++  /// the optional chat and age filters.
++  Future<Set<String>> storageGuids({String? chatGuid, int? beforeMillis}) async {
++    final where = <String>['a.message_id IS NOT NULL'];
++    final args = <Object?>[];
++    if (beforeMillis != null) {
++      where.add('m.date_created_us < ?');
++      args.add(beforeMillis * 1000);
++    }
++    if (chatGuid != null) {
++      where.add('c.guid = ?');
++      args.add(chatGuid);
++    }
++    final rows = await db.select(
++      'SELECT a.guid FROM attachments a JOIN messages m ON m.id = a.message_id '
++      'JOIN chats c ON c.id = m.chat_id WHERE ${where.join(' AND ')}',
++      args,
++    );
++    return rows.map((row) => row['guid'] as String? ?? '').toSet();
++  }
++
++  /// Clears downloaded/image metadata for [guids]. The caller owns the one
++  /// [Db.write] corresponding to StorageActions' former ObjectBox transaction.
++  Future<void> resetDownloadMetadata(WriteTx tx, Iterable<String> guids) async {
++    for (final guid in guids) {
++      final rows = await tx.select('SELECT * FROM attachments WHERE guid = ?', [guid]);
++      if (rows.isEmpty) continue;
++      final attachment = attachmentFromRow(rows.single)
++        ..isDownloaded = false
++        ..height = null
++        ..width = null
++        ..exif = null;
++      attachment.metadata?.removeWhere((key, _) => const {
++            '_orientation_processed',
++            '_orientation',
++            '_raw_width',
++            '_raw_height',
++          }.contains(key));
++      await tx.update('attachments', attachmentToRow(attachment));
++    }
++  }
++
+   /// Inserts or updates [attachments] by guid, keeping a stored attachment's
+   /// id; the owner is `message.targetId`. Sets each attachment's id.
+   Future<List<Attachment>> upsert(WriteTx tx, List<Attachment> attachments) async {
+diff --git a/lib/database/sqlite/chat_repo.dart b/lib/database/sqlite/chat_repo.dart
+index e2f95359c..d2fef7d82 100644
+--- a/lib/database/sqlite/chat_repo.dart
++++ b/lib/database/sqlite/chat_repo.dart
+@@ -47,6 +47,32 @@ class ChatRepo {
+     });
+   }
+ 
++  /// The live copies of [threadKey], with relations filled.
++  Future<List<Chat>> threadCopies(String threadKey) async {
++    final rows = await db.select(
++      'SELECT id FROM chats WHERE thread_key = ? AND date_deleted_us IS NULL ORDER BY id',
++      [threadKey],
++    );
++    final ids = rows.map((row) => row['id'] as int).toList();
++    final found = await byIds(ids);
++    return [for (final id in ids) if (found[id] != null) found[id]!];
++  }
++
++  /// Links [handleId] to empty one-to-one chats whose GUID names [address],
++  /// matching the legacy contact sync fallback.
++  Future<void> linkEmptyOneToOneByAddress(WriteTx tx, String address, int handleId) async {
++    final rows = await tx.select(
++      'SELECT c.id FROM chats c WHERE instr(c.guid, ?) > 0 '
++      'AND NOT EXISTS (SELECT 1 FROM chat_handles ch WHERE ch.chat_id = c.id)',
++      [';-;$address'],
++    );
++    for (final row in rows) {
++      final chatId = row['id'] as int;
++      await tx.execute('INSERT INTO chat_handles (chat_id, handle_id) VALUES (?, ?)', [chatId, handleId]);
++      tx.markChanged('chat_handles', [chatId]);
++    }
++  }
++
+   /// One page of the chat list in the order today's list query loads it
+   /// (ChatActions.getChatsAsync): not deleted, newest latest message first.
+   /// [after] is the last chat of the previous page. Pins and folded twins are
+diff --git a/lib/database/sqlite/handle_repo.dart b/lib/database/sqlite/handle_repo.dart
+index a5b6eb5c4..9aadc34ce 100644
+--- a/lib/database/sqlite/handle_repo.dart
++++ b/lib/database/sqlite/handle_repo.dart
+@@ -15,6 +15,13 @@ class HandleRepo {
+ 
+   Future<Handle?> byId(int id) async => (await byIds([id]))[id];
+ 
++  Future<List<Handle>> all() async {
++    final rows = await db.select('SELECT * FROM handles ORDER BY id');
++    final handles = rows.map(handleFromRow).toList();
++    await _fillContacts(handles);
++    return handles;
++  }
++
+   /// The handle for [address] on [service], as `Handle.findOne(addressAndService:)` finds it.
+   Future<Handle?> byUniqueKey(String address, String service) async {
+     final rows = await db.select('SELECT * FROM handles WHERE address = ? AND service = ? LIMIT 1', [address, service]);
+diff --git a/lib/database/sqlite/message_repo.dart b/lib/database/sqlite/message_repo.dart
+index eb66ad111..d351975eb 100644
+--- a/lib/database/sqlite/message_repo.dart
++++ b/lib/database/sqlite/message_repo.dart
+@@ -140,6 +140,30 @@ class MessageRepo {
+   /// participants, sender with contacts.
+   Future<void> attachmentsFor(List<Message> page) => RelationFill(db).messages(page);
+ 
++  /// Every message created after [millisecondsSinceEpoch], matching the
++  /// unbounded legacy MessageActions query.
++  Future<List<Message>> createdAfter(int millisecondsSinceEpoch) async {
++    final rows = await db.select(
++      'SELECT * FROM messages WHERE date_created_us > ? ORDER BY id',
++      [millisecondsSinceEpoch * 1000],
++    );
++    final messages = rows.map(messageFromRow).toList();
++    await RelationFill(db).messages(messages);
++    return messages;
++  }
++
++  /// The most recent raw rows for one chat, including associated and deleted
++  /// messages, matching SendTargetResolver's former ObjectBox query.
++  Future<List<Message>> recentForChat(int chatId, {int limit = 50}) async {
++    final rows = await db.select(
++      'SELECT * FROM messages WHERE chat_id = ? ORDER BY date_created_us DESC, id DESC LIMIT ?',
++      [chatId, limit],
++    );
++    final messages = rows.map(messageFromRow).toList();
++    await RelationFill(db).messages(messages);
++    return messages;
++  }
++
+   Future<Message?> byGuid(String guid) async {
+     final rows = await db.select('SELECT * FROM messages WHERE guid = ?', [guid]);
+     return _single(rows);
+diff --git a/lib/database/store/messaging_store.dart b/lib/database/store/messaging_store.dart
+index ab2fce5a7..5fd975b8b 100644
+--- a/lib/database/store/messaging_store.dart
++++ b/lib/database/store/messaging_store.dart
+@@ -16,6 +16,53 @@ export 'package:bluebubbles/services/backend/sync/sync_marker.dart' show ActiveS
+ // Reads return entities with their relations usable (ObjectBox lazy-loads
+ // them, SQLite fills them). Writes return ids, as the Actions always have.
+ 
++/// Contacts (ContactV2Actions, ContactV2Interface).
++class ContactSyncResult {
++  const ContactSyncResult({required this.affectedHandleIds, required this.matchedContactCount});
++
++  final List<int> affectedHandleIds;
++  final int matchedContactCount;
++}
++
++abstract interface class ContactStore {
++  /// Reconciles the fetched server contacts and their already-written avatar paths,
++  /// including contact-handle and empty-chat-handle links, in one write.
++  Future<ContactSyncResult> syncContacts(
++    List<ContactV2> contacts,
++    Map<String, String?> avatarPaths, {
++    required bool fetched,
++  });
++
++  Future<List<String>> contactNativeIds();
++  Future<int?> findContactId(String nativeContactId);
++  Future<List<int>> contactIdsForHandles(List<int> handleIds);
++  Future<int?> contactIdByAddress(String address);
++  Future<List<int>> allContactIds();
++  Future<ContactV2?> contactById(int id);
++  Future<List<ContactV2>> contactsByIds(List<int> ids);
++}
++
++/// Storage analysis/reset (StorageActions).
++abstract interface class StorageStore {
++  Future<Set<String>> storageAttachmentGuids({String? chatGuid, int? beforeMillis});
++
++  /// Resets download/image metadata for the stored attachments in [guids] in one write.
++  Future<void> resetStorageAttachments(List<String> guids);
++}
++
++class SendTargetContext {
++  const SendTargetContext({required this.copies, required this.recent, this.anchorChatGuid});
++
++  final List<Chat> copies;
++  final List<Message> recent;
++  final String? anchorChatGuid;
++}
++
++/// Store reads needed to resolve the Apple chat used for an outgoing send.
++abstract interface class SendTargetStore {
++  Future<SendTargetContext> sendTargetContext(Chat thread, {String? anchorGuid, int recentLimit = 50});
++}
++
+ /// Handles (HandleActions, HandleInterface).
+ abstract interface class HandleStore {
+   /// Saves [handle] matched by ROWID or by address and service; keeps the stored
+@@ -94,6 +141,10 @@ abstract interface class MessageStore {
+ 
+   Future<Message?> messageByGuid(String guid);
+ 
++  /// Messages created after [millisecondsSinceEpoch], matching
++  /// MessageActions.getMessages' legacy ObjectBox query.
++  Future<List<Message>> messagesCreatedAfter(int millisecondsSinceEpoch);
++
+   /// Links every message from server handle [serverHandleId] (not from me) to
+   /// local handle [localHandleId]; returns how many changed.
+   Future<int> relinkMessagesToHandle(int serverHandleId, int localHandleId);
+@@ -151,7 +202,16 @@ abstract interface class SyncStore {
+   Future<List<Chat>> chatsByIds(List<int> ids);
+ }
+ 
+-abstract class MessagingStore implements HandleStore, CustomGroupStore, MessageStore, AttachmentStore, SyncStore {
++abstract class MessagingStore
++    implements
++        ContactStore,
++        StorageStore,
++        SendTargetStore,
++        HandleStore,
++        CustomGroupStore,
++        MessageStore,
++        AttachmentStore,
++        SyncStore {
+   /// Which store this is; picks the sync markers (SyncMarker.of).
+   ActiveStore get kind;
+ 
+diff --git a/lib/database/store/objectbox/objectbox_message_store.dart b/lib/database/store/objectbox/objectbox_message_store.dart
+index 1dee7f90a..6a928cca3 100644
+--- a/lib/database/store/objectbox/objectbox_message_store.dart
++++ b/lib/database/store/objectbox/objectbox_message_store.dart
+@@ -245,6 +245,12 @@ mixin ObjectBoxMessageStore implements MessageStore {
+     });
+   }
+ 
++  @override
++  Future<List<Message>> messagesCreatedAfter(int millisecondsSinceEpoch) {
++    final query = Database.messages.query(Message_.dateCreated.greaterThan(millisecondsSinceEpoch)).build();
++    return query.findAsync().whenComplete(query.close);
++  }
++
+   @override
+   Future<int> relinkMessagesToHandle(int serverHandleId, int localHandleId) async {
+     return Database.runInTransaction(TxMode.write, () {
+diff --git a/lib/database/store/objectbox/objectbox_messaging_store.dart b/lib/database/store/objectbox/objectbox_messaging_store.dart
+index 4e1bcd1b0..9556b8d77 100644
+--- a/lib/database/store/objectbox/objectbox_messaging_store.dart
++++ b/lib/database/store/objectbox/objectbox_messaging_store.dart
+@@ -1,14 +1,25 @@
+ import 'package:bluebubbles/database/store/messaging_store.dart';
+ import 'package:bluebubbles/database/store/objectbox/objectbox_attachment_store.dart';
++import 'package:bluebubbles/database/store/objectbox/objectbox_contact_store.dart';
+ import 'package:bluebubbles/database/store/objectbox/objectbox_custom_group_store.dart';
+ import 'package:bluebubbles/database/store/objectbox/objectbox_handle_store.dart';
+ import 'package:bluebubbles/database/store/objectbox/objectbox_message_store.dart';
++import 'package:bluebubbles/database/store/objectbox/objectbox_send_target_store.dart';
++import 'package:bluebubbles/database/store/objectbox/objectbox_storage_store.dart';
+ import 'package:bluebubbles/database/store/objectbox/objectbox_sync_store.dart';
+ 
+ /// [MessagingStore] on ObjectBox: the Actions' own code, moved here unchanged
+ /// (it reads and writes `Database.*` as it did inside the Actions).
+ class ObjectBoxMessagingStore extends MessagingStore
+-    with ObjectBoxHandleStore, ObjectBoxCustomGroupStore, ObjectBoxMessageStore, ObjectBoxAttachmentStore, ObjectBoxSyncStore {
++    with
++        ObjectBoxContactStore,
++        ObjectBoxStorageStore,
++        ObjectBoxSendTargetStore,
++        ObjectBoxHandleStore,
++        ObjectBoxCustomGroupStore,
++        ObjectBoxMessageStore,
++        ObjectBoxAttachmentStore,
++        ObjectBoxSyncStore {
+   @override
+   ActiveStore get kind => ActiveStore.objectBox;
+ }
+diff --git a/lib/database/store/sqlite/sqlite_message_store.dart b/lib/database/store/sqlite/sqlite_message_store.dart
+index bc9f44f34..fc3ded6a3 100644
+--- a/lib/database/store/sqlite/sqlite_message_store.dart
++++ b/lib/database/store/sqlite/sqlite_message_store.dart
+@@ -134,6 +134,10 @@ mixin SqliteMessageStore implements MessageStore, SqliteStorePart {
+   @override
+   Future<Message?> messageById(int id) => MessageRepo(db).byId(id);
+ 
++  @override
++  Future<List<Message>> messagesCreatedAfter(int millisecondsSinceEpoch) =>
++      MessageRepo(db).createdAfter(millisecondsSinceEpoch);
++
+   @override
+   Future<List<Message>> messagesByIds(List<int> ids) async => inIdOrder(ids, await MessageRepo(db).byIds(ids));
+ }
+diff --git a/lib/database/store/sqlite/sqlite_messaging_store.dart b/lib/database/store/sqlite/sqlite_messaging_store.dart
+index 7cddc9d03..413a6fe3e 100644
+--- a/lib/database/store/sqlite/sqlite_messaging_store.dart
++++ b/lib/database/store/sqlite/sqlite_messaging_store.dart
+@@ -1,9 +1,12 @@
+ import 'package:bluebubbles/database/sqlite/db.dart';
+ import 'package:bluebubbles/database/store/messaging_store.dart';
+ import 'package:bluebubbles/database/store/sqlite/sqlite_attachment_store.dart';
++import 'package:bluebubbles/database/store/sqlite/sqlite_contact_store.dart';
+ import 'package:bluebubbles/database/store/sqlite/sqlite_custom_group_store.dart';
+ import 'package:bluebubbles/database/store/sqlite/sqlite_handle_store.dart';
+ import 'package:bluebubbles/database/store/sqlite/sqlite_message_store.dart';
++import 'package:bluebubbles/database/store/sqlite/sqlite_send_target_store.dart';
++import 'package:bluebubbles/database/store/sqlite/sqlite_storage_store.dart';
+ import 'package:bluebubbles/database/store/sqlite/sqlite_sync_store.dart';
+ import 'package:drift/native.dart' show SqliteException;
+ 
+@@ -11,7 +14,15 @@ import 'package:drift/native.dart' show SqliteException;
+ /// write is one [Db.write] holding exactly what one ObjectBox write
+ /// transaction held, with nothing but database calls inside it.
+ class SqliteMessagingStore extends MessagingStore
+-    with SqliteHandleStore, SqliteCustomGroupStore, SqliteMessageStore, SqliteAttachmentStore, SqliteSyncStore {
++    with
++        SqliteContactStore,
++        SqliteStorageStore,
++        SqliteSendTargetStore,
++        SqliteHandleStore,
++        SqliteCustomGroupStore,
++        SqliteMessageStore,
++        SqliteAttachmentStore,
++        SqliteSyncStore {
+   SqliteMessagingStore(this.db);
+ 
+   @override
+diff --git a/lib/services/backend/actions/contact_v2_actions.dart b/lib/services/backend/actions/contact_v2_actions.dart
+index 34e8ebc16..b59c1886b 100644
+--- a/lib/services/backend/actions/contact_v2_actions.dart
++++ b/lib/services/backend/actions/contact_v2_actions.dart
+@@ -2,7 +2,7 @@ import 'dart:async';
+ import 'dart:convert';
+ import 'dart:io';
+ 
+-import 'package:bluebubbles/database/database.dart';
++import 'package:bluebubbles/database/store/messaging_store.dart';
+ import 'package:bluebubbles/database/models.dart';
+ import 'package:bluebubbles/helpers/helpers.dart';
+ import 'package:bluebubbles/helpers/types/helpers/server_contacts.dart';
+@@ -20,56 +20,6 @@ class ContactV2Actions {
+   /// Completer to ensure syncContactsToHandles only runs once at a time
+   static Completer<_ContactSyncStats>? _syncCompleter;
+ 
+-  /// Generate multiple normalized variants of a phone number to handle country code mismatches
+-  ///
+-  /// Returns a set of normalized phone numbers including:
+-  /// - The original normalized number (digits + plus sign only)
+-  /// - Variant without country code (if one exists)
+-  /// - Variant with country code removed but assuming it started with +
+-  ///
+-  /// This handles cases where:
+-  /// - Contact has "1234567890" but Handle has "+11234567890"
+-  /// - Contact has "+11234567890" but Handle has "1234567890"
+-  /// - Works with any country code, not just +1
+-  static Set<String> _getPhoneNumberVariants(String phone) {
+-    final variants = <String>{};
+-    final normalized = ContactV2.normalizePhoneNumber(phone);
+-
+-    if (normalized.isEmpty) return variants;
+-
+-    // Always include the base normalized version
+-    variants.add(normalized);
+-
+-    // If it starts with +, add variant without the +
+-    if (normalized.startsWith('+')) {
+-      variants.add(normalized.substring(1));
+-
+-      // Also try removing common country codes (1-3 digits after +)
+-      // Country codes can be 1-3 digits (e.g., +1, +44, +852, +1246)
+-      for (int i = 1; i <= 3 && i < normalized.length; i++) {
+-        final withoutCountryCode = normalized.substring(i + 1);
+-        if (withoutCountryCode.isNotEmpty) {
+-          variants.add(withoutCountryCode);
+-        }
+-      }
+-    } else {
+-      // If no +, try adding + and common country code lengths
+-      // This handles cases where the stored number doesn't have + but the contact does
+-      variants.add('+$normalized');
+-
+-      // Try removing 1-3 digit prefixes as potential country codes
+-      for (int i = 1; i <= 3 && i < normalized.length; i++) {
+-        final withoutPrefix = normalized.substring(i);
+-        if (withoutPrefix.isNotEmpty) {
+-          variants.add(withoutPrefix);
+-          variants.add('+$withoutPrefix');
+-        }
+-      }
+-    }
+-
+-    return variants;
+-  }
+-
+   /// Fetch all contacts from device and match them to existing handles
+   /// This is the main operation described in Section II.A of FR-1.md
+   ///
+@@ -135,232 +85,13 @@ class ContactV2Actions {
+         Logger.warn('[ContactV2] Server contacts unavailable (status ${response.statusCode})');
+       }
+ 
+-      // Step 2: Process and normalize contacts within a transaction (synchronous only!)
+-      Database.runInTransaction(TxMode.write, () {
+-        final contactsBox = Database.contactsV2;
+-        final handlesBox = Database.handles;
+-
+-        if (fetched) {
+-          // Drop cards deleted in iCloud, and any left from the phone's contacts.
+-          final stale = contactIdsToRemove(
+-              contactsBox.getAll().map((c) => c.nativeContactId), networkContacts.map((c) => c.nativeContactId));
+-          if (stale.isNotEmpty) {
+-            final query = contactsBox.query(ContactV2_.nativeContactId.oneOf(stale.toList())).build();
+-            final removed = query.find();
+-            query.close();
+-            for (final contact in removed) {
+-              affectedHandleIds.addAll(contact.handles.map((h) => h.id).whereType<int>());
+-            }
+-            contactsBox.removeMany(removed.map((c) => c.id).toList());
+-            Logger.info('[ContactV2] Removed ${removed.length} contacts no longer on the server');
+-          }
+-        }
+-        final allHandles = handlesBox.getAll();
+-
+-        final emailHandleMap = <String, List<Handle>>{};
+-        final phoneHandleMap = <String, List<Handle>>{};
+-
+-        for (final handle in allHandles) {
+-          final isEmail = handle.address.contains('@');
+-
+-          if (isEmail) {
+-            final normalized = ContactV2.normalizeEmail(handle.address);
+-            emailHandleMap.putIfAbsent(normalized, () => []).add(handle);
+-
+-            if (handle.formattedAddress != null) {
+-              final formattedNormalized = ContactV2.normalizeEmail(handle.formattedAddress!);
+-              if (formattedNormalized != normalized) {
+-                emailHandleMap.putIfAbsent(formattedNormalized, () => []).add(handle);
+-              }
+-            }
+-          } else {
+-            // For phones, generate all variants and map them
+-            final variants = _getPhoneNumberVariants(handle.address);
+-            for (final variant in variants) {
+-              phoneHandleMap.putIfAbsent(variant, () => []).add(handle);
+-            }
+-
+-            if (handle.formattedAddress != null) {
+-              final formattedVariants = _getPhoneNumberVariants(handle.formattedAddress!);
+-              for (final variant in formattedVariants) {
+-                phoneHandleMap.putIfAbsent(variant, () => []).add(handle);
+-              }
+-            }
+-          }
+-        }
+-
+-        Logger.info(
+-            '[ContactV2] Built lookup maps: ${emailHandleMap.length} email keys, ${phoneHandleMap.length} phone variant keys');
+-
+-        for (final rawContact in networkContacts) {
+-          // Normalize addresses
+-          final normalizedAddresses = <String>{};
+-
+-          // Add normalized phone numbers
+-          for (final phone in rawContact.phoneNumbers) {
+-            final normalized = ContactV2.normalizePhoneNumber(phone.number);
+-            if (normalized.isNotEmpty) {
+-              normalizedAddresses.add(normalized);
+-            }
+-          }
+-
+-          // Add normalized emails
+-          for (final email in rawContact.emailAddresses) {
+-            final normalized = ContactV2.normalizeEmail(email.address);
+-            if (normalized.isNotEmpty) {
+-              normalizedAddresses.add(normalized);
+-            }
+-          }
+-
+-          if (normalizedAddresses.isEmpty) continue;
+-
+-          String contactId = "";
+-          String displayName = "";
+-          String? firstName, lastName, middleName, namePrefix, nameSuffix, nickname, company;
+-          List<ContactPhone> contactPhones = [];
+-          List<ContactEmail> contactEmails = [];
+-
+-          contactId = rawContact.nativeContactId;
+-          displayName = rawContact.displayName;
+-          firstName = rawContact.firstName;
+-          lastName = rawContact.lastName;
+-          contactPhones = rawContact.phoneNumbers;
+-          contactEmails = rawContact.emailAddresses;
+-
+-          // Get pre-fetched avatar path
+-          final avatarPath = avatarPaths[contactId];
+-
+-          // Check if contact already exists
+-          final existingQuery = contactsBox.query(ContactV2_.nativeContactId.equals(contactId)).build();
+-          final existingContact = existingQuery.findFirst();
+-          existingQuery.close();
+-
+-          ContactV2 contact;
+-          Set<int> existingHandleIds = {};
+-
+-          if (existingContact != null) {
+-            // Update existing contact
+-            contact = existingContact;
+-            final oldComputedName = contact.computedDisplayName;
+-            final oldAvatarPath = contact.avatarPath;
+-            contact.displayName = displayName;
+-            contact.addresses = normalizedAddresses.toList();
+-            // Only touch avatarPath when the prefetch step produced a definitive
+-            // answer (photo saved, or confirmed no photo). An absent key means the
+-            // photo fetch failed — keep the existing path instead of wiping it.
+-            if (avatarPaths.containsKey(contactId)) {
+-              contact.avatarPath = avatarPath;
+-            }
+-            contact.firstName = firstName;
+-            contact.lastName = lastName;
+-            contact.middleName = middleName;
+-            contact.namePrefix = namePrefix;
+-            contact.nameSuffix = nameSuffix;
+-            contact.nickname = nickname;
+-            contact.company = company;
+-            contact.phoneNumbers = contactPhones;
+-            contact.emailAddresses = contactEmails;
+-
+-            // Track existing handles to detect changes
+-            existingHandleIds = contact.handles.map((h) => h.id).whereType<int>().toSet();
+-
+-            if (oldComputedName != contact.computedDisplayName || oldAvatarPath != contact.avatarPath) {
+-              // Mark all existing handles for this contact as affected (computed name or avatar changed)
+-              affectedHandleIds.addAll(existingHandleIds);
+-            }
+-          } else {
+-            // Create new contact
+-            contact = ContactV2(
+-              displayName: displayName,
+-              nativeContactId: contactId,
+-              avatarPath: avatarPath,
+-              addresses: normalizedAddresses.toList(),
+-              firstName: firstName,
+-              lastName: lastName,
+-              middleName: middleName,
+-              namePrefix: namePrefix,
+-              nameSuffix: nameSuffix,
+-              nickname: nickname,
+-              company: company,
+-            );
+-            contact.phoneNumbers = contactPhones;
+-            contact.emailAddresses = contactEmails;
+-          }
+-
+-          // Mark contact as native only when it originates from flutter_contacts
+-          contact.isNative = false;
+-
+-          // Step 3: Match contact to handles using lookup maps (O(addresses) instead of O(addresses × handles))
+-          final matchedHandles = <Handle>{};
+-
+-          for (final address in normalizedAddresses) {
+-            final isEmail = address.contains('@');
+-
+-            if (isEmail) {
+-              // Direct lookup for emails
+-              final handles = emailHandleMap[address];
+-              if (handles != null) {
+-                matchedHandles.addAll(handles);
+-              }
+-            } else {
+-              // For phones, check all variants
+-              final variants = _getPhoneNumberVariants(address);
+-              for (final variant in variants) {
+-                final handles = phoneHandleMap[variant];
+-                if (handles != null) {
+-                  matchedHandles.addAll(handles);
+-                }
+-              }
+-            }
+-          }
+-
+-          if (matchedHandles.isNotEmpty) matchedContactCount++;
+-
+-          // Compare new handles with existing handles to detect changes
+-          final newHandleIds = matchedHandles.map((h) => h.id).whereType<int>().toSet();
+-          final handlesChanged = existingContact == null ||
+-              existingHandleIds.length != newHandleIds.length ||
+-              !existingHandleIds.containsAll(newHandleIds);
+-
+-          // Always update handles on the in-memory object so the put below persists them.
+-          contact.handles.clear();
+-          contact.handles.addAll(matchedHandles);
+-
+-          // Always persist the contact — this ensures phone/email JSON columns are
+-          // written to the DB regardless of whether handle assignments changed.
+-          try {
+-            contactsBox.put(contact);
+-          } on UniqueViolationException catch (e) {
+-            Logger.warn('[ContactV2] Unique violation for contact ${contact.nativeContactId}: $e');
+-          }
+-
+-          if (handlesChanged) {
+-            // Mark all affected handles (both old and new) for UI refresh
+-            affectedHandleIds.addAll(existingHandleIds);
+-            affectedHandleIds.addAll(newHandleIds);
+-
+-            // Link handles to chats without handles
+-            final chatsToUpdate = <Chat>{};
+-            for (final handle in matchedHandles) {
+-              final chatQuery = Database.chats.query(Chat_.guid.contains(';-;${handle.address}')).build();
+-              final chats = chatQuery.find();
+-              chatQuery.close();
+-
+-              for (final chat in chats) {
+-                if (chat.handles.isEmpty) {
+-                  chat.handles.add(handle);
+-                  chatsToUpdate.add(chat);
+-                }
+-              }
+-            }
+-
+-            if (chatsToUpdate.isNotEmpty) {
+-              Logger.info('[ContactV2] Updating ${chatsToUpdate.length} chats to link matched handles');
+-              Database.chats.putMany(chatsToUpdate.toList());
+-            }
+-          }
+-        }
+-      });
++      final storeResult = await MessagingStore.current.syncContacts(
++        networkContacts,
++        avatarPaths,
++        fetched: fetched,
++      );
++      affectedHandleIds.addAll(storeResult.affectedHandleIds);
++      matchedContactCount = storeResult.matchedContactCount;
+ 
+       final endTime = DateTime.now().millisecondsSinceEpoch;
+       // De-duplicate — a handle can be marked affected by both a name/avatar
+@@ -409,11 +140,7 @@ class ContactV2Actions {
+ 
+   /// Get all stored ContactV2 IDs for comparison
+   static Future<List<String>> getStoredContactIds(dynamic data) async {
+-    return await Database.runInTransaction(TxMode.read, () {
+-      final contactsBox = Database.contactsV2;
+-      final allContacts = contactsBox.getAll();
+-      return allContacts.map((c) => c.nativeContactId).toList();
+-    });
++    return MessagingStore.current.contactNativeIds();
+   }
+ 
+   /// Find a single ContactV2 by native contact ID
+@@ -422,15 +149,7 @@ class ContactV2Actions {
+     final dataMap = data as Map<dynamic, dynamic>;
+     final nativeContactId = dataMap['nativeContactId'] as String;
+ 
+-    return await Database.runInTransaction(TxMode.read, () {
+-      final contactsBox = Database.contactsV2;
+-      final query = contactsBox.query(ContactV2_.nativeContactId.equals(nativeContactId)).build();
+-      query.limit = 1;
+-      final contact = query.findFirst();
+-      query.close();
+-
+-      return contact?.id;
+-    });
++    return MessagingStore.current.findContactId(nativeContactId);
+   }
+ 
+   /// Get ContactV2 IDs for a list of Handle IDs.
+@@ -439,21 +158,7 @@ class ContactV2Actions {
+     final dataMap = data as Map<dynamic, dynamic>;
+     final handleIds = (dataMap['handleIds'] as List).cast<int>();
+ 
+-    return await Database.runInTransaction(TxMode.read, () {
+-      final handlesBox = Database.handles;
+-      final uniqueIds = <int>{};
+-
+-      for (final handleId in handleIds) {
+-        final handle = handlesBox.get(handleId);
+-        if (handle != null) {
+-          for (final contact in handle.contactsV2) {
+-            if (contact.id != 0) uniqueIds.add(contact.id);
+-          }
+-        }
+-      }
+-
+-      return uniqueIds.toList();
+-    });
++    return MessagingStore.current.contactIdsForHandles(handleIds);
+   }
+ 
+   /// Manually trigger a contact refresh
+@@ -515,35 +220,13 @@ class ContactV2Actions {
+     final dataMap = data as Map<dynamic, dynamic>;
+     final address = dataMap['address'] as String;
+ 
+-    return await Database.runInTransaction(TxMode.read, () {
+-      final contactsBox = Database.contactsV2;
+-
+-      // Normalize the search address
+-      final normalized =
+-          address.contains('@') ? ContactV2.normalizeEmail(address) : ContactV2.normalizePhoneNumber(address);
+-
+-      // Search through all contacts for a match
+-      final allContacts = contactsBox.getAll();
+-
+-      for (final contact in allContacts) {
+-        if (contact.hasMatchingAddress(normalized)) {
+-          return contact.id;
+-        }
+-      }
+-
+-      return null;
+-    });
++    return MessagingStore.current.contactIdByAddress(address);
+   }
+ 
+   /// Get all contacts from the database.
+   /// Returns a list of ObjectBox IDs so the interface can hydrate full objects.
+   static Future<List<int>> getAllContacts(dynamic data) async {
+-    return await Database.runInTransaction(TxMode.read, () {
+-      final contactsBox = Database.contactsV2;
+-      final query = (contactsBox.query()..order(ContactV2_.displayName)).build();
+-      final allContacts = query.find();
+-      return allContacts.map((c) => c.id).toList();
+-    });
++    return MessagingStore.current.allContactIds();
+   }
+ 
+   /// Get avatar data for a contact by native contact ID
+diff --git a/lib/services/backend/actions/message_actions.dart b/lib/services/backend/actions/message_actions.dart
+index 9b1e35e74..c8452cb6a 100644
+--- a/lib/services/backend/actions/message_actions.dart
++++ b/lib/services/backend/actions/message_actions.dart
+@@ -1,16 +1,12 @@
+-import 'package:bluebubbles/database/database.dart';
+ import 'package:bluebubbles/database/models.dart';
+ import 'package:bluebubbles/database/store/messaging_store.dart';
+ import 'package:bluebubbles/helpers/types/helpers/message_helper.dart';
+ 
+ class MessageActions {
+   static Future<List<Message>?> getMessages() async {
+-    // Fetch a message with a limit of 1 using ObjectBox
++    // Fetch messages from the last day from the active store.
+     final oneDayAgo = DateTime.now().subtract(const Duration(days: 1));
+-    final messages = (await Database.messages
+-        .query(Message_.dateCreated.greaterThan(oneDayAgo.millisecondsSinceEpoch))
+-        .build()
+-        .findAsync());
++    final messages = await MessagingStore.current.messagesCreatedAfter(oneDayAgo.millisecondsSinceEpoch);
+     if (messages.isNotEmpty) {
+       return messages;
+     }
+diff --git a/lib/services/backend/actions/storage_actions.dart b/lib/services/backend/actions/storage_actions.dart
+index e05d89c5a..fa0db70a2 100644
+--- a/lib/services/backend/actions/storage_actions.dart
++++ b/lib/services/backend/actions/storage_actions.dart
+@@ -1,8 +1,6 @@
+ import 'dart:io';
+ 
+-import 'package:bluebubbles/database/database.dart';
+-import 'package:bluebubbles/database/models.dart';
+-import 'package:bluebubbles/generated/objectbox.g.dart';
++import 'package:bluebubbles/database/store/messaging_store.dart';
+ import 'package:bluebubbles/models/models.dart';
+ import 'package:bluebubbles/services/isolates/global_isolate.dart';
+ import 'package:bluebubbles/services/isolates/isolate_event.dart';
+@@ -23,7 +21,7 @@ class StorageActions {
+     final filtered = chatGuid != null || ageFilter != StorageAgeFilter.all;
+ 
+     _emit(runId, StorageAnalysisStage.indexing, 0, 0, 0);
+-    final guids = _indexAttachments(chatGuid: chatGuid, ageFilter: ageFilter);
++    final guids = await _indexAttachments(chatGuid: chatGuid, ageFilter: ageFilter);
+     _emit(runId, StorageAnalysisStage.indexing, 1, 1, 0);
+ 
+     // Preview images are content-addressed and shared by every message linking
+@@ -85,25 +83,14 @@ class StorageActions {
+   /// of the "everything shows up as Videos" bug. Mime classification instead
+   /// happens per-file, by extension, during the stage-2 walk (see
+   /// `_segmentForFile`) — exactly the fallback the plan called for.
+-  static Set<String> _indexAttachments({
++  static Future<Set<String>> _indexAttachments({
+     required String? chatGuid,
+     required StorageAgeFilter ageFilter,
+   }) {
+-    final cutoff = ageFilter.cutoffMillis();
+-    final qb = Database.attachments.query();
+-    final mq = qb.link(
+-      Attachment_.message,
+-      cutoff != null ? Message_.dateCreated.lessThan(cutoff) : null,
++    return MessagingStore.current.storageAttachmentGuids(
++      chatGuid: chatGuid,
++      beforeMillis: ageFilter.cutoffMillis(),
+     );
+-    if (chatGuid != null) {
+-      mq.link(Message_.chat, Chat_.guid.equals(chatGuid));
+-    }
+-    final q = qb.build();
+-    try {
+-      return q.property(Attachment_.guid).find(replaceNullWith: '').toSet();
+-    } finally {
+-      q.close();
+-    }
+   }
+ 
+   /// Stage 2 — walk `attachments/<guid>/` folders and classify every file.
+@@ -288,7 +275,7 @@ class StorageActions {
+     final attachmentsPath = data['attachmentsPath'] as String;
+     final urlPreviewsPath = data['urlPreviewsPath'] as String?;
+ 
+-    final guids = _indexAttachments(chatGuid: chatGuid, ageFilter: ageFilter);
++    final guids = await _indexAttachments(chatGuid: chatGuid, ageFilter: ageFilter);
+ 
+     var bytesFreed = 0;
+     var filesDeleted = 0;
+@@ -369,26 +356,7 @@ class StorageActions {
+       }
+     }
+ 
+-    if (resetGuids.isNotEmpty) {
+-      Database.runInTransaction(TxMode.write, () {
+-        for (final guid in resetGuids) {
+-          final row = Database.attachments.query(Attachment_.guid.equals(guid)).build().findFirst();
+-          if (row == null) continue;
+-          row.isDownloaded = false;
+-          // Must match the keys loadImageProperties actually writes, or the
+-          // reset silently fails to force reprocessing on next view.
+-          row.metadata
+-            ?..remove('_orientation_processed')
+-            ..remove('_orientation')
+-            ..remove('_raw_width')
+-            ..remove('_raw_height');
+-          row.height = null;
+-          row.width = null;
+-          row.exif = null;
+-          Database.attachments.put(row);
+-        }
+-      });
+-    }
++    await MessagingStore.current.resetStorageAttachments(resetGuids);
+ 
+     return {
+       'bytesFreed': bytesFreed,
+diff --git a/lib/services/backend/interfaces/contact_v2_interface.dart b/lib/services/backend/interfaces/contact_v2_interface.dart
+index 1106fc825..8e5b36c41 100644
+--- a/lib/services/backend/interfaces/contact_v2_interface.dart
++++ b/lib/services/backend/interfaces/contact_v2_interface.dart
+@@ -1,7 +1,7 @@
+ import 'dart:typed_data';
+ 
+-import 'package:bluebubbles/database/database.dart';
+ import 'package:bluebubbles/database/models.dart';
++import 'package:bluebubbles/database/store/messaging_store.dart';
+ import 'package:bluebubbles/env.dart';
+ import 'package:bluebubbles/services/backend/actions/contact_v2_actions.dart';
+ import 'package:bluebubbles/services/isolates/global_isolate.dart';
+@@ -92,7 +92,7 @@ class ContactV2Interface {
+     }
+ 
+     if (id == null) return null;
+-    return Database.contactsV2.get(id);
++    return MessagingStore.current.contactById(id);
+   }
+ 
+   /// Get ContactV2 entities for a list of Handle IDs
+@@ -110,7 +110,7 @@ class ContactV2Interface {
+       ids = await GetIt.I<GlobalIsolate>().send<List<int>>(IsolateRequestType.getContactsForHandles, input: data);
+     }
+ 
+-    return Database.contactsV2.getMany(ids).whereType<ContactV2>().toList();
++    return MessagingStore.current.contactsByIds(ids);
+   }
+ 
+   /// Get a contact by address (email or phone number)
+@@ -129,7 +129,7 @@ class ContactV2Interface {
+     }
+ 
+     if (id == null) return null;
+-    return Database.contactsV2.get(id);
++    return MessagingStore.current.contactById(id);
+   }
+ 
+   /// Get all contacts from the database
+@@ -142,7 +142,7 @@ class ContactV2Interface {
+           await GetIt.I<GlobalIsolate>().send<List<int>>(IsolateRequestType.getAllContacts, input: <String, dynamic>{});
+     }
+ 
+-    return Database.contactsV2.getMany(ids).whereType<ContactV2>().toList();
++    return MessagingStore.current.contactsByIds(ids);
+   }
+ 
+   /// Returns live flutter_contacts Contact objects so the chat creator can
+diff --git a/lib/services/backend/outgoing_message_handler.dart b/lib/services/backend/outgoing_message_handler.dart
+index 701e3089c..68d00c1a6 100644
+--- a/lib/services/backend/outgoing_message_handler.dart
++++ b/lib/services/backend/outgoing_message_handler.dart
+@@ -2,6 +2,7 @@ import 'package:bluebubbles/models/models.dart' show AttachmentUploadProgress;
+ import 'dart:async';
+ import 'dart:collection';
+ import 'package:bluebubbles/database/models.dart';
++import 'package:bluebubbles/database/store/messaging_store.dart';
+ import 'package:bluebubbles/helpers/helpers.dart';
+ import 'package:bluebubbles/services/backend/interfaces/send_message_interface.dart';
+ import 'package:bluebubbles/services/backend/send_target_resolver.dart';
+@@ -278,9 +279,19 @@ class OutgoingMessageHandler {
+         lastStack = st;
+         // Only retry while at least one unit of work (the single message, the
+         // attachment, or one of the up-to-2 split messages) is still unsaved.
+-        final stillUnsaved = isAttachment
+-            ? Message.findOne(guid: item.message.guid) == null
+-            : built!.any((m) => Message.findOne(guid: m.guid) == null);
++        final bool stillUnsaved;
++        if (isAttachment) {
++          stillUnsaved = await MessagingStore.current.messageByGuid(item.message.guid!) == null;
++        } else {
++          var missing = false;
++          for (final message in built!) {
++            if (await MessagingStore.current.messageByGuid(message.guid!) == null) {
++              missing = true;
++              break;
++            }
++          }
++          stillUnsaved = missing;
++        }
+         if (!stillUnsaved || attempt >= _maxPrepAttempts) break;
+         Logger.warn('Outgoing prep attempt $attempt failed; retrying', error: ex, trace: st, tag: _tag);
+         await Future.delayed(Duration(milliseconds: _retryBackoffMs * attempt));
+@@ -595,7 +606,7 @@ class OutgoingMessageHandler {
+   }) async {
+     final List<Message> saved = [];
+     for (final message in messages) {
+-      final existing = Message.findOne(guid: message.guid);
++      final existing = await MessagingStore.current.messageByGuid(message.guid!);
+       final Message hydrated =
+           existing ?? (await c.addMessage(message, clearNotificationsIfFromMe: clearNotificationsIfFromMe)).message;
+       saved.add(hydrated);
+@@ -692,10 +703,9 @@ class OutgoingMessageHandler {
+     }
+ 
+     // ChatInterface.addMessageToChat returns a DB-hydrated Message loaded from
+-    // the main isolate's Store (Database.messages.get(id)) after the
+-    // GlobalIsolate transaction commits.  This object has its id set and its
+-    // dbAttachments ToMany linked to the main Store, so _handleNewMessage can
+-    // reload attachments from DB without racing against cross-isolate write timing.
++    // the main isolate's MessagingStore after its write commits. This object
++    // has its id set and its attachments linked to the main store, so
++    // _handleNewMessage can reload attachments without racing the cross-isolate write.
+     final savedMessage = (await c.addMessage(m, attachments: [attachment])).message;
+ 
+     // The DB write goes through the GlobalIsolate, so the main-isolate OB watch
+@@ -1049,7 +1059,7 @@ class OutgoingMessageHandler {
+     String existingGuid,
+     Message replacement,
+   ) async {
+-    final alreadyPresent = Message.findOne(guid: replacement.guid);
++    final alreadyPresent = await MessagingStore.current.messageByGuid(replacement.guid!);
+ 
+     // Track the DB-hydrated confirmed message so we can update ChatState after the swap.
+     late Message _confirmedMessage;
+@@ -1073,9 +1083,9 @@ class OutgoingMessageHandler {
+ 
+       // Clean up the stale temp record if it's distinct from the real one.
+       if (existingGuid != replacement.guid) {
+-        final stale = Message.findOne(guid: existingGuid);
++        final stale = await MessagingStore.current.messageByGuid(existingGuid);
+         if (stale != null) {
+-          Message.delete(stale.guid!);
++          await MessagingStore.current.deleteMessage(stale.guid!);
+           if (Get.isRegistered<MessagesService>(tag: chat.guid)) {
+             MessagesSvc(chat.guid).updateMessage(replacement, oldGuid: existingGuid);
+           }
+@@ -1103,7 +1113,11 @@ class OutgoingMessageHandler {
+ 
+         // Instead of trying to replace, just save the replacement and update the UI to use it.
+         // This handles the case where the temp message was never saved to the main thread's store.
+-        replacement.save(); // sets replacement.id via Database.messages.put()
++        replacement.id = await MessagingStore.current.saveMessage(
++          replacement,
++          chat: chat,
++          updateIsBookmarked: false,
++        );
+         _confirmedMessage = replacement;
+         if (Get.isRegistered<MessagesService>(tag: chat.guid)) {
+           // Update the UI, treating this as transitioning from temp to real GUID
+diff --git a/lib/services/backend/send_target_resolver.dart b/lib/services/backend/send_target_resolver.dart
+index 207edd962..cbadf462c 100644
+--- a/lib/services/backend/send_target_resolver.dart
++++ b/lib/services/backend/send_target_resolver.dart
+@@ -1,9 +1,8 @@
+ import 'dart:async';
+ 
+-import 'package:bluebubbles/database/database.dart';
+ import 'package:bluebubbles/database/models.dart';
++import 'package:bluebubbles/database/store/messaging_store.dart';
+ import 'package:bluebubbles/helpers/types/helpers/send_routing.dart';
+-import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart';
+ import 'package:bluebubbles/services/services.dart';
+ import 'package:bluebubbles/utils/logger/logger.dart';
+ import 'package:collection/collection.dart';
+@@ -21,23 +20,20 @@ class SendTargetResolver {
+   static Future<Chat> resolve(Chat thread, {String? anchorGuid}) async {
+     if (kIsWeb) return thread;
+     try {
+-      final copies = findThreadChats(thread);
++      final context = await MessagingStore.current.sendTargetContext(
++        thread,
++        anchorGuid: anchorGuid,
++        recentLimit: _recentMessages,
++      );
++      final copies = context.copies;
+       if (anchorGuid != null) {
+-        final anchorChat = Message.findOne(guid: anchorGuid)?.appleChatGuid;
+-        return copies.firstWhereOrNull((c) => c.guid == anchorChat) ?? thread;
++        return copies.firstWhereOrNull((c) => c.guid == context.anchorChatGuid) ?? thread;
+       }
+       final hasIMessage = copies.any((c) => c.service.isIMessageService);
+       // One chat and nothing to make: nothing to choose between.
+       if (copies.length <= 1 && (thread.isGroup || hasIMessage)) return thread;
+ 
+-      final query =
+-          (Database.messages.query()
+-                ..link(Message_.chat, Chat_.id.equals(thread.id!))
+-                ..order(Message_.dateCreated, flags: Order.descending))
+-              .build()
+-            ..limit = _recentMessages;
+-      final recent = query.find();
+-      query.close();
++      final recent = context.recent;
+ 
+       final described = describeThread(threadGuid: thread.guid, copies: copies, recent: recent);
+       // Ask the Mac only when the answer can change the pick: the thread has
+diff --git a/test/database/store/message_attachment_store_test.dart b/test/database/store/message_attachment_store_test.dart
+index fbc6a4b4b..936982c07 100644
+--- a/test/database/store/message_attachment_store_test.dart
++++ b/test/database/store/message_attachment_store_test.dart
+@@ -38,6 +38,24 @@ void main() {
+ 
+   forEachStore((fixture) {
+     group('MessageActions', () {
++      test('getMessages returns recent messages from the active store', () async {
++        final chat = await fixture().chat('c1');
++        await fixture().message(
++          'recent',
++          chat,
++          DateTime.now().subtract(const Duration(hours: 1)).millisecondsSinceEpoch,
++        );
++        await fixture().message(
++          'old',
++          chat,
++          DateTime.now().subtract(const Duration(days: 2)).millisecondsSinceEpoch,
++        );
++
++        final messages = await MessageActions.getMessages();
++
++        expect(messages?.map((message) => message.guid), ['recent']);
++      });
++
+       test('saveMessageAsync inserts, links the sender by ROWID and the chat; a re-save keeps id, text and bookmark',
+           () async {
+         final ana = await fixture().handle('ana@x.com', rowId: 7);
+diff --git a/test/database/store/store_fixture.dart b/test/database/store/store_fixture.dart
+index b3b95826d..b4212c20b 100644
+--- a/test/database/store/store_fixture.dart
++++ b/test/database/store/store_fixture.dart
+@@ -34,6 +34,8 @@ abstract class StoreFixture {
+     int? handleId,
+     String? reactsTo,
+     String? threadOriginator,
++    String? appleChatGuid,
++    String? service,
+     bool deleted = false,
+     int? itemType,
+     String? text,
+@@ -54,8 +56,20 @@ DateTime ms(int value) => DateTime.fromMillisecondsSinceEpoch(value);
+ 
+ const t0 = 1600000000000;
+ 
+-Message _message(String guid, int msValue, Handle? from, int? handleId, String? reactsTo, String? threadOriginator,
+-        bool deleted, int? itemType, String? text, int? rowId) =>
++Message _message(
++  String guid,
++  int msValue,
++  Handle? from,
++  int? handleId,
++  String? reactsTo,
++  String? threadOriginator,
++  String? appleChatGuid,
++  String? service,
++  bool deleted,
++  int? itemType,
++  String? text,
++  int? rowId,
++) =>
+     Message(
+       guid: guid,
+       text: text ?? 'text of $guid',
+@@ -65,6 +79,8 @@ Message _message(String guid, int msValue, Handle? from, int? handleId, String?
+       associatedMessageGuid: reactsTo,
+       associatedMessageType: reactsTo == null ? null : 'love',
+       threadOriginatorGuid: threadOriginator,
++      appleChatGuid: appleChatGuid,
++      service: service,
+       dateDeleted: deleted ? ms(msValue + 1) : null,
+       itemType: itemType ?? 0,
+       originalROWID: rowId,
+@@ -101,11 +117,26 @@ class ObjectBoxFixture extends StoreFixture {
+       int? handleId,
+       String? reactsTo,
+       String? threadOriginator,
++      String? appleChatGuid,
++      String? service,
+       bool deleted = false,
+       int? itemType,
+       String? text,
+       int? rowId}) async {
+-    final m = _message(guid, ms, from, handleId, reactsTo, threadOriginator, deleted, itemType, text, rowId);
++    final m = _message(
++      guid,
++      ms,
++      from,
++      handleId,
++      reactsTo,
++      threadOriginator,
++      appleChatGuid,
++      service,
++      deleted,
++      itemType,
++      text,
++      rowId,
++    );
+     if (chat != null) m.chat.target = chat;
+     if (from != null) m.handleRelation.target = from;
+     obx.box<Message>().put(m);
+@@ -184,11 +215,26 @@ class SqliteFixture extends StoreFixture {
+       int? handleId,
+       String? reactsTo,
+       String? threadOriginator,
++      String? appleChatGuid,
++      String? service,
+       bool deleted = false,
+       int? itemType,
+       String? text,
+       int? rowId}) async {
+-    final m = _message(guid, ms, from, handleId, reactsTo, threadOriginator, deleted, itemType, text, rowId);
++    final m = _message(
++      guid,
++      ms,
++      from,
++      handleId,
++      reactsTo,
++      threadOriginator,
++      appleChatGuid,
++      service,
++      deleted,
++      itemType,
++      text,
++      rowId,
++    );
+     m.chat.targetId = chat?.id;
+     m.handleRelation.targetId = from?.id;
+     m.id = await _insert('messages', messageToRow(m));
