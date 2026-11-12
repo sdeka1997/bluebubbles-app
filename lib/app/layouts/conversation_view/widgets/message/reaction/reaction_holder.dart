@@ -63,6 +63,27 @@ class _ReactionAnimatorState extends State<_ReactionAnimator> with SingleTickerP
   }
 }
 
+/// One badge of the reaction stack. [offset] is its distance from the bubble's
+/// tail side; only the [front] badge draws a tail.
+typedef StackedReaction = ({Message reaction, double offset, bool front});
+
+/// Lays reactions out the way iOS does: the first [ReactionHolder.maxShown] in
+/// the order they were added, the oldest farthest from the tail and each newer
+/// one overlapping it; any more show only as the edge of one badge behind the
+/// oldest. [unique] is newest first, as [getUniqueReactionMessages] returns it.
+/// Returned back to front, so later entries paint over earlier ones.
+List<StackedReaction> reactionStack(List<Message> unique) {
+  const step = ReactionHolder.step;
+  final oldestFirst = unique.reversed.toList();
+  final shown = oldestFirst.take(ReactionHolder.maxShown).toList();
+  final last = shown.length - 1;
+  return [
+    if (oldestFirst.length > shown.length)
+      (reaction: oldestFirst[shown.length], offset: last * step + ReactionHolder.hiddenEdge, front: false),
+    for (var i = 0; i < shown.length; i++) (reaction: shown[i], offset: (last - i) * step, front: i == last),
+  ];
+}
+
 class ReactionHolder extends StatefulWidget {
   const ReactionHolder({
     super.key,
@@ -70,6 +91,13 @@ class ReactionHolder extends StatefulWidget {
   });
 
   final Iterable<Message> reactions;
+
+  /// Measured from iPhone screenshots of a group chat: badges sit 70% of a
+  /// badge apart (33 of 47 px) and a fourth reaction shows as a 13% edge. The
+  /// filled circle of a badge here is 28 px.
+  static const double step = 20;
+  static const double hiddenEdge = 4;
+  static const int maxShown = 3;
 
   @override
   State<ReactionHolder> createState() => _ReactionHolderState();
@@ -112,6 +140,9 @@ class _ReactionHolderState extends State<ReactionHolder> {
     return true;
   }
 
+  // Parent + reaction type + sender, so the temp -> real GUID swap doesn't re-animate.
+  String _stableKey(Message e) => '${e.associatedMessageGuid}-${e.associatedMessageType}-${e.isFromMe! ? 0 : e.handleId ?? 0}';
+
   @override
   Widget build(BuildContext context) {
     // If the reactions are empty, return nothing
@@ -125,45 +156,27 @@ class _ReactionHolderState extends State<ReactionHolder> {
       width: 35,
       child: Stack(
         clipBehavior: Clip.none,
-        children: _cachedReactions
-            .asMap()
-            .entries
-            .map((entry) {
-              final i = entry.key;
-              final e = entry.value;
-              // Use a stable key based on parent + reaction type + sender
-              // This prevents re-animation when temp GUID -> real GUID replacement happens
-              final sender = e.isFromMe! ? 0 : e.handleId ?? 0;
-              final stableKey = '${e.associatedMessageGuid}-${e.associatedMessageType}-$sender';
-
-              // Check if this is a new reaction that should animate
-              final shouldAnimate = !_seenReactionKeys.contains(stableKey);
-              if (shouldAnimate) {
-                // Mark as seen for future rebuilds
-                _seenReactionKeys.add(stableKey);
-              }
-
-              return Positioned(
-                key: ValueKey(stableKey),
-                top: 0,
-                left: !isFromMe ? null : -i * 2.0,
-                right: isFromMe ? null : -i * 2.0,
-                child: DeferPointer(
-                  child: _ReactionAnimator(
-                    key: ValueKey(stableKey),
-                    stableKey: stableKey,
-                    shouldAnimate: shouldAnimate,
-                    child: ReactionWidget(
-                      reaction: e,
-                      reactions: _cachedReactions,
-                    ),
+        children: [
+          for (final badge in reactionStack(_cachedReactions))
+            Positioned(
+              key: ValueKey(_stableKey(badge.reaction)),
+              top: 0,
+              left: isFromMe ? badge.offset : null,
+              right: isFromMe ? null : badge.offset,
+              child: DeferPointer(
+                child: _ReactionAnimator(
+                  key: ValueKey(_stableKey(badge.reaction)),
+                  stableKey: _stableKey(badge.reaction),
+                  shouldAnimate: _seenReactionKeys.add(_stableKey(badge.reaction)),
+                  child: ReactionWidget(
+                    reaction: badge.reaction,
+                    reactions: _cachedReactions,
+                    showTail: badge.front,
                   ),
                 ),
-              );
-            })
-            .toList()
-            .reversed
-            .toList(),
+              ),
+            ),
+        ],
       ),
     );
   }

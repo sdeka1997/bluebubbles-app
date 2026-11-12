@@ -22,6 +22,7 @@ class ReactionWidget extends StatefulWidget {
     this.reactions,
     this.chatGuid,
     this.tailDirection,
+    this.showTail = true,
   });
 
   final Message reaction;
@@ -37,6 +38,9 @@ class ReactionWidget extends StatefulWidget {
   /// the fallback would produce the wrong arc orientation.
   /// Bubble coloring is always driven by the reaction's own [isFromMe] field.
   final ReactionTailDirection? tailDirection;
+
+  /// False when the badge is stacked behind another one.
+  final bool showTail;
 
   @override
   ReactionWidgetState createState() => ReactionWidgetState();
@@ -208,7 +212,7 @@ class ReactionWidgetState extends State<ReactionWidget> with ThemeHelpers {
             left: messageIsFromMe ? 0 : -1,
             right: !messageIsFromMe ? 0 : -1,
             child: ClipPath(
-              clipper: ReactionBorderClipper(tailDirection: _effectiveTailDirection),
+              clipper: ReactionBorderClipper(tailDirection: _effectiveTailDirection, tail: widget.showTail),
               child: Container(
                 width: iosSize + 2,
                 height: iosSize + 2,
@@ -217,7 +221,7 @@ class ReactionWidgetState extends State<ReactionWidget> with ThemeHelpers {
             ),
           ),
           ClipPath(
-              clipper: ReactionClipper(tailDirection: _effectiveTailDirection),
+              clipper: ReactionClipper(tailDirection: _effectiveTailDirection, tail: widget.showTail),
               child: Obx(() {
                 // reactionController is null when no MessageState exists for the reaction (typical).
                 // Fall back to checking the GUID prefix so temp reactions always show as pending.
