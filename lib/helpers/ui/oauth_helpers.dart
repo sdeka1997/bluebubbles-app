@@ -140,7 +140,7 @@ Future<String?> googleOAuth(
         barrierDismissible: false,
         title: "Important Notice",
         body:
-            'Please make sure to allow BlueBubbles to see, edit, configure, and delete your Google Cloud data after signing in. BlueBubbles will only use this ability to find your server URL.',
+            'Please make sure to allow BubbleBeam to see, edit, configure, and delete your Google Cloud data after signing in. BubbleBeam will only use this ability to find your server URL.',
         actions: [
           BBDialogAction(
             text: "OK",

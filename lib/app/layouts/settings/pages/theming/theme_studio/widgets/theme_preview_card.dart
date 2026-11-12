@@ -56,7 +56,7 @@ class ThemePreviewCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _listHeader(context, skin, "BlueBubbles"),
+          _listHeader(context, skin, "BubbleBeam"),
           Expanded(
             child: ListView(
               padding: EdgeInsets.zero,
@@ -221,7 +221,7 @@ class ThemePreviewCard extends StatelessWidget {
                     backgroundColor: cs.primaryContainer,
                     child: Text("B", style: TextStyle(fontSize: 30, color: cs.onPrimaryContainer))),
                 const SizedBox(height: 2),
-                Text("BlueBubbles", style: context.theme.textTheme.bodyMedium?.copyWith(color: cs.onSurface)),
+                Text("BubbleBeam", style: context.theme.textTheme.bodyMedium?.copyWith(color: cs.onSurface)),
               ],
             ),
             const Spacer(),
@@ -247,7 +247,7 @@ class ThemePreviewCard extends StatelessWidget {
                 child: Text("B", style: TextStyle(fontSize: 14, color: cs.onPrimaryContainer))),
             const SizedBox(width: 8),
             Expanded(
-              child: Text("BlueBubbles",
+              child: Text("BubbleBeam",
                   style: context.theme.textTheme.titleLarge?.apply(color: cs.onSurface, fontSizeFactor: 0.85),
                   maxLines: 1,
                   overflow: TextOverflow.fade,
@@ -273,7 +273,7 @@ class ThemePreviewCard extends StatelessWidget {
           const SizedBox(height: 5),
           _iOSBubbleRow(context, "Nothin much, you?", true, sentColor, showTail: true),
           const SizedBox(height: 5),
-          _iOSBubbleRow(context, "Enjoying BlueBubbles!", false, receivedColor, showTail: true),
+          _iOSBubbleRow(context, "Enjoying BubbleBeam!", false, receivedColor, showTail: true),
         ],
       ),
     );

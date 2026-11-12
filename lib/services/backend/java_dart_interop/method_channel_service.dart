@@ -143,7 +143,7 @@ class MethodChannelService implements MethodChannelServiceDelegate {
       channelId: NotificationsService.FOREGROUND_SERVICE_CHANNEL,
       channelName: "Foreground Service",
       channelDescription:
-          "Allows BlueBubbles to stay open in the background for notifications if FCM is not being used",
+          "Allows BubbleBeam to stay open in the background for notifications if FCM is not being used",
     );
   }
 }

@@ -44,7 +44,7 @@ class _FirebasePanelState extends State<FirebasePanel> with ThemeHelpers {
                           children: [
                             const TextSpan(
                                 text:
-                                    "BlueBubbles' main notification provider is Google Firebase, utilizing Firebase Cloud Messaging (FCM). "),
+                                    "BubbleBeam's main notification provider is Google Firebase, utilizing Firebase Cloud Messaging (FCM). "),
                             const TextSpan(
                               text:
                                   "The server has an automated set up process built-in to make it easy to get set up with your very own Firebase Project. ",

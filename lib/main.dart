@@ -165,7 +165,7 @@ Future<Null> initApp(bool bubble, List<String> arguments) async {
         /* ----- WINDOW INITIALIZATION ----- */
         await windowManager.ensureInitialized();
         await windowManager.setPreventClose(SettingsSvc.settings.closeToTray.value);
-        await windowManager.setTitle('BlueBubbles');
+        await windowManager.setTitle('BubbleBeam');
         await Window.initialize();
         if (Platform.isWindows) {
           await Window.hideWindowControls();
@@ -201,7 +201,7 @@ Future<Null> initApp(bool bubble, List<String> arguments) async {
           }
           await PrefsSvc.desktop.setWindowDimensions(width: width, height: height);
 
-          await windowManager.setTitle('BlueBubbles');
+          await windowManager.setTitle('BubbleBeam');
           if (arguments.firstOrNull != "minimized") {
             await windowManager.show();
           } else {
@@ -328,7 +328,7 @@ class Main extends StatelessWidget {
       initial: savedThemeMode ?? AdaptiveThemeMode.system,
       builder: (theme, darkTheme) => GetMaterialApp(
         debugShowCheckedModeBanner: false,
-        title: 'BlueBubbles',
+        title: 'BubbleBeam',
         theme: theme.copyWith(
           appBarTheme: theme.appBarTheme.copyWith(elevation: 0.0),
           dialogTheme: DialogThemeData(
@@ -417,7 +417,7 @@ class Main extends StatelessWidget {
                               isAuthing = true;
                               localAuth
                                   .authenticate(
-                                localizedReason: 'Please authenticate to unlock BlueBubbles',
+                                localizedReason: 'Please authenticate to unlock BubbleBeam',
                                 persistAcrossBackgrounding: true,
                               )
                                   .then((result) {
@@ -443,7 +443,7 @@ class Main extends StatelessWidget {
                                     Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 20.0),
                                       child: Text(
-                                        "BlueBubbles is currently locked. Please unlock to access your messages.",
+                                        "BubbleBeam is currently locked. Please unlock to access your messages.",
                                         style: context.theme.textTheme.titleLarge,
                                         textAlign: TextAlign.center,
                                       ),
@@ -460,7 +460,7 @@ class Main extends StatelessWidget {
                                           onTap: () async {
                                             final localAuth = LocalAuthentication();
                                             bool didAuthenticate = await localAuth.authenticate(
-                                              localizedReason: 'Please authenticate to unlock BlueBubbles',
+                                              localizedReason: 'Please authenticate to unlock BubbleBeam',
                                               persistAcrossBackgrounding: true,
                                             );
                                             if (didAuthenticate) {
@@ -713,7 +713,7 @@ Future<void> initSystemTray() async {
   }
 
   await trayManager.setIcon(path);
-  if (Platform.isWindows) await trayManager.setToolTip("BlueBubbles");
+  if (Platform.isWindows) await trayManager.setToolTip("BubbleBeam");
   await setSystemTrayContextMenu(windowHidden: !appWindow.isVisible);
 }
 

@@ -130,7 +130,7 @@ class NotificationsService {
           android: const AndroidInitializationSettings('ic_stat_icon'),
           linux: const LinuxInitializationSettings(defaultActionName: 'Open'),
           windows: WindowsInitializationSettings(
-            appName: 'BlueBubbles',
+            appName: 'BubbleBeam',
             appUserModelId: windowsNotificationGuid,
             guid: windowsNotificationGuid,
             iconPath: join(

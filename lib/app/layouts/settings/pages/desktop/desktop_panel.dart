@@ -583,7 +583,7 @@ class _DesktopPanelState extends State<DesktopPanel> with ThemeHelpers {
                                                 left: size * 0.106,
                                                 child: Center(
                                                   child: Text(
-                                                    "BlueBubbles",
+                                                    "BubbleBeam",
                                                     style:
                                                         context.textTheme.bodyMedium!.copyWith(fontSize: size * 0.0305),
                                                     textAlign: TextAlign.center,

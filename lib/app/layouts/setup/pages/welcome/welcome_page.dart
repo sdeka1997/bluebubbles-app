@@ -62,7 +62,7 @@ class _WelcomePageState extends State<WelcomePage> with TickerProviderStateMixin
   @override
   Widget build(BuildContext context) {
     return SetupPageTemplate(
-      title: "Welcome to BlueBubbles",
+      title: "Welcome to BubbleBeam",
       subtitle: "Experience a clean, customizable iMessage client across all platforms",
       aboveTitle: Theme(
         data: context.theme.copyWith(

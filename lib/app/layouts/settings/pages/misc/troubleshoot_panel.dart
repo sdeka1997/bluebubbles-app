@@ -296,8 +296,8 @@ class _TroubleshootPanelState extends State<TroubleshootPanel> with ThemeHelpers
                         title: "Battery Optimizations",
                         isThreeLine: true,
                         subtitle: optimizationsDisabled.value
-                            ? "Disabled — the OS lets BlueBubbles run in the background. Tap to open system settings if you want to turn optimizations back on."
-                            : "Enabled — the OS may stop BlueBubbles in the background. Tap to allow it to keep running. This may not do anything on some devices.",
+                            ? "Disabled — the OS lets BubbleBeam run in the background. Tap to open system settings if you want to turn optimizations back on."
+                            : "Enabled — the OS may stop BubbleBeam in the background. Tap to allow it to keep running. This may not do anything on some devices.",
                         trailing: !optimizationsDisabled.value
                             ? const NextButton()
                             : Icon(Icons.check, color: context.theme.colorScheme.outline))),

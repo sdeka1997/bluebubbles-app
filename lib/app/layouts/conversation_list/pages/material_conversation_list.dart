@@ -1,3 +1,4 @@
+import 'package:bluebubbles/app/components/bubble_beam_loader.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/pages/conversation_list.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/widgets/conversation_list_fab.dart';
@@ -112,7 +113,7 @@ class _MaterialConversationListState extends State<MaterialConversationList> {
                                     textAlign: TextAlign.center,
                                   ),
                                 ),
-                                buildProgressIndicator(context, size: 15),
+                                const BubbleBeamLoader(),
                               ],
                             ),
                     ),

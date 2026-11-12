@@ -179,7 +179,7 @@ class PageButtons extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            title == "Welcome to BlueBubbles"
+            title == "Welcome to BubbleBeam"
                 ? const SizedBox.shrink()
                 : Container(
                     decoration: BoxDecoration(

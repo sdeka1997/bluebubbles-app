@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:bluebubbles/app/components/bubble_beam_loader.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/app/wrappers/bb_app_bar.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
@@ -290,7 +291,7 @@ class CupertinoConversationListState extends State<CupertinoConversationList> wi
                                             textAlign: TextAlign.center,
                                           ),
                                         ),
-                                        buildProgressIndicator(context, size: 15),
+                                        const BubbleBeamLoader(),
                                       ],
                                     ),
                             ),

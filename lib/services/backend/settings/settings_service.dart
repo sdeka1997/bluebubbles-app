@@ -541,7 +541,7 @@ class SettingsService {
       if (await play.InAppUpdate.startFlexibleUpdate() != play.AppUpdateResult.success) return;
       showSnackbar(
         "Update Downloaded",
-        "Restart BlueBubbles to finish updating",
+        "Restart BubbleBeam to finish updating",
         durationMs: 10000,
         actionLabel: "Restart",
         onAction: () => play.InAppUpdate.completeFlexibleUpdate(),

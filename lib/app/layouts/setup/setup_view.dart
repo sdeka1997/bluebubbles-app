@@ -121,7 +121,7 @@ class SetupHeader extends StatelessWidget {
               Hero(tag: "setup-icon", child: Image.asset("assets/icon/icon.png", width: 30, fit: BoxFit.contain)),
               const SizedBox(width: 10),
               Text(
-                "BlueBubbles",
+                "BubbleBeam",
                 style: context.theme.textTheme.bodyLarge!.apply(fontWeightDelta: 2, fontSizeFactor: 1.35),
               ),
             ],

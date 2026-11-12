@@ -19,7 +19,7 @@ class LaunchAtStartup {
   /// commandline[0] becomes the flatpak `--command`, so it must be the manifest command (`bluebubbles`).
   static Future<bool> _portalAutostart(bool enable) async {
     final cmdline = _minimized ? "['bluebubbles', 'minimized']" : "['bluebubbles']";
-    final options = "{'reason': <'Launch BlueBubbles at login'>, "
+    final options = "{'reason': <'Launch BubbleBeam at login'>, "
         "'autostart': <$enable>, 'commandline': <$cmdline>}";
     final result = await Process.run('gdbus', [
       'call', '--session',

@@ -33,13 +33,13 @@ class _TaskerPanelState extends State<TaskerPanel> with ThemeHelpers {
                     const Padding(
                       padding: EdgeInsets.only(bottom: 8.0, left: 15, top: 8.0, right: 15),
                       child: Text(
-                        "BlueBubbles has the ability to integrate with Tasker. Fetch your server URL from Tasker or send server events to Tasker to use in your integrations! If you've made something cool, feel free to share it on our Discord!",
+                        "BubbleBeam has the ability to integrate with Tasker. Fetch your server URL from Tasker or send server events to Tasker to use in your integrations! If you've made something cool, feel free to share it on our Discord!",
                       ),
                     ),
                     SettingsTile(
                       backgroundColor: tileColor,
                       title: "Tasker Integration Details",
-                      subtitle: "View more details on how to create Tasker integrations with BlueBubbles",
+                      subtitle: "View more details on how to create Tasker integrations with BubbleBeam",
                       isThreeLine: true,
                       onTap: () async {
                         await launchUrl(

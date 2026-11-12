@@ -48,7 +48,7 @@ class _BatteryOptimizationCheckState extends State<BatteryOptimizationCheck> wit
     return SetupPageTemplate(
       title: "Battery Optimization",
       subtitle:
-          "We recommend disabling battery optimization for BlueBubbles to ensure you receive all your notifications.",
+          "We recommend disabling battery optimization for BubbleBeam to ensure you receive all your notifications.",
       // Full width so the status row stays left-aligned in both states — without it the
       // column shrinks to the status row alone once the button is gone, and the parent
       // centers it.

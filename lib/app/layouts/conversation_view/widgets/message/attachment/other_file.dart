@@ -137,7 +137,7 @@ class OtherFile extends StatelessWidget {
               showSnackbar('Not Found', "File not found at path: ${file.path}", type: SnackbarType.error);
             } else if (res.type == ResultType.permissionDenied) {
               showSnackbar(
-                  'Permission Denied', "BlueBubbles does not have access to this file! Using share menu instead.",
+                  'Permission Denied', "BubbleBeam does not have access to this file! Using share menu instead.",
                   type: SnackbarType.error);
               await Future.delayed(const Duration(seconds: 1));
               Share.files([file.path!]);

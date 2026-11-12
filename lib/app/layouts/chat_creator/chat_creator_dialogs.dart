@@ -10,7 +10,7 @@ class ChatCreatorDialogs {
       context: context,
       title: "Group Chat Creation",
       body:
-          "Creating group chats from BlueBubbles is not possible on macOS 11 (Big Sur) and later due to limitations from Apple. You must setup the Private API to gain this feature.",
+          "Creating group chats from BubbleBeam is not possible on macOS 11 (Big Sur) and later due to limitations from Apple. You must setup the Private API to gain this feature.",
       actions: [
         BBDialogAction(
           text: "Close",

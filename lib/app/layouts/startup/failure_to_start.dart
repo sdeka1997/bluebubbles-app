@@ -11,7 +11,7 @@ class FailureToStart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'BlueBubbles',
+      title: 'BubbleBeam',
       home: AnnotatedRegion<SystemUiOverlayStyle>(
         value: const SystemUiOverlayStyle(
           systemNavigationBarColor: Colors.black,

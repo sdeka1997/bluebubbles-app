@@ -341,7 +341,7 @@ class _ThemingPanelState extends CustomState<ThemingPanel, void, ThemingPanelCon
                               initialVal: ThemeSvc.isAnyMaterialYouSelected,
                               title: "Material You",
                               backgroundColor: tileColor,
-                              subtitle: "Personalize BlueBubbles with dynamic colors pulled from your system theme.",
+                              subtitle: "Personalize BubbleBeam with dynamic colors pulled from your system theme.",
                               onChanged: (enabled) async {
                                 final currentTheme = ThemeStruct.getLightTheme();
                                 if (currentTheme.name == "Music Theme ☀" || currentTheme.name == "Music Theme 🌙") {
@@ -617,7 +617,7 @@ class _ThemingPanelState extends CustomState<ThemingPanel, void, ThemingPanelCon
                           title: kIsWeb
                               ? "Upload Font File"
                               : "Download${HttpSvc.downloadingFont.value ? "ing" : ""} iOS Emoji Font${HttpSvc.downloadingFont.value ? " (${HttpSvc.fontDownloadProgress.value != null && HttpSvc.fontDownloadTotalSize.value != null ? (HttpSvc.fontDownloadProgress.value! * HttpSvc.fontDownloadTotalSize.value!).getFriendlySize(withSuffix: false) : ""} / ${(HttpSvc.fontDownloadTotalSize.value ?? 0).toDouble().getFriendlySize()}) (${((HttpSvc.fontDownloadProgress.value ?? 0) * 100).floor()}%)" : ""}",
-                          subtitle: kIsWeb ? "Upload your ttf emoji file into BlueBubbles" : null,
+                          subtitle: kIsWeb ? "Upload your ttf emoji file into BubbleBeam" : null,
                         ),
                     if (FilesystemSvc.fontExistsOnDisk.value)
                         SettingsTile(

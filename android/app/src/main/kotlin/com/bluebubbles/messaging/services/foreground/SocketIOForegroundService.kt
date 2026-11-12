@@ -30,17 +30,17 @@ class SocketIOForegroundService : Service() {
 
     companion object {
         // Consts for notification messages
-        const val DEFAULT_NOTIFICATION = "BlueBubbles is running in the background."
-        const val MISSING_SERVER_URL = "BlueBubbles Service is missing your server URL!"
-        const val MISSING_PASSWORD = "BlueBubbles Service is missing your password!"
-        const val UNHANDLED_ERROR = "BlueBubbles Service encountered an unhandled error"
-        const val CONNECTED = "BlueBubbles is connected to your server!"
-        const val CONNECT_FAILED = "BlueBubbles failed to connect to your server! Error: "
-        const val DISCONNECTED = "BlueBubbles is disconnected from your server! Error: "
-        const val RECONNECTING = "BlueBubbles is reconnecting to your server..."
-        const val RECONNECT_FAILED = "BlueBubbles failed to reconnect to your server..."
-        const val DESTROYED = "BlueBubbles Service was destroyed!"
-        const val DISABLED = "BlueBubbles Foreground Service is disabled"
+        const val DEFAULT_NOTIFICATION = "BubbleBeam is running in the background."
+        const val MISSING_SERVER_URL = "BubbleBeam Service is missing your server URL!"
+        const val MISSING_PASSWORD = "BubbleBeam Service is missing your password!"
+        const val UNHANDLED_ERROR = "BubbleBeam Service encountered an unhandled error"
+        const val CONNECTED = "BubbleBeam is connected to your server!"
+        const val CONNECT_FAILED = "BubbleBeam failed to connect to your server! Error: "
+        const val DISCONNECTED = "BubbleBeam is disconnected from your server! Error: "
+        const val RECONNECTING = "BubbleBeam is reconnecting to your server..."
+        const val RECONNECT_FAILED = "BubbleBeam failed to reconnect to your server..."
+        const val DESTROYED = "BubbleBeam Service was destroyed!"
+        const val DISABLED = "BubbleBeam Foreground Service is disabled"
     }
 
     private var mSocket: Socket? = null
@@ -271,7 +271,7 @@ class SocketIOForegroundService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 Constants.foregroundServiceNotificationChannel,
-                "BlueBubbles Foreground Service",
+                "BubbleBeam Foreground Service",
                 NotificationManager.IMPORTANCE_MIN
             )
 
@@ -288,7 +288,7 @@ class SocketIOForegroundService : Service() {
     private fun createNotification(contentText: String): Notification {
         currentNotification = contentText
         return NotificationCompat.Builder(this, Constants.foregroundServiceNotificationChannel)
-            .setContentTitle("BlueBubbles Service")
+            .setContentTitle("BubbleBeam Service")
             .setContentText(contentText)
             .setSmallIcon(R.mipmap.ic_stat_icon)
             // The notification should be categorized as silent
@@ -332,7 +332,7 @@ class SocketIOForegroundService : Service() {
         hasStarted = false
         reconnectScheduled = false
         reconnectHandler.removeCallbacks(reconnectRunnable)
-        PersistentLog.d(applicationContext, Constants.logTag, "BlueBubbles Service is being destroyed!")
+        PersistentLog.d(applicationContext, Constants.logTag, "BubbleBeam Service is being destroyed!")
 
         super.onDestroy()
         mSocket?.disconnect()

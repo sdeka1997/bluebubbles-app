@@ -65,7 +65,7 @@ class _RequestPermissionsState extends State<RequestPermissions> with WidgetsBin
   Widget build(BuildContext context) {
     return SetupPageTemplate(
       title: "App Permissions",
-      subtitle: "Grant these permissions to get the most out of BlueBubbles.",
+      subtitle: "Grant these permissions to get the most out of BubbleBeam.",
       belowSubtitle: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8.0),
         child: Column(

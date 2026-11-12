@@ -1,3 +1,4 @@
+import 'package:bluebubbles/app/components/bubble_beam_loader.dart';
 import 'package:bluebubbles/app/components/sliver_decoration.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/pages/conversation_list.dart';
@@ -129,7 +130,7 @@ class _SamsungConversationListState extends State<SamsungConversationList> with 
                                           textAlign: TextAlign.center,
                                         ),
                                       ),
-                                      buildProgressIndicator(context, size: 15),
+                                      const BubbleBeamLoader(),
                                     ],
                                   ),
                           ),

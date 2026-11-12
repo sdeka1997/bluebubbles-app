@@ -82,7 +82,7 @@ class _MiscPanelState extends State<MiscPanel> with ThemeHelpers {
                                         TextSpan(text: "\n\n"),
                                         TextSpan(
                                             text:
-                                                "BlueBubbles will use the fingerprints and pin/password set on your device as authentication. Please note that BlueBubbles does not have access to your authentication information - all biometric checks are handled securely by your operating system. The app is only notified when the unlock is successful."),
+                                                "BubbleBeam will use the fingerprints and pin/password set on your device as authentication. Please note that BubbleBeam does not have access to your authentication information - all biometric checks are handled securely by your operating system. The app is only notified when the unlock is successful."),
                                       ]),
                                       if (!kIsDesktop)
                                         const TextSpan(children: [
