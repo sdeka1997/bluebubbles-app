@@ -14,6 +14,23 @@ import 'package:get/get.dart' hide Response;
 ActionHandler MessageHandlerSvc =
     Get.isRegistered<ActionHandler>() ? Get.find<ActionHandler>() : Get.put(ActionHandler());
 
+/// The chat an Apple event about a conversation applies to, or null when the
+/// event names no stored chat. Read status and typing name the copy Apple saw
+/// them in; they apply to the conversation that copy is shown as.
+///
+/// New messages are filed the same way by IncomingMsgHandler. `chat-deleted`
+/// deliberately keeps its exact copy: Apple deleting one copy is not the user
+/// deleting the conversation.
+Future<Chat?> chatForEvent(String event, Map<String, dynamic> data) async {
+  final guid = switch (event) {
+    "chat-read-status-changed" => data["chatGuid"],
+    "typing-indicator" => data["guid"],
+    _ => null,
+  };
+  if (guid is! String || guid.isEmpty) return null;
+  return MessagingStore.current.shownChatByGuid(guid);
+}
+
 class ActionHandler extends GetxService {
   /// Tracks in-flight real GUIDs (from our own `new-message` events) that
   /// arrived without a `tempGuid`.  When a subsequent `updated-message` event
@@ -162,7 +179,7 @@ class ActionHandler extends GetxService {
         }
         return;
       case "chat-read-status-changed":
-        Chat? chat = await MessagingStore.current.chatByGuid(data["chatGuid"]);
+        final chat = await chatForEvent(event, data);
         if (chat != null && (data["read"] == true || data["read"] == false)) {
           // Route through ChatsService so the ChatState the conversation list
           // renders from is updated too. Writing only to the DB row leaves the
@@ -198,7 +215,9 @@ class ActionHandler extends GetxService {
         );
         return;
       case "typing-indicator":
-        final chat = ChatsSvc.findChatByGuid(data["guid"]);
+        // Only a listed conversation has a view to show it in.
+        final shown = await chatForEvent(event, data);
+        final chat = shown == null ? null : ChatsSvc.findChatByGuid(shown.guid);
         if (chat != null) {
           final controller = cvc(chat);
           // Gated: the typing indicator row sits between the message list and

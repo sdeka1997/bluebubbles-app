@@ -574,6 +574,13 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
     if (key == null || key.isEmpty) return null;
     return canonicalTwinFor(chat, await ChatRepo(db).threadCopies(key));
   }
+
+  @override
+  Future<Chat?> shownChatByGuid(String guid) async {
+    final chat = await ChatRepo(db).byGuid(guid);
+    if (chat == null) return null;
+    return await canonicalTwinOf(chat) ?? chat;
+  }
 }
 
 void _applyChatUpdates(Chat chat, Chat input, Map<String, bool> flags) {

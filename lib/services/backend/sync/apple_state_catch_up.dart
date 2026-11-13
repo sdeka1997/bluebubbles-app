@@ -105,6 +105,10 @@ class AppleStateCatchUpPlan {
 /// chat notifications Android is showing (each is posted under its chat's id); null
 /// when they could not be read, which falls back to clearing every read chat.
 ///
+/// [chats] are the conversations as shown. [threadCopies] maps one shown as
+/// several Apple chats to all of their guids: it is read when every copy Apple
+/// reported is read, and unread while any of them is not.
+///
 /// Nearly every chat is read on both sides with nothing showing, so nearly every
 /// chat needs nothing: asking Android to clear ~1,800 notifications one at a time
 /// took ~10 s on every app open.
@@ -112,6 +116,7 @@ AppleStateCatchUpPlan planAppleStateCatchUp(
   Iterable<Chat> chats,
   AppleStateSnapshot snapshot, {
   required Set<int>? shownNotificationIds,
+  Map<String, List<String>> threadCopies = const {},
 }) {
   final deleteChats = <Chat>[];
   final readStateChanges = <Chat, bool>{};
@@ -121,7 +126,7 @@ AppleStateCatchUpPlan planAppleStateCatchUp(
       deleteChats.add(chat);
       continue;
     }
-    final read = snapshot.readByChat[chat.guid];
+    final read = _conversationRead(snapshot.readByChat, threadCopies[chat.guid] ?? [chat.guid]);
     if (read == null) continue;
     if ((chat.hasUnreadMessage ?? false) == read) {
       readStateChanges[chat] = !read;
@@ -135,6 +140,27 @@ AppleStateCatchUpPlan planAppleStateCatchUp(
     readStateChanges: readStateChanges,
     clearNotificationFor: clearNotificationFor,
   );
+}
+
+/// Whether Apple has every one of [copies] read; null when it reported none of them.
+bool? _conversationRead(Map<String, bool> readByChat, List<String> copies) {
+  final reported = [for (final guid in copies) readByChat[guid]].whereType<bool>();
+  return reported.isEmpty ? null : reported.every((read) => read);
+}
+
+/// Each shown chat whose thread has other live copies, mapped to the guids of
+/// every live copy in it.
+Map<String, List<String>> threadCopyGuids(Iterable<Chat> shown, Iterable<Chat> threaded) {
+  final byKey = <String, List<String>>{};
+  for (final copy in threaded) {
+    final key = copy.threadKey;
+    if (key == null || key.isEmpty || copy.dateDeleted != null) continue;
+    (byKey[key] ??= []).add(copy.guid);
+  }
+  return {
+    for (final chat in shown)
+      if ((byKey[chat.threadKey] ?? const []).length > 1) chat.guid: byKey[chat.threadKey]!,
+  };
 }
 
 /// Brings the device in line with Apple after it was offline.
@@ -164,8 +190,10 @@ class AppleStateCatchUp {
 
   static Future<void> apply(AppleStateSnapshot snapshot) async {
     var changed = 0;
-    final plan = planAppleStateCatchUp(ChatsSvc.allChats.toList(), snapshot,
-        shownNotificationIds: await NotificationsSvc.shownChatNotificationIds());
+    final shown = ChatsSvc.allChats.toList();
+    final plan = planAppleStateCatchUp(shown, snapshot,
+        shownNotificationIds: await NotificationsSvc.shownChatNotificationIds(),
+        threadCopies: threadCopyGuids(shown, await MessagingStore.current.threadedChats()));
     StartupTimeline.mark('catch-up: planned (${plan.deleteChats.length} deleted, '
         '${plan.readStateChanges.length} read changes, ${plan.clearNotificationFor.length} notifications)');
     for (final chat in plan.deleteChats) {

@@ -140,6 +140,53 @@ void main() {
       expect(plan.clearNotificationFor, isEmpty);
     });
 
+    test('a copy read on Apple clears the conversation it is folded into', () {
+      // Tonight's case: the message landed in the hidden copy, the iPhone read
+      // it there, and the shown copy has no unread of its own on Apple.
+      final plan = planAppleStateCatchUp(
+        [chat(1, 'shown', unread: true)],
+        const AppleStateSnapshot(readByChat: {'shown': true, 'hidden': true}),
+        shownNotificationIds: const {1},
+        threadCopies: const {'shown': ['shown', 'hidden']},
+      );
+
+      expect({for (final e in plan.readStateChanges.entries) e.key.guid: e.value}, {'shown': false});
+    });
+
+    test('a read conversation with a notification up is cleared when only a hidden copy was reported', () {
+      final plan = planAppleStateCatchUp(
+        [chat(1, 'shown')],
+        const AppleStateSnapshot(readByChat: {'hidden': true}),
+        shownNotificationIds: const {1},
+        threadCopies: const {'shown': ['shown', 'hidden']},
+      );
+
+      expect(plan.clearNotificationFor.map((c) => c.guid), ['shown']);
+    });
+
+    test('a conversation is unread while any of its copies is unread on Apple', () {
+      final plan = planAppleStateCatchUp(
+        [chat(1, 'shown')],
+        const AppleStateSnapshot(readByChat: {'shown': true, 'hidden': false}),
+        shownNotificationIds: const {},
+        threadCopies: const {'shown': ['shown', 'hidden']},
+      );
+
+      expect({for (final e in plan.readStateChanges.entries) e.key.guid: e.value}, {'shown': true});
+    });
+
+    test('threadCopyGuids maps each shown chat to every live copy of its thread', () {
+      final shown = [Chat(id: 1, guid: 'a', threadKey: 'k'), Chat(id: 3, guid: 'c')];
+      final threaded = [
+        Chat(id: 1, guid: 'a', threadKey: 'k'),
+        Chat(id: 2, guid: 'b', threadKey: 'k'),
+        Chat(id: 4, guid: 'gone', threadKey: 'k', dateDeleted: DateTime.utc(2024)),
+      ];
+      expect(threadCopyGuids(shown, threaded), {
+        'a': ['a', 'b'],
+      });
+    });
+
     test('a chat Apple did not report is left alone', () {
       final plan = planAppleStateCatchUp(
         [chat(1, 'a', unread: true)],

@@ -447,6 +447,13 @@ abstract interface class ChatStore {
   /// The live chat [chat] is folded into, or null when [chat] is its own thread.
   Future<Chat?> canonicalTwinOf(Chat chat);
 
+  /// The chat Apple's chat [guid] is shown as: the thread a service twin is
+  /// folded into, else the chat itself. Null when [guid] is not stored.
+  ///
+  /// Apple names the copy an event happened in; anything about the
+  /// conversation as the user sees it (read, typing) applies to this chat.
+  Future<Chat?> shownChatByGuid(String guid);
+
   /// The newest message, deleted ones excluded, of the local chat [chatId].
   /// With [listing], only a message that `listsThread`.
   Future<Message?> newestMessageIn(int chatId, {bool listing = true});
