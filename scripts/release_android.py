@@ -303,7 +303,10 @@ class ReleaseTool:
         return directory / "aapt2", directory / "apksigner"
 
     def validate_apk(self, apk, aapt2, apksigner):
-        badging = self.runner.run([str(aapt2), "dump", "badging", str(apk)])
+        environment = self.build_environment()
+        badging = self.runner.run(
+            [str(aapt2), "dump", "badging", str(apk)], env=environment
+        )
         match = re.search(
             r"package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'",
             badging,
@@ -318,7 +321,8 @@ class ReleaseTool:
         if version_code != str(self.config.version_code):
             raise ReleaseError("APK versionCode is {}, expected {}".format(version_code, self.config.version_code))
         certificates = self.runner.run(
-            [str(apksigner), "verify", "--print-certs", str(apk)]
+            [str(apksigner), "verify", "--print-certs", str(apk)],
+            env=environment,
         )
         digest_match = re.search(r"SHA-256 digest:\s*([0-9a-fA-F]+)", certificates)
         digest = digest_match.group(1).lower() if digest_match else ""

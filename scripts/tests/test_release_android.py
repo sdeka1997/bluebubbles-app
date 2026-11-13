@@ -95,6 +95,8 @@ class ReleaseAndroidTest(unittest.TestCase):
         })
         tool = release_android.ReleaseTool(self.config(), runner=runner)
         tool.validate_apk(Path("app.apk"), Path("aapt2"), Path("apksigner"))
+        self.assertTrue(runner.calls[0][1]["JAVA_HOME"].endswith("toolchain/jdk21/Contents/Home"))
+        self.assertEqual(runner.calls[1][1]["JAVA_HOME"], runner.calls[0][1]["JAVA_HOME"])
 
     def test_wrong_package_is_rejected(self):
         runner = FakeRunner({
