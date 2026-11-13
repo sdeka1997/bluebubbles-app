@@ -394,6 +394,10 @@ class ChatsService {
     }
 
     loadedAllChats.complete();
+    // Android plays the opening over the app until now.
+    if (!kIsWeb && !kIsDesktop && GetIt.I.isRegistered<MethodChannelService>()) {
+      unawaited(MethodChannelSvc.actions.endOpening());
+    }
     Logger.info("Finished fetching chats (${chatStates.length}).", tag: "ChatBloc");
     StartupTimeline.mark('chat list loaded (${chatStates.length} chats)');
     if (!kIsWeb) {

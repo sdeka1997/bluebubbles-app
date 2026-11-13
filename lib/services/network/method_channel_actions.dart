@@ -9,6 +9,11 @@ class MethodChannelActions {
     await service.invokeMethod('ready');
   }
 
+  /// Ends the opening Android plays over the app while it starts.
+  Future<void> endOpening() async {
+    await service.invokeMethod('opening-done');
+  }
+
   Future<void> openBrowser({required String? link}) async {
     if (link == null || link.isEmpty) return;
     await service.invokeMethod('open-browser', {'link': link});

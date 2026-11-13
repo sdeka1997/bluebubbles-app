@@ -109,6 +109,10 @@ class MethodCallHandler {
                 MainActivity.setDartReady(true, context)
                 result.success(null)
             }
+            "opening-done" -> {
+                (context as? MainActivity)?.endOpening()
+                result.success(null)
+            }
             UnifiedPushHandler.tag -> UnifiedPushHandler().handleMethodCall(call, result, context)
             FirebaseAuthHandler.tag -> FirebaseAuthHandler().handleMethodCall(call, result, context)
             FirebaseDeleteTokenHandler.tag -> FirebaseDeleteTokenHandler().handleMethodCall(call, result, context)

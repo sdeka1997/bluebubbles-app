@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="splash_color">#4990de</color>
+    <!-- BubbleBeam's opening (Opening.kt): the launch screen's blue, easing into the gradient. -->
+    <color name="opening_launch">#3177F4</color>
+    <color name="opening_top">#5AAAFE</color>
+    <color name="opening_bottom">#1D4ED8</color>
 </resources>

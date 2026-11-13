@@ -3,6 +3,7 @@ package com.bluebubbles.messaging
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import androidx.activity.ComponentActivity
 import com.bluebubbles.messaging.services.backend_ui_interop.MethodCallHandler
 import com.bluebubbles.messaging.services.foreground.ForegroundServiceBroadcastReceiver
@@ -58,6 +59,23 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
+    private var opening: Opening? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Only on a fresh open after setup: not while setting up, nor when Android recreates the screen.
+        val prefs = applicationContext.getSharedPreferences("FlutterSharedPreferences", 0)
+        val finishedSetup = runCatching { prefs.getBoolean("finishedSetup", false) }.getOrDefault(false)
+        if (savedInstanceState == null && finishedSetup) {
+            opening = Opening(this) { opening = null }.also { it.show() }
+        }
+    }
+
+    /** The chat list has loaded (Dart's "opening-done"). */
+    fun endOpening() {
+        runOnUiThread { opening?.end() }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         setEngine(flutterEngine, this)
         super.configureFlutterEngine(flutterEngine)
@@ -104,6 +122,7 @@ class MainActivity : FlutterFragmentActivity() {
     override fun onDestroy() {
         PersistentLog.d(this, Constants.logTag, "BlueBubbles MainActivity is being destroyed")
         MethodCallHandler.clearNotificationListenerResult()
+        opening?.dispose()
         setEngine(null, this)
 
         // If we are finishing "gracefully", the dart code would have started the foreground service.

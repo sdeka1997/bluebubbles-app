@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:bluebubbles/app/components/rising_bubbles.dart';
 import 'package:flutter/material.dart';
 
 /// BubbleBeam's loading animation: the app icon gently breathing while bubbles rise and fade around it.
@@ -53,20 +54,9 @@ class RisingBubblesPainter extends CustomPainter {
   final double progress;
   final Color color;
 
-  // (x across the box, phase offset, radius as a fraction of the box, sideways sway)
-  static const _bubbles = [
-    (0.10, 0.00, 0.050, 0.04),
-    (0.30, 0.55, 0.035, 0.03),
-    (0.84, 0.20, 0.060, 0.05),
-    (0.68, 0.75, 0.030, 0.03),
-    (0.93, 0.45, 0.025, 0.02),
-    (0.05, 0.35, 0.028, 0.02),
-    (0.50, 0.90, 0.022, 0.02),
-  ];
-
   @override
   void paint(Canvas canvas, Size size) {
-    for (final (x, phase, r, sway) in _bubbles) {
+    for (final (x, phase, r, sway) in risingBubbles) {
       final p = (progress + phase) % 1.0;
       final fade = p < 0.15 ? p / 0.15 : (p > 0.85 ? (1 - p) / 0.15 : 1.0);
       final radius = r * size.width * (0.7 + 0.3 * p);
