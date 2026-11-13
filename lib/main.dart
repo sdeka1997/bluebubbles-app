@@ -390,6 +390,7 @@ class Main extends StatelessWidget {
         },
         builder: (context, child) => BubbleBeamIntro(
           enabled: Platform.isAndroid && !LifecycleSvc.isBubble && SettingsSvc.settings.finishedSetup.value,
+          ready: ChatsSvc.loadedAllChats.future,
           child: SafeArea(
             top: false,
             bottom: false,

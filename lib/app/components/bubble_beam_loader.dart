@@ -33,7 +33,7 @@ class _BubbleBeamLoaderState extends State<BubbleBeamLoader> with SingleTickerPr
         builder: (context, child) {
           final breath = 1 + 0.04 * math.sin(_controller.value * 2 * math.pi);
           return CustomPaint(
-            painter: _RisingBubblesPainter(_controller.value, color),
+            painter: RisingBubblesPainter(_controller.value, color),
             child: Center(child: Transform.scale(scale: breath, child: child)),
           );
         },
@@ -47,8 +47,8 @@ class _BubbleBeamLoaderState extends State<BubbleBeamLoader> with SingleTickerPr
   }
 }
 
-class _RisingBubblesPainter extends CustomPainter {
-  _RisingBubblesPainter(this.progress, this.color);
+class RisingBubblesPainter extends CustomPainter {
+  RisingBubblesPainter(this.progress, this.color);
 
   final double progress;
   final Color color;
@@ -88,6 +88,6 @@ class _RisingBubblesPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_RisingBubblesPainter oldDelegate) =>
+  bool shouldRepaint(RisingBubblesPainter oldDelegate) =>
       oldDelegate.progress != progress || oldDelegate.color != color;
 }
