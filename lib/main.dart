@@ -6,6 +6,7 @@ import 'dart:ui';
 import 'package:adaptive_theme/adaptive_theme.dart';
 import 'package:async_task/async_task_extension.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
+import 'package:bluebubbles/app/components/bubble_beam_intro.dart';
 import 'package:bluebubbles/app/wrappers/bb_scaffold.dart';
 import 'package:bluebubbles/app/components/custom/custom_error_box.dart';
 import 'package:bluebubbles/helpers/backend/startup_tasks.dart';
@@ -387,106 +388,109 @@ class Main extends StatelessWidget {
           LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyI): const OpenChatDetailsIntent(),
           LogicalKeySet(LogicalKeyboardKey.escape): const GoBackIntent(),
         },
-        builder: (context, child) => SafeArea(
-          top: false,
-          bottom: false,
-          // secure_application has no Linux implementation; mounting it (and the
-          // SecureGate below) throws MissingPluginException on every lifecycle
-          // event, which breaks window close/hide once the app is past setup.
-          // Bypass the secure wrapper entirely on Linux.
-          child: Platform.isLinux
-              ? TitleBarWrapper(child: child ?? Container())
-              : SecureApplication(
-                  child: Builder(
-                    builder: (context) {
-                      if (SettingsSvc.canAuthenticate && (!LifecycleSvc.isAlive || !StartupTasks.uiReady.isCompleted)) {
-                        if (SettingsSvc.settings.shouldSecure.value) {
-                          SecureApplicationProvider.of(context, listen: false)!.lock();
-                          if (SettingsSvc.settings.securityLevel.value == SecurityLevel.locked_and_secured) {
-                            SecureApplicationProvider.of(context, listen: false)!.secure();
+        builder: (context, child) => BubbleBeamIntro(
+          enabled: Platform.isAndroid && !LifecycleSvc.isBubble && SettingsSvc.settings.finishedSetup.value,
+          child: SafeArea(
+            top: false,
+            bottom: false,
+            // secure_application has no Linux implementation; mounting it (and the
+            // SecureGate below) throws MissingPluginException on every lifecycle
+            // event, which breaks window close/hide once the app is past setup.
+            // Bypass the secure wrapper entirely on Linux.
+            child: Platform.isLinux
+                ? TitleBarWrapper(child: child ?? Container())
+                : SecureApplication(
+                    child: Builder(
+                      builder: (context) {
+                        if (SettingsSvc.canAuthenticate && (!LifecycleSvc.isAlive || !StartupTasks.uiReady.isCompleted)) {
+                          if (SettingsSvc.settings.shouldSecure.value) {
+                            SecureApplicationProvider.of(context, listen: false)!.lock();
+                            if (SettingsSvc.settings.securityLevel.value == SecurityLevel.locked_and_secured) {
+                              SecureApplicationProvider.of(context, listen: false)!.secure();
+                            }
                           }
                         }
-                      }
-                      return TitleBarWrapper(
-                        child: SecureGate(
-                          blurr: 5,
-                          opacity: 0,
-                          lockedBuilder: (context, controller) {
-                            final localAuth = LocalAuthentication();
-                            if (!isAuthing) {
-                              isAuthing = true;
-                              localAuth
-                                  .authenticate(
-                                localizedReason: 'Please authenticate to unlock BubbleBeam',
-                                persistAcrossBackgrounding: true,
-                              )
-                                  .then((result) {
-                                isAuthing = false;
-                                if (result) {
-                                  if (!context.mounted) return;
-                                  SecureApplicationProvider.of(context, listen: false)!.authSuccess(unlock: true);
-                                  if (kIsDesktop) {
-                                    Future.delayed(Duration.zero, () {
-                                      ChatsSvc.init();
-                                      SocketSvc.init();
-                                    });
+                        return TitleBarWrapper(
+                          child: SecureGate(
+                            blurr: 5,
+                            opacity: 0,
+                            lockedBuilder: (context, controller) {
+                              final localAuth = LocalAuthentication();
+                              if (!isAuthing) {
+                                isAuthing = true;
+                                localAuth
+                                    .authenticate(
+                                  localizedReason: 'Please authenticate to unlock BubbleBeam',
+                                  persistAcrossBackgrounding: true,
+                                )
+                                    .then((result) {
+                                  isAuthing = false;
+                                  if (result) {
+                                    if (!context.mounted) return;
+                                    SecureApplicationProvider.of(context, listen: false)!.authSuccess(unlock: true);
+                                    if (kIsDesktop) {
+                                      Future.delayed(Duration.zero, () {
+                                        ChatsSvc.init();
+                                        SocketSvc.init();
+                                      });
+                                    }
                                   }
-                                }
-                              });
-                            }
-                            return Container(
-                              color: context.theme.colorScheme.surface,
-                              child: Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: <Widget>[
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                                      child: Text(
-                                        "BubbleBeam is currently locked. Please unlock to access your messages.",
-                                        style: context.theme.textTheme.titleLarge,
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ),
-                                    Container(height: 20.0),
-                                    ClipOval(
-                                      child: Material(
-                                        color: context.theme.colorScheme.primary, // button color
-                                        child: InkWell(
-                                          child: SizedBox(
-                                              width: 60,
-                                              height: 60,
-                                              child: Icon(Icons.lock_open, color: context.theme.colorScheme.onPrimary)),
-                                          onTap: () async {
-                                            final localAuth = LocalAuthentication();
-                                            bool didAuthenticate = await localAuth.authenticate(
-                                              localizedReason: 'Please authenticate to unlock BubbleBeam',
-                                              persistAcrossBackgrounding: true,
-                                            );
-                                            if (didAuthenticate) {
-                                              controller!.authSuccess(unlock: true);
-                                              if (kIsDesktop) {
-                                                Future.delayed(Duration.zero, () {
-                                                  ChatsSvc.init();
-                                                  SocketSvc.init();
-                                                });
-                                              }
-                                            }
-                                          },
+                                });
+                              }
+                              return Container(
+                                color: context.theme.colorScheme.surface,
+                                child: Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: <Widget>[
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                                        child: Text(
+                                          "BubbleBeam is currently locked. Please unlock to access your messages.",
+                                          style: context.theme.textTheme.titleLarge,
+                                          textAlign: TextAlign.center,
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                      Container(height: 20.0),
+                                      ClipOval(
+                                        child: Material(
+                                          color: context.theme.colorScheme.primary, // button color
+                                          child: InkWell(
+                                            child: SizedBox(
+                                                width: 60,
+                                                height: 60,
+                                                child: Icon(Icons.lock_open, color: context.theme.colorScheme.onPrimary)),
+                                            onTap: () async {
+                                              final localAuth = LocalAuthentication();
+                                              bool didAuthenticate = await localAuth.authenticate(
+                                                localizedReason: 'Please authenticate to unlock BubbleBeam',
+                                                persistAcrossBackgrounding: true,
+                                              );
+                                              if (didAuthenticate) {
+                                                controller!.authSuccess(unlock: true);
+                                                if (kIsDesktop) {
+                                                  Future.delayed(Duration.zero, () {
+                                                    ChatsSvc.init();
+                                                    SocketSvc.init();
+                                                  });
+                                                }
+                                              }
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
-                          child: child ?? Container(),
-                        ),
-                      );
-                    },
+                              );
+                            },
+                            child: child ?? Container(),
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                ),
+          ),
         ),
         defaultTransition: Transition.cupertino,
       ),

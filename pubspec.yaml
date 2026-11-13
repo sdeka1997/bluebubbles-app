@@ -245,16 +245,6 @@ flutter_icons:
   adaptive_icon_background: "assets/icon/adaptive-background.png"
   adaptive_icon_monochrome: "assets/icon/adaptive-monochrome.png"
 
-flutter_native_splash:
-  color: "#FFFFFF"
-  color_dark: "#000000"
-  image: "assets/icon/splash-foreground-dark.png"
-  image_dark: "assets/icon/splash-foreground-dark.png"
-  android_12:
-    image: "assets/icon/splash-foreground-dark-2.png"
-    image_dark: "assets/icon/splash-foreground-dark-2.png"
-    icon_background_color: "#FFFFFF"
-    icon_background_color_dark: "000000"
 
 #   flutter_test:
 #     sdk: flutter
