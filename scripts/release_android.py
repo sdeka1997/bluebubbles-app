@@ -178,11 +178,23 @@ class GitHubClient:
 
 
 class ReleaseTool:
-    def __init__(self, config, *, runner=None, github=None, disk_usage=None):
+    def __init__(
+        self,
+        config,
+        *,
+        runner=None,
+        github=None,
+        disk_usage=None,
+        staged_keystore=None,
+    ):
         self.config = config
         self.runner = runner or CommandRunner()
         self.github = github or GitHubClient(token=os.environ.get("GH_TOKEN"))
         self.disk_usage = disk_usage or shutil.disk_usage
+        self.staged_keystore = Path(
+            staged_keystore or Path.home() / ".android/debug.keystore"
+        ).resolve()
+        self._generated_signing_config = False
 
     def check_git_state(self, fetch=True):
         if self.runner.run(["git", "status", "--porcelain"]).strip():
@@ -222,8 +234,29 @@ class ReleaseTool:
         environment["BB_REQUIRE_RELEASE_SIGNING"] = "true"
         return environment
 
+    def prepare_staged_signing(self):
+        signing = Path("android/key.properties")
+        if signing.exists():
+            return
+        if not self.staged_keystore.is_file():
+            raise ReleaseError(
+                "staged signing keystore is missing: {}".format(self.staged_keystore)
+            )
+        signing.parent.mkdir(parents=True, exist_ok=True)
+        properties = (
+            "storePassword=android\n"
+            "keyPassword=android\n"
+            "keyAlias=androiddebugkey\n"
+            "storeFile={}\n".format(self.staged_keystore)
+        )
+        descriptor = os.open(signing, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w") as stream:
+            stream.write(properties)
+        self._generated_signing_config = True
+
     def run_quality_and_build(self):
         Path(".env").touch(exist_ok=True)
+        self.prepare_staged_signing()
         environment = self.build_environment()
         self.runner.run(["flutter", "test"], env=environment, capture=False)
         self.runner.run(
@@ -243,6 +276,9 @@ class ReleaseTool:
         self.runner.run(
             ["git", "restore", "--", "macos/Flutter/Flutter-*.xcconfig"], capture=False
         )
+        if self._generated_signing_config:
+            Path("android/key.properties").unlink(missing_ok=True)
+            self._generated_signing_config = False
         for path in (
             Path(".env"),
             Path("ios/Flutter/ephemeral/.swift_pm.lock"),

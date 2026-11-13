@@ -149,6 +149,47 @@ class ReleaseAndroidTest(unittest.TestCase):
             finally:
                 os.chdir(previous)
 
+    def test_staged_signing_config_is_private_and_cleaned_up(self):
+        previous = Path.cwd()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            keystore = root / "debug.keystore"
+            keystore.write_bytes(b"test keystore")
+            (root / "android").mkdir()
+            os.chdir(root)
+            try:
+                tool = release_android.ReleaseTool(
+                    self.config(), runner=FakeRunner(), staged_keystore=keystore
+                )
+                tool.run_quality_and_build()
+                signing = root / "android/key.properties"
+                self.assertTrue(signing.is_file())
+                self.assertEqual(signing.stat().st_mode & 0o777, 0o600)
+                self.assertIn("storeFile={}".format(keystore.resolve()), signing.read_text())
+                self.assertIn("keyAlias=androiddebugkey", signing.read_text())
+                tool.cleanup_flutter_noise()
+                self.assertFalse(signing.exists())
+            finally:
+                os.chdir(previous)
+
+    def test_missing_staged_keystore_is_rejected_before_build(self):
+        previous = Path.cwd()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "android").mkdir()
+            os.chdir(root)
+            try:
+                tool = release_android.ReleaseTool(
+                    self.config(),
+                    runner=FakeRunner(),
+                    staged_keystore=root / "missing.keystore",
+                )
+                with self.assertRaisesRegex(release_android.ReleaseError, "staged signing keystore"):
+                    tool.run_quality_and_build()
+                self.assertEqual(tool.runner.calls, [])
+            finally:
+                os.chdir(previous)
+
 
 if __name__ == "__main__":
     unittest.main()
