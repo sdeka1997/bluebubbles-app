@@ -436,21 +436,28 @@ class SettingsService {
   }
 
   Future<Map<String, dynamic>> getAppUpdateDict() async {
-    bool available = true;
-    if (!kIsDesktop && (kIsWeb || (await StoreChecker.getSource) != Source.IS_INSTALLED_FROM_LOCAL_SOURCE)) {
-      available = false;
-    }
-    if (kIsDesktop) {
-      available = false;
-    }
+    // Play installs update through Play (checkClientUpdate); any other install checks our releases.
+    bool available = false;
 
     final github = GitHub();
-    final stream = github.repositories.listReleases(RepositorySlug('bluebubblesapp', 'bluebubbles-app'));
-    final release = await stream.firstWhere((element) =>
-        !(element.isDraft ?? false) &&
-        !(element.isPrerelease ?? false) &&
-        element.tagName != null &&
-        ReleaseTag.parse(element.tagName!).isFor(desktop: kIsDesktop));
+    Release? release;
+    await for (final element in github.repositories.listReleases(updateRepository)) {
+      if (!(element.isDraft ?? false) &&
+          !(element.isPrerelease ?? false) &&
+          element.tagName != null &&
+          ReleaseTag.parse(element.tagName!).isFor(desktop: kIsDesktop)) {
+        release = element;
+        break;
+      }
+    }
+    if (release == null) {
+      return {
+        'available': false,
+        'latestRelease': Release(),
+        'isDesktopRelease': false,
+        'parsedVersion': {'version': '', 'code': '', 'build': ''},
+      };
+    }
     final tag = ReleaseTag.parse(release.tagName!);
     final version = tag.version;
     final code = '${tag.code ?? ''}';
@@ -458,14 +465,10 @@ class SettingsService {
 
     String buildNumber = "";
     if (Platform.isAndroid) {
-      buildNumber =
-          FilesystemSvc.packageInfo.buildNumber.lastChars(min(4, FilesystemSvc.packageInfo.buildNumber.length));
-      if (tag.code == null ||
-          tag.code! <= (int.tryParse(buildNumber) ?? 0) ||
-          PrefsSvc.server.getClientUpdateCheckCode() == code ||
-          (Platform.isAndroid && isDesktopRelease)) {
-        available = false;
-      }
+      // Android's version code, the number it compares when installing over the app.
+      buildNumber = FilesystemSvc.packageInfo.buildNumber;
+      available = offersAndroidUpdate(tag,
+          installedCode: int.tryParse(buildNumber) ?? 0, dismissedCode: PrefsSvc.server.getClientUpdateCheckCode());
     } else {
       final latestRelease = Version(
         int.parse(version.split(".")[0]),
@@ -601,7 +604,7 @@ class SettingsService {
                       ? "https://snapcraft.io/bluebubbles"
                       : isFlatpak
                           ? "https://flathub.org/apps/app.bluebubbles.BlueBubbles"
-                          : updateInfo.latestRelease.htmlUrl!;
+                          : downloadUrl(updateInfo.latestRelease)!;
               await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
             },
           ),
@@ -617,6 +620,19 @@ class SettingsService {
     );
   }
 }
+
+/// Where the app looks for new releases: BubbleBeam's own, not upstream BlueBubbles'.
+final updateRepository = RepositorySlug('sdeka1997', 'bluebubbles-app');
+
+/// Whether an Android install should be offered [tag]: a mobile release whose version code is above
+/// the installed one, and not one the user already pressed OK on.
+bool offersAndroidUpdate(ReleaseTag tag, {required int installedCode, required String? dismissedCode}) =>
+    tag.isFor(desktop: false) && tag.code != null && tag.code! > installedCode && dismissedCode != '${tag.code}';
+
+/// The release's APK, so Download starts it straight away; its page when it has none.
+String? downloadUrl(Release release) =>
+    release.assets?.firstWhereOrNull((asset) => asset.name?.endsWith('.apk') ?? false)?.browserDownloadUrl ??
+    release.htmlUrl;
 
 /// A release tag such as `v2.1.6+desktop.96`, `v2.1.5+android.95` or `v2.1.2+92`.
 class ReleaseTag {
