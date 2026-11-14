@@ -629,6 +629,14 @@ final updateRepository = RepositorySlug('sdeka1997', 'bluebubbles-app');
 bool offersAndroidUpdate(ReleaseTag tag, {required int installedCode, required String? dismissedCode}) =>
     tag.isFor(desktop: false) && tag.code != null && tag.code! > installedCode && dismissedCode != '${tag.code}';
 
+/// How often update checks may repeat when the app comes back to the foreground.
+const updateCheckInterval = Duration(hours: 1);
+
+/// Whether update checks are due. They run at startup, but push and location services can keep the
+/// app alive for days, so they also run again on resume once [updateCheckInterval] has passed.
+bool updateCheckDue(DateTime? lastCheck, DateTime now) =>
+    lastCheck == null || now.difference(lastCheck) >= updateCheckInterval;
+
 /// The release's APK, so Download starts it straight away; its page when it has none.
 String? downloadUrl(Release release) =>
     release.assets?.firstWhereOrNull((asset) => asset.name?.endsWith('.apk') ?? false)?.browserDownloadUrl ??

@@ -64,6 +64,35 @@ void main() {
     });
   });
 
+  group('update checks repeat', () {
+    final now = DateTime(2026, 11, 14, 12);
+
+    test('the first time', () {
+      expect(updateCheckDue(null, now), isTrue);
+    });
+
+    test('once an hour has passed since the last check', () {
+      expect(updateCheckDue(now.subtract(const Duration(hours: 1)), now), isTrue);
+      expect(updateCheckDue(now.subtract(const Duration(days: 2)), now), isTrue);
+    });
+
+    test('not sooner', () {
+      expect(updateCheckDue(now.subtract(const Duration(minutes: 59)), now), isFalse);
+      expect(updateCheckDue(now, now), isFalse);
+    });
+
+    test('on resume as well as at startup', () {
+      // The app stays alive in the background for days, so a release published after it started
+      // was never offered until the process happened to restart.
+      final source = File('lib/helpers/backend/startup_tasks.dart').readAsStringSync();
+      final resume = source.substring(source.indexOf('static Future<void> onAppResume'));
+      expect(resume, contains('_runUpdateChecks('));
+      final startup = source.substring(
+          source.indexOf('static Future<void> onStartup'), source.indexOf('static Future<void> onAppResume'));
+      expect(startup, contains('_runUpdateChecks'));
+    });
+  });
+
   test('the check uses these rules', () {
     final source = File('lib/services/backend/settings/settings_service.dart').readAsStringSync();
     final check = source.substring(source.indexOf('Future<Map<String, dynamic>> getAppUpdateDict'),

@@ -447,20 +447,9 @@ class StartupTasks {
     // We don't need to check for updates immediately, so delay it so other
     // code has a chance to run and we don't block the UI thread.
     Logger.info("Scheduling update checks for 30 seconds from now...");
-    Future.delayed(const Duration(seconds: 30), () {
-      Logger.info("Running scheduled update checks...");
-      try {
-        SettingsSvc.checkServerUpdate();
-      } catch (ex, stack) {
-        Logger.warn("Failed to check for server update!", error: ex, trace: stack);
-      }
-
-      try {
-        SettingsSvc.checkClientUpdate();
-      } catch (ex, stack) {
-        Logger.warn("Failed to check for client update!", error: ex, trace: stack);
-      }
-    });
+    // Counts as the latest check, so a resume during those 30 seconds doesn't run it twice.
+    _lastUpdateCheck = DateTime.now();
+    Future.delayed(const Duration(seconds: 30), _runUpdateChecks);
 
     Logger.info("Updating share targets...");
     await ChatsSvc.updateShareTargets();
@@ -586,6 +575,24 @@ class StartupTasks {
     if (kIsDesktop && lifecycle != null) {
       lifecycle.windowFocused = true;
     }
+
+    // The process can outlive many app opens, so startup alone would miss releases published since.
+    if (SettingsSvc.settings.finishedSetup.value && updateCheckDue(_lastUpdateCheck, DateTime.now())) {
+      _runUpdateChecks();
+    }
+  }
+
+  static DateTime? _lastUpdateCheck;
+
+  static void _runUpdateChecks() {
+    Logger.info("Running scheduled update checks...");
+    _lastUpdateCheck = DateTime.now();
+    SettingsSvc.checkServerUpdate().catchError((ex, stack) {
+      Logger.warn("Failed to check for server update!", error: ex, trace: stack);
+    });
+    SettingsSvc.checkClientUpdate().catchError((ex, stack) {
+      Logger.warn("Failed to check for client update!", error: ex, trace: stack);
+    });
   }
 }
 
