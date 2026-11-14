@@ -3,6 +3,7 @@ import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/pages/conversation_list.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/widgets/conversation_list_fab.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/widgets/filters/custom_group_filter_chip_row.dart';
+import 'package:bluebubbles/app/layouts/conversation_list/widgets/header/app_update_banner.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/widgets/header/material_header.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/widgets/tile/list_item.dart';
 import 'package:bluebubbles/app/wrappers/scrollbar_wrapper.dart';
@@ -153,6 +154,8 @@ class _MaterialConversationListState extends State<MaterialConversationList> {
 
                 return Column(
                   children: [
+                    if (!showArchived && !showUnknown)
+                      const Padding(padding: EdgeInsets.only(top: 12), child: AppUpdateBanner()),
                     if (!showArchived && !showUnknown)
                       const CustomGroupFilterChipRow(
                         padding: EdgeInsets.only(left: 12, right: 12, top: 16, bottom: 4),

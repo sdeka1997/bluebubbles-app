@@ -22,30 +22,24 @@ void main() {
     final newer = ReleaseTag.parse('v2.1.2-seq.56+android.80010999');
 
     test('when its build number is above the installed one', () {
-      expect(offersAndroidUpdate(newer, installedCode: 80010992, dismissedCode: null), isTrue);
+      expect(offersAndroidUpdate(newer, installedCode: 80010992), isTrue);
     });
 
     test('compares the whole version code, not its last four digits', () {
       // The old rule compared the tag with the installed code's last four digits (0992), so every
       // release with a longer code looked newer, including older ones.
-      expect(offersAndroidUpdate(ReleaseTag.parse('v2.1.2-seq.55+android.80010900'), installedCode: 80010992,
-              dismissedCode: null),
+      expect(offersAndroidUpdate(ReleaseTag.parse('v2.1.2-seq.55+android.80010900'), installedCode: 80010992),
           isFalse);
     });
 
     test('not when it is the installed build or older', () {
-      expect(offersAndroidUpdate(newer, installedCode: 80010999, dismissedCode: null), isFalse);
-      expect(offersAndroidUpdate(newer, installedCode: 80011000, dismissedCode: null), isFalse);
-    });
-
-    test('not after OK was pressed on it', () {
-      expect(offersAndroidUpdate(newer, installedCode: 80010992, dismissedCode: '80010999'), isFalse);
+      expect(offersAndroidUpdate(newer, installedCode: 80010999), isFalse);
+      expect(offersAndroidUpdate(newer, installedCode: 80011000), isFalse);
     });
 
     test('not for a desktop release or a tag without a build number', () {
-      expect(offersAndroidUpdate(ReleaseTag.parse('v2.1.6+desktop.70000000'), installedCode: 1, dismissedCode: null),
-          isFalse);
-      expect(offersAndroidUpdate(ReleaseTag.parse('v2.1.7'), installedCode: 1, dismissedCode: null), isFalse);
+      expect(offersAndroidUpdate(ReleaseTag.parse('v2.1.6+desktop.70000000'), installedCode: 1), isFalse);
+      expect(offersAndroidUpdate(ReleaseTag.parse('v2.1.7'), installedCode: 1), isFalse);
     });
   });
 
@@ -61,6 +55,55 @@ void main() {
     test('opens the release page when it has no APK', () {
       expect(downloadUrl(Release(htmlUrl: 'https://github.com/r/releases/tag/t', assets: [])),
           'https://github.com/r/releases/tag/t');
+    });
+  });
+
+  group('the APK to install', () {
+    test('is the release asset ending in .apk, with its size', () {
+      final release = Release(assets: [
+        ReleaseAsset(name: 'notes.txt', browserDownloadUrl: 'https://x/notes.txt', size: 10),
+        ReleaseAsset(name: 'BubbleBeam-2.1.2-seq.60.apk', browserDownloadUrl: 'https://x/BubbleBeam.apk', size: 144),
+      ]);
+      expect([apkAsset(release)?.browserDownloadUrl, apkAsset(release)?.size], ['https://x/BubbleBeam.apk', 144]);
+    });
+
+    test('is missing when the release has none', () {
+      expect(apkAsset(Release(assets: [])), isNull);
+    });
+  });
+
+  group('the banner replaces the dialog', () {
+    final service = File('lib/services/backend/settings/settings_service.dart').readAsStringSync();
+    final startup = File('lib/helpers/backend/startup_tasks.dart').readAsStringSync();
+
+    test('no update dialog and no "don\'t offer this version again"', () {
+      expect(service, isNot(contains('"App Update Check"')));
+      final check = service.substring(service.indexOf('Future<Map<String, dynamic>> getAppUpdateDict'),
+          service.indexOf('/// Store listings lag behind'));
+      expect(check, isNot(contains('getClientUpdateCheckCode')));
+    });
+
+    test('Update installs inside the app', () {
+      final install = service.substring(service.indexOf('Future<void> installAppUpdate'));
+      expect(install, contains('OpenFilex.open('));
+      expect(install, contains('application/vnd.android.package-archive'));
+    });
+
+    test('a swiped-away banner comes back when the app is reopened', () {
+      final resume = startup.substring(startup.indexOf('static Future<void> onAppResume'));
+      expect(resume, contains('showUpdateBannerAgain()'));
+    });
+
+    test('the first check runs 5 seconds after startup', () {
+      final onStartup = startup.substring(
+          startup.indexOf('static Future<void> onStartup'), startup.indexOf('static Future<void> onAppResume'));
+      expect(onStartup, contains('Duration(seconds: 5), _runUpdateChecks'));
+    });
+
+    test('Android may ask to install the update', () {
+      final manifest = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+      expect(manifest, contains('android.permission.REQUEST_INSTALL_PACKAGES'));
+      expect(manifest, isNot(contains('REQUEST_INSTALL_PACKAGES" tools:node="remove"')));
     });
   });
 

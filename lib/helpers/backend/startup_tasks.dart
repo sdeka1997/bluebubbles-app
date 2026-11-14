@@ -444,12 +444,11 @@ class StartupTasks {
 
     // Push registration runs in NetworkTasks.onConnect, once the server answers.
 
-    // We don't need to check for updates immediately, so delay it so other
-    // code has a chance to run and we don't block the UI thread.
-    Logger.info("Scheduling update checks for 30 seconds from now...");
-    // Counts as the latest check, so a resume during those 30 seconds doesn't run it twice.
+    // Not immediately, so the chat list can draw first; 5 seconds keeps the banner prompt.
+    Logger.info("Scheduling update checks for 5 seconds from now...");
+    // Counts as the latest check, so a resume during those 5 seconds doesn't run it twice.
     _lastUpdateCheck = DateTime.now();
-    Future.delayed(const Duration(seconds: 30), _runUpdateChecks);
+    Future.delayed(const Duration(seconds: 5), _runUpdateChecks);
 
     Logger.info("Updating share targets...");
     await ChatsSvc.updateShareTargets();
@@ -577,8 +576,9 @@ class StartupTasks {
     }
 
     // The process can outlive many app opens, so startup alone would miss releases published since.
-    if (SettingsSvc.settings.finishedSetup.value && updateCheckDue(_lastUpdateCheck, DateTime.now())) {
-      _runUpdateChecks();
+    if (SettingsSvc.settings.finishedSetup.value) {
+      SettingsSvc.showUpdateBannerAgain();
+      if (updateCheckDue(_lastUpdateCheck, DateTime.now())) _runUpdateChecks();
     }
   }
 

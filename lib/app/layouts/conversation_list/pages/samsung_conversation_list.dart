@@ -4,6 +4,7 @@ import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/pages/conversation_list.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/widgets/conversation_list_fab.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/widgets/filters/custom_group_filter_chip_row.dart';
+import 'package:bluebubbles/app/layouts/conversation_list/widgets/header/app_update_banner.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/widgets/footer/samsung_footer.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/widgets/header/samsung_header.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/widgets/tile/list_item.dart';
@@ -106,6 +107,7 @@ class _SamsungConversationListState extends State<SamsungConversationList> with 
                   controller: controller.samsungScrollController,
                   slivers: [
                     SamsungHeader(parentController: controller),
+                    if (!showArchived && !showUnknown) const SliverToBoxAdapter(child: AppUpdateBanner()),
                     if (!showArchived && !showUnknown)
                       const SliverToBoxAdapter(
                         child: CustomGroupFilterChipRow(

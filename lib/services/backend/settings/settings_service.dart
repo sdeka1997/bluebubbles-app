@@ -18,6 +18,9 @@ import 'package:get/get.dart';
 import 'package:github/github.dart' hide Source;
 import 'package:in_app_update/in_app_update.dart' as play;
 import 'package:local_auth/local_auth.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path/path.dart' show basename, join;
+import 'package:permission_handler/permission_handler.dart' as ph;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:store_checker/store_checker.dart';
 import 'package:bluebubbles/models/models.dart' show ServerDetails, AppUpdateInfo, ServerUpdateInfo;
@@ -37,6 +40,16 @@ class SettingsService {
   bool _canAuthenticate = false;
   bool _showingPapiPopup = false;
   Completer<void> initCompleted = Completer<void>();
+
+  /// The release the chat list's banner offers, or null when the app is up to date.
+  final Rxn<AppUpdateInfo> availableUpdate = Rxn<AppUpdateInfo>();
+
+  /// Set when the banner is swiped away, until the app next comes to the foreground.
+  final RxBool updateBannerDismissed = false.obs;
+
+  /// From 0 to 1 while the update downloads, otherwise null.
+  final Rxn<double> updateProgress = Rxn<double>();
+  final RxBool updateFailed = false.obs;
 
   /// Cached server details. Populated from [PrefsSvc] on startup and refreshed
   /// in the background via [refreshServerDetails]. Access via the [serverDetails]
@@ -467,8 +480,7 @@ class SettingsService {
     if (Platform.isAndroid) {
       // Android's version code, the number it compares when installing over the app.
       buildNumber = FilesystemSvc.packageInfo.buildNumber;
-      available = offersAndroidUpdate(tag,
-          installedCode: int.tryParse(buildNumber) ?? 0, dismissedCode: PrefsSvc.server.getClientUpdateCheckCode());
+      available = offersAndroidUpdate(tag, installedCode: int.tryParse(buildNumber) ?? 0);
     } else {
       final latestRelease = Version(
         int.parse(version.split(".")[0]),
@@ -480,9 +492,7 @@ class SettingsService {
         int.parse(FilesystemSvc.packageInfo.version.split(".")[1]),
         int.parse(FilesystemSvc.packageInfo.version.split(".")[2]),
       );
-      if (current.compareTo(latestRelease) < 0 &&
-          PrefsSvc.server.getClientUpdateCheckCode() != code &&
-          await _isReleaseInStore(latestRelease)) {
+      if (current.compareTo(latestRelease) < 0 && await _isReleaseInStore(latestRelease)) {
         available = true;
       }
     }
@@ -539,7 +549,7 @@ class SettingsService {
           PrefsSvc.server.getClientUpdateCheckCode() == code) {
         return;
       }
-      // Only prompt once per version, same as the GitHub dialog's OK button.
+      // Only prompt once per version.
       await PrefsSvc.server.setClientUpdateCheckCode(code);
       if (await play.InAppUpdate.startFlexibleUpdate() != play.AppUpdateResult.success) return;
       showSnackbar(
@@ -576,48 +586,68 @@ class SettingsService {
     } else {
       updateInfo = await checkForUpdate();
     }
-    if (!updateInfo.available) return;
+    if (Platform.isAndroid && updateProgress.value == null) await _deleteDownloadedUpdates();
+    availableUpdate.value = updateInfo.available ? updateInfo : null;
+  }
 
-    showBBDialog(
-      context: Get.context!,
-      title: "App Update Check",
-      content: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          const SizedBox(height: 15.0),
-          const Text("Updates available:"),
-          const SizedBox(height: 15.0),
-          Text(
-            "Version: ${updateInfo.version}\nRelease Date: ${buildDate(updateInfo.latestRelease.createdAt)}\nRelease Name: ${updateInfo.latestRelease.name}",
-          ),
-        ],
-      ),
-      actions: [
-        if (updateInfo.latestRelease.htmlUrl != null)
-          BBDialogAction(
-            text: "Download",
-            onPressed: () async {
-              final url = isStoreMsix
-                  ? "ms-windows-store://pdp/?productid=9P3XF8KJ0LSM"
-                  : isSnap
-                      ? "https://snapcraft.io/bluebubbles"
-                      : isFlatpak
-                          ? "https://flathub.org/apps/app.bluebubbles.BlueBubbles"
-                          : downloadUrl(updateInfo.latestRelease)!;
-              await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-            },
-          ),
-        BBDialogAction(
-          text: "OK",
-          isDefault: true,
-          onPressed: () async {
-            await PrefsSvc.server.setClientUpdateCheckCode(updateInfo.code);
-            Navigator.of(Get.context!, rootNavigator: true).pop();
-          },
-        ),
-      ],
-    );
+  /// Brings back a banner that was swiped away; called whenever the app returns to the foreground.
+  void showUpdateBannerAgain() => updateBannerDismissed.value = false;
+
+  /// Downloads the update and hands it to Android's installer. Android asks once for permission to
+  /// install apps from BubbleBeam. Desktop installs open the download in the browser or their store.
+  Future<void> installAppUpdate() async {
+    final update = availableUpdate.value;
+    if (update == null || updateProgress.value != null) return;
+    if (!Platform.isAndroid) {
+      final url = isStoreMsix
+          ? "ms-windows-store://pdp/?productid=9P3XF8KJ0LSM"
+          : isSnap
+              ? "https://snapcraft.io/bluebubbles"
+              : isFlatpak
+                  ? "https://flathub.org/apps/app.bluebubbles.BlueBubbles"
+                  : downloadUrl(update.latestRelease);
+      if (url != null) await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      return;
+    }
+
+    final asset = apkAsset(update.latestRelease);
+    updateFailed.value = false;
+    updateProgress.value = 0;
+    try {
+      if (asset == null) throw Exception("Release ${update.version} has no APK");
+      await _deleteDownloadedUpdates();
+      final path = join(FilesystemSvc.appTempPath, "$_updateApkPrefix${update.code}.apk");
+      await Directory(FilesystemSvc.appTempPath).create(recursive: true);
+      await Dio().download(asset.browserDownloadUrl!, path, onReceiveProgress: (received, total) {
+        final size = total > 0 ? total : (asset.size ?? 0);
+        if (size > 0) updateProgress.value = (received / size).clamp(0, 1).toDouble();
+      });
+      if (!await ph.Permission.requestInstallPackages.isGranted) {
+        await ph.Permission.requestInstallPackages.request();
+      }
+      final result = await OpenFilex.open(path, type: "application/vnd.android.package-archive");
+      if (result.type != ResultType.done) throw Exception(result.message);
+      updateProgress.value = null;
+    } catch (e, s) {
+      Logger.warn("Failed to download the app update", error: e, trace: s);
+      updateProgress.value = null;
+      updateFailed.value = true;
+    }
+  }
+
+  static const _updateApkPrefix = "BubbleBeam-update-";
+
+  /// The downloaded APK is only needed until it is installed, and it is about 150 MB.
+  Future<void> _deleteDownloadedUpdates() async {
+    try {
+      final dir = Directory(FilesystemSvc.appTempPath);
+      if (!await dir.exists()) return;
+      await for (final file in dir.list()) {
+        if (file is File && basename(file.path).startsWith(_updateApkPrefix)) await file.delete();
+      }
+    } catch (e, s) {
+      Logger.warn("Failed to delete a downloaded update", error: e, trace: s);
+    }
   }
 }
 
@@ -625,9 +655,13 @@ class SettingsService {
 final updateRepository = RepositorySlug('sdeka1997', 'bluebubbles-app');
 
 /// Whether an Android install should be offered [tag]: a mobile release whose version code is above
-/// the installed one, and not one the user already pressed OK on.
-bool offersAndroidUpdate(ReleaseTag tag, {required int installedCode, required String? dismissedCode}) =>
-    tag.isFor(desktop: false) && tag.code != null && tag.code! > installedCode && dismissedCode != '${tag.code}';
+/// the installed one.
+bool offersAndroidUpdate(ReleaseTag tag, {required int installedCode}) =>
+    tag.isFor(desktop: false) && tag.code != null && tag.code! > installedCode;
+
+/// The release's APK, the file the banner downloads and installs.
+ReleaseAsset? apkAsset(Release release) =>
+    release.assets?.firstWhereOrNull((asset) => (asset.name?.endsWith('.apk') ?? false) && asset.browserDownloadUrl != null);
 
 /// How often update checks may repeat when the app comes back to the foreground.
 const updateCheckInterval = Duration(hours: 1);
@@ -638,9 +672,7 @@ bool updateCheckDue(DateTime? lastCheck, DateTime now) =>
     lastCheck == null || now.difference(lastCheck) >= updateCheckInterval;
 
 /// The release's APK, so Download starts it straight away; its page when it has none.
-String? downloadUrl(Release release) =>
-    release.assets?.firstWhereOrNull((asset) => asset.name?.endsWith('.apk') ?? false)?.browserDownloadUrl ??
-    release.htmlUrl;
+String? downloadUrl(Release release) => apkAsset(release)?.browserDownloadUrl ?? release.htmlUrl;
 
 /// A release tag such as `v2.1.6+desktop.96`, `v2.1.5+android.95` or `v2.1.2+92`.
 class ReleaseTag {
