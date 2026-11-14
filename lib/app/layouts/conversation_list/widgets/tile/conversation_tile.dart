@@ -295,11 +295,20 @@ class _ChatSubtitleState extends CustomState<ChatSubtitle, void, ConversationTil
           ...MessageHelper.buildEmojiText(draftBody, widget.style),
         ]);
       } else {
+        // Previews the app writes ("1 Photo", "You loved …") are italic so they
+        // don't read like typed text; the "You: " prefix stays upright.
+        final described = latestMessage?.previewIsDescribed ?? false;
+        final notDelivered = !iOS && !material && !isDelivered;
+        final bodyStyle = widget.style.copyWith(fontStyle: described || notDelivered ? FontStyle.italic : null);
         subtitleSpan = TextSpan(
-          children: MessageHelper.buildEmojiText(
-            "${!iOS && isFromMe ? "You: " : ""}$_subtitle",
-            widget.style.copyWith(fontStyle: !iOS && !material && !isDelivered ? FontStyle.italic : null),
-          ),
+          children: [
+            if (!iOS && isFromMe)
+              ...MessageHelper.buildEmojiText(
+                "You: ",
+                widget.style.copyWith(fontStyle: notDelivered ? FontStyle.italic : null),
+              ),
+            ...MessageHelper.buildEmojiText(_subtitle, bodyStyle),
+          ],
         );
       }
 

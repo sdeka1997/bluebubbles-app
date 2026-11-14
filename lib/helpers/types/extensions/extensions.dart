@@ -467,4 +467,17 @@ extension MessageNotificationExtension on Message {
     }
     return result;
   }
+
+  /// Whether the chat-list preview is the app describing the message ("1 Photo",
+  /// "You loved “hi”", "Unsent message") rather than text someone typed. False
+  /// only when [getNotificationText] falls through to the message's own text,
+  /// so this follows its branches in the same order.
+  bool get previewIsDescribed {
+    if (isGroupEvent) return true;
+    if (expressiveSendStyleId == "com.apple.MobileSMS.expressivesend.invisibleink") return true;
+    if (isInteractive) return true;
+    if (isNullOrEmpty(fullText) && !hasAttachments && isNullOrEmpty(associatedMessageGuid)) return true;
+    if (!isNullOrEmpty(payloadData?.urlData?.firstOrNull?.title)) return true;
+    return dbAttachments.isNotEmpty || hasAttachments || !isNullOrEmpty(associatedMessageGuid);
+  }
 }

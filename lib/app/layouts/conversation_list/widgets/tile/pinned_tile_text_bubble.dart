@@ -187,9 +187,10 @@ class PinnedTileTextBubbleState extends CustomState<PinnedTileTextBubble, void, 
           AttachmentPreview.canShow(previewAttachment, generateVideoThumbnail: true);
       // Prefer a real "1 Photo" label over the stale "Attachment" fallback when
       // we had to re-query attachments that the cached latest message missed.
-      final label = showPreview
-          ? subtitle
-          : _attachmentLabel(attachments, lastMessage) ?? subtitle;
+      final attachmentLabel = showPreview ? null : _attachmentLabel(attachments, lastMessage);
+      final label = attachmentLabel ?? subtitle;
+      // Italic when the app wrote the preview ("1 Photo", "You loved …").
+      final described = attachmentLabel != null || (lastMessage?.previewIsDescribed ?? false);
 
       final background = getBubbleColors(lastMessage).first.withValues(alpha: 0.95);
       return Align(
@@ -235,7 +236,7 @@ class PinnedTileTextBubbleState extends CustomState<PinnedTileTextBubble, void, 
                         ),
                         child: showPreview
                             ? _previewContent(previewAttachment)
-                            : _subtitleText(label, lastMessage),
+                            : _subtitleText(label, lastMessage, described: described),
                       ),
                     ),
                   ),
@@ -288,13 +289,14 @@ class PinnedTileTextBubbleState extends CustomState<PinnedTileTextBubble, void, 
     );
   }
 
-  Widget _subtitleText(String text, Message? lastMessage) {
+  Widget _subtitleText(String text, Message? lastMessage, {required bool described}) {
     return Text(
       text,
       overflow: TextOverflow.ellipsis,
       maxLines: clampDouble((size ~/ 30).toDouble(), 1, 2).toInt(),
       textAlign: TextAlign.center,
       style: context.theme.textTheme.bodySmall!.copyWith(
+        fontStyle: described ? FontStyle.italic : null,
         fontSize: (size / 12).clamp(
           context.theme.textTheme.bodySmall!.fontSize! * 0.85,
           double.infinity,
