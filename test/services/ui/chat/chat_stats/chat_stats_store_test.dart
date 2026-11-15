@@ -22,6 +22,9 @@ void main() {
       await fixture().message('love', chat, t0 + 3000, from: bob, reactsTo: 'mine1');
       await fixture().message('gone', chat, t0 + 4000, deleted: true);
       await fixture().message('rename', chat, t0 + 5000, itemType: 2);
+      await fixture().message('photo-change', chat, t0 + 5100, itemType: 3, edit: (m) => m.groupActionType = 1);
+      await fixture().message('photo-remove', chat, t0 + 5200, itemType: 3, edit: (m) => m.groupActionType = 2);
+      await fixture().message('photo-state', chat, t0 + 5300, itemType: 3, edit: (m) => m.groupActionType = 3);
       await fixture().message('elsewhere', other, t0 + 6000);
 
       final stats = fixture().store.chatStats(chat);
@@ -43,7 +46,9 @@ void main() {
       expect((await stats.recentTexts(fromMe: true)).toSet(), {'hello there', 'hi'});
       expect(await stats.reactions(), [(type: 'love', participantId: bob.id!)]);
       expect(await stats.textCoverage(), 1.0);
-      expect((await stats.groupEvents()).map((e) => e.dateMillis), [t0 + 5000]);
+      final groupEvents = await stats.groupEvents();
+      expect(groupEvents.map((e) => e.dateMillis), [t0 + 5000, t0 + 5100, t0 + 5200]);
+      expect(groupEvents.where((e) => e.itemType == 3).map((e) => e.groupActionType), [1, 2]);
     });
   });
 

@@ -13,8 +13,18 @@ class Seed {
   final _rows = <(String, Map<String, Object?>)>[];
   final _joins = <(String, List<Object?>)>[];
 
-  void chat(int id, {String? guid, int? latestMessageId, int? latestMs, bool deleted = false, List<int> handles = const []}) {
-    final chat = Chat(id: id, guid: guid ?? 'chat-$id', dateDeleted: deleted ? at(baseMs) : null)
+  void chat(int id,
+      {String? guid,
+      int? latestMessageId,
+      int? latestMs,
+      bool deleted = false,
+      bool unread = false,
+      List<int> handles = const []}) {
+    final chat = Chat(
+        id: id,
+        guid: guid ?? 'chat-$id',
+        dateDeleted: deleted ? at(baseMs) : null,
+        hasUnreadMessage: unread)
       ..dbOnlyLatestMessageDate = latestMs == null ? null : at(latestMs);
     chat.dbLatestMessage.targetId = latestMessageId;
     _rows.add(('chats', chatToRow(chat)));
@@ -43,6 +53,7 @@ class Seed {
     int ms, {
     String? guid,
     int? deliveredMs,
+    int? readMs,
     String? reactionTo,
     bool deleted = false,
     bool isFromMe = true,
@@ -59,6 +70,7 @@ class Seed {
       guid: guid ?? 'm$id',
       dateCreated: at(ms),
       dateDelivered: deliveredMs == null ? null : at(deliveredMs),
+      dateRead: readMs == null ? null : at(readMs),
       associatedMessageGuid: reactionTo,
       associatedMessageType: reactionTo == null ? null : 'love',
       dateDeleted: deleted ? at(ms) : null,

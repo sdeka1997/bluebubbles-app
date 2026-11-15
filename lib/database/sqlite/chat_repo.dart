@@ -52,13 +52,15 @@ class ChatRepo {
 
   /// The live copies of [threadKey], with relations filled.
   Future<List<Chat>> threadCopies(String threadKey) async {
-    final rows = await db.select(
-      'SELECT id FROM chats WHERE thread_key = ? AND date_deleted_us IS NULL ORDER BY id',
-      [threadKey],
-    );
+    final rows = await db.select('SELECT id FROM chats WHERE thread_key = ? AND date_deleted_us IS NULL ORDER BY id', [
+      threadKey,
+    ]);
     final ids = rows.map((row) => row['id'] as int).toList();
     final found = await byIds(ids);
-    return [for (final id in ids) if (found[id] != null) found[id]!];
+    return [
+      for (final id in ids)
+        if (found[id] != null) found[id]!,
+    ];
   }
 
   /// Links [handleId] to empty one-to-one chats whose GUID names [address],
@@ -84,21 +86,30 @@ class ChatRepo {
     return db.snapshot((reader) async {
       final rows = <Map<String, Object?>>[];
       if (after?.latestMessageDateUs != null || after == null) {
-        rows.addAll(await reader.select(
+        rows.addAll(
+          await reader.select(
             after == null
                 ? 'SELECT * FROM chats WHERE date_deleted_us IS NULL AND latest_message_date_us IS NOT NULL '
-                    'ORDER BY latest_message_date_us DESC, id DESC LIMIT ?'
+                      'ORDER BY latest_message_date_us DESC, id DESC LIMIT ?'
                 : 'SELECT * FROM chats WHERE date_deleted_us IS NULL '
-                    'AND (latest_message_date_us, id) < (?, ?) '
-                    'ORDER BY latest_message_date_us DESC, id DESC LIMIT ?',
-            [if (after != null) ...[after.latestMessageDateUs, after.id], limit]));
+                      'AND (latest_message_date_us, id) < (?, ?) '
+                      'ORDER BY latest_message_date_us DESC, id DESC LIMIT ?',
+            [
+              if (after != null) ...[after.latestMessageDateUs, after.id],
+              limit,
+            ],
+          ),
+        );
       }
       if (rows.length < limit) {
         // Undated chats last, as SQLite and ObjectBox both order nulls in a descending sort.
-        rows.addAll(await reader.select(
+        rows.addAll(
+          await reader.select(
             'SELECT * FROM chats WHERE date_deleted_us IS NULL AND latest_message_date_us IS NULL '
             'AND id < ? ORDER BY latest_message_date_us DESC, id DESC LIMIT ?',
-            [after?.latestMessageDateUs == null && after != null ? after.id : _maxId, limit - rows.length]));
+            [after?.latestMessageDateUs == null && after != null ? after.id : _maxId, limit - rows.length],
+          ),
+        );
       }
       final chats = rows.map(chatFromRow).toList();
       await ChatRepo(reader)._fill(chats);
@@ -137,15 +148,20 @@ class ChatRepo {
   Future<void> setParticipants(WriteTx tx, int chatId, Iterable<int> handleIds) async {
     await tx.execute('DELETE FROM chat_handles WHERE chat_id = ?', [chatId]);
     for (final handleId in handleIds.toSet()) {
-      await tx.execute('INSERT INTO chat_handles (chat_id, handle_id) SELECT ?, id FROM handles WHERE id = ?', [chatId, handleId]);
+      await tx.execute('INSERT INTO chat_handles (chat_id, handle_id) SELECT ?, id FROM handles WHERE id = ?', [
+        chatId,
+        handleId,
+      ]);
     }
     tx.markChanged('chat_handles', [chatId]);
   }
 
   Future<void> setUnread(WriteTx tx, Iterable<int> chatIds, bool unread) async {
     for (final chunk in chatIds.toSet().toList().slices(500)) {
-      await tx.execute(
-          'UPDATE chats SET has_unread_message = ? WHERE id IN (${sqlPlaceholders(chunk.length)})', [unread, ...chunk]);
+      await tx.execute('UPDATE chats SET has_unread_message = ? WHERE id IN (${sqlPlaceholders(chunk.length)})', [
+        unread,
+        ...chunk,
+      ]);
     }
   }
 
@@ -180,13 +196,47 @@ class ChatRepo {
     final changed = <int>[];
     for (final chunk in chatIds.toSet().toList().slices(500)) {
       final rows = await tx.select(
-          'SELECT chats.id FROM chats JOIN messages ON messages.id = chats.latest_message_id '
-          'WHERE chats.id IN (${sqlPlaceholders(chunk.length)}) AND coalesce(messages.item_type, 0) != 0',
-          chunk);
+        'SELECT chats.id FROM chats JOIN messages ON messages.id = chats.latest_message_id '
+        'WHERE chats.id IN (${sqlPlaceholders(chunk.length)}) AND coalesce(messages.item_type, 0) != 0',
+        chunk,
+      );
       for (final row in rows) {
         final chatId = row['id'] as int;
         if (await refreshLatest(tx, chatId)) changed.add(chatId);
       }
+    }
+    return changed;
+  }
+
+  /// Repairs chats persisted by older builds with Apple's silent current-photo
+  /// state as their latest row. The candidate join is by both primary keys;
+  /// each candidate then walks only its `messages_chat_time` slice.
+  ///
+  /// Incoming messages normally have no `date_read_us`, even after the chat is
+  /// read, so unread is cleared only when there is no visible incoming unread
+  /// row at all. That is deliberately conservative: a stale badge can survive,
+  /// but a genuine message badge is never erased by this local repair.
+  Future<List<int>> repairGroupPhotoStatePointers(WriteTx tx) async {
+    final candidates = await tx.select(
+      'SELECT c.id, c.has_unread_message FROM chats c '
+      'JOIN messages m ON m.id = c.latest_message_id '
+      'WHERE NOT (${MessageRepo.transcriptVisibleSql})',
+    );
+    final changed = <int>[];
+    for (final row in candidates) {
+      final chatId = row['id'] as int;
+      if (row['has_unread_message'] == 1) {
+        final visibleUnread = await tx.select(
+          'SELECT 1 FROM messages m INDEXED BY messages_chat_time '
+          'WHERE m.chat_id = ? AND m.associated_message_guid IS NULL '
+          'AND m.date_deleted_us IS NULL AND m.date_created_us IS NOT NULL '
+          'AND ${MessageRepo.transcriptVisibleSql} AND m.is_from_me = 0 '
+          'AND m.date_read_us IS NULL LIMIT 1',
+          [chatId],
+        );
+        if (visibleUnread.isEmpty) await setUnread(tx, [chatId], false);
+      }
+      if (await refreshLatest(tx, chatId)) changed.add(chatId);
     }
     return changed;
   }
@@ -215,8 +265,9 @@ class ChatRepo {
 
   /// (latest_message_id, latest_message_date) of [chatId], or null when there is no such chat.
   Future<(int?, DateTime?)?> _pointer(DbReader reader, int chatId) async {
-    final rows =
-        await reader.select('SELECT latest_message_id, latest_message_date_us FROM chats WHERE id = ?', [chatId]);
+    final rows = await reader.select('SELECT latest_message_id, latest_message_date_us FROM chats WHERE id = ?', [
+      chatId,
+    ]);
     if (rows.isEmpty) return null;
     final us = rows.single['latest_message_date_us'] as int?;
     return (rows.single['latest_message_id'] as int?, us == null ? null : DateTime.fromMicrosecondsSinceEpoch(us));
@@ -224,17 +275,19 @@ class ChatRepo {
 
   Future<Message?> _newestIn(DbReader reader, int chatId, {required bool listing}) async {
     final rows = await reader.select(
-        'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? '
-        'AND date_deleted_us IS NULL AND date_created_us IS NOT NULL '
-        '${listing ? 'AND (item_type IS NULL OR item_type = 0) ' : ''}'
-        'ORDER BY sort_at_us DESC, id DESC LIMIT 1',
-        [chatId]);
+      'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? '
+      'AND date_deleted_us IS NULL AND date_created_us IS NOT NULL '
+      '${listing ? 'AND (item_type IS NULL OR item_type = 0) ' : ''}'
+      'ORDER BY sort_at_us DESC, id DESC LIMIT 1',
+      [chatId],
+    );
     return rows.isEmpty ? null : messageFromRow(rows.single);
   }
 
   Future<void> _setLatest(WriteTx tx, int chatId, Message? message) => tx.execute(
-      'UPDATE chats SET latest_message_id = ?, latest_message_date_us = ? WHERE id = ?',
-      [message?.id, message?.dateCreated?.microsecondsSinceEpoch, chatId]);
+    'UPDATE chats SET latest_message_id = ?, latest_message_date_us = ? WHERE id = ?',
+    [message?.id, message?.dateCreated?.microsecondsSinceEpoch, chatId],
+  );
 
   /// `foldServiceTwins` (service_twin_helpers.dart) on SQLite: regroups every
   /// chat (stores changed thread keys), then for each chat of [chats], or whose
@@ -271,16 +324,24 @@ class ChatRepo {
       folded[twin.guid] = canonical;
       if (carryOverThreadSettings(canonical, [twin])) {
         await tx.execute(
-            'UPDATE chats SET is_pinned = ?, pin_index = ?, mute_type = ?, mute_args = ?, is_archived = ?, '
-            'display_name = ?, lock_chat_name = ? WHERE id = ?',
-            [
-              canonical.isPinned, canonical.pinIndex, canonical.muteType, canonical.muteArgs, canonical.isArchived,
-              canonical.displayName, canonical.lockChatName, canonical.id,
-            ]);
+          'UPDATE chats SET is_pinned = ?, pin_index = ?, mute_type = ?, mute_args = ?, is_archived = ?, '
+          'display_name = ?, lock_chat_name = ? WHERE id = ?',
+          [
+            canonical.isPinned,
+            canonical.pinIndex,
+            canonical.muteType,
+            canonical.muteArgs,
+            canonical.isArchived,
+            canonical.displayName,
+            canonical.lockChatName,
+            canonical.id,
+          ],
+        );
       }
       final moved = await tx.select(
-          'UPDATE messages SET apple_chat_guid = coalesce(apple_chat_guid, ?), chat_id = ? WHERE chat_id = ? RETURNING *',
-          [twin.guid, canonical.id, twin.id]);
+        'UPDATE messages SET apple_chat_guid = coalesce(apple_chat_guid, ?), chat_id = ? WHERE chat_id = ? RETURNING *',
+        [twin.guid, canonical.id, twin.id],
+      );
       if (moved.isEmpty) continue;
       if (await keepNewest(tx, canonical.id!, moved.map(messageFromRow))) {
         final (id, date) = (await _pointer(tx, canonical.id!))!;
@@ -290,10 +351,14 @@ class ChatRepo {
     }
     return folded;
   }
+
   Future<List<Chat>> all() async {
     final ids = [for (final row in await db.select('SELECT id FROM chats ORDER BY id')) row['id'] as int];
     final chats = await byIds(ids);
-    return [for (final id in ids) if (chats[id] != null) chats[id]!];
+    return [
+      for (final id in ids)
+        if (chats[id] != null) chats[id]!,
+    ];
   }
 
   Future<void> setHandleIds(WriteTx tx, Map<int, List<int>> handleIdsByChat) async {
@@ -305,5 +370,4 @@ class ChatRepo {
       tx.markChanged('chat_handles', [entry.key]);
     }
   }
-
 }
