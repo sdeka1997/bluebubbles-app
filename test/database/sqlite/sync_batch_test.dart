@@ -32,6 +32,7 @@ Map<String, dynamic> msgMap(
   String? reactsTo,
   List<String> attachments = const [],
   int itemType = 0,
+  int groupActionType = 0,
   int? deliveredMs,
 }) =>
     {
@@ -43,6 +44,7 @@ Map<String, dynamic> msgMap(
       'handle': ?from,
       'handleId': handleId ?? 0,
       'itemType': itemType,
+      'groupActionType': groupActionType,
       if (reactsTo != null) ...{'associatedMessageGuid': 'p:0/$reactsTo', 'associatedMessageType': 'love'},
       if (chat != null) 'chats': [chat],
       'attachments': [for (final a in attachments) {'guid': a, 'mimeType': 'image/jpeg', 'transferName': '$a.jpg'}],
@@ -161,6 +163,47 @@ void main() {
     expect(g2.chat.targetId, (await chats.byGuid('iMessage;+;chat99'))!.id);
   });
 
+  test('a resent photo-state row keeps its stored date, attachment, and visible latest message', () async {
+    await SqliteSyncBatch.bulkSyncData(db, {
+      'messagesData': [
+        msgMap('visible-link', baseMs + 2000, chat: group),
+        msgMap(
+          'photo-state',
+          baseMs + 1000,
+          chat: group,
+          itemType: 3,
+          groupActionType: 3,
+          attachments: ['group-photo'],
+        ),
+      ],
+    });
+
+    final before = (await messages.byGuid('photo-state'))!;
+    expect(before.dateCreated, at(baseMs + 1000));
+    expect(before.dbAttachments.single.guid, 'group-photo');
+    expect((await chats.byGuid('iMessage;+;chat99'))!.latestMessage?.guid, 'visible-link');
+
+    await SqliteSyncBatch.bulkSyncData(db, {
+      'messagesData': [
+        msgMap(
+          'photo-state',
+          baseMs + 9000,
+          chat: group,
+          itemType: 3,
+          groupActionType: 3,
+          attachments: ['group-photo'],
+        ),
+      ],
+    });
+
+    final after = (await messages.byGuid('photo-state'))!;
+    expect(after.dateCreated, at(baseMs + 1000));
+    expect(after.dbAttachments.single.guid, 'group-photo');
+    final storedChat = (await chats.byGuid('iMessage;+;chat99'))!;
+    expect(storedChat.latestMessage?.guid, 'visible-link');
+    expect(storedChat.dbOnlyLatestMessageDate, at(baseMs + 2000));
+  });
+
   test('a top-level chat owns every message of the batch; senders resolve by server ROWID too', () async {
     await SqliteSyncBatch.bulkSyncData(db, {
       'chatData': dm,
@@ -180,7 +223,10 @@ void main() {
     });
     events.clear();
     await SqliteSyncBatch.bulkSyncData(db, {
-      'messagesData': [msgMap('s1', baseMs + 5000, chat: sms)],
+      'messagesData': [
+        msgMap('s1', baseMs + 5000, chat: sms),
+        msgMap('twin-photo-state', baseMs + 6000, chat: sms, itemType: 3, groupActionType: 3),
+      ],
     });
     expect(events, hasLength(1));
     final thread = (await chats.byGuid(dm['guid'] as String))!;
@@ -188,6 +234,8 @@ void main() {
     expect(s1.chat.targetId, thread.id, reason: 'saved straight into the thread');
     expect(s1.appleChatGuid, 'SMS;-;ana@example.com');
     expect(thread.latestMessage?.guid, 's1');
+    expect((await messages.byGuid('twin-photo-state'))!.chat.targetId, thread.id);
+    expect((await messages.newest([thread.id!])).map((m) => m.guid), ['s1', 'd1']);
   });
 
   test('a batch that fails part way writes nothing at all', () async {

@@ -22,6 +22,12 @@ import 'package:dio/dio.dart' as dio;
 bool isStaleRowIdBookmark(int startRowId, int? newestServerRowId) =>
     newestServerRowId != null && newestServerRowId < startRowId;
 
+/// IDs safe to dispatch into an open transcript after a sync page is stored.
+List<int> visibleMessageIds(Iterable<Message> messages) => [
+  for (final message in messages)
+    if (message.id != null && message.isTranscriptVisible) message.id!,
+];
+
 class IncrementalSyncManager extends SyncManager {
   final tag = 'IncrementalSyncManager';
 
@@ -555,7 +561,7 @@ class IncrementalSyncManager extends SyncManager {
       }
 
       // Grouped by chat so the main thread can skip hydrating messages for closed chats.
-      final ids = syncResult.messages.where((m) => m.id != null).map((m) => m.id!).toList();
+      final ids = visibleMessageIds(syncResult.messages);
       if (ids.isNotEmpty) {
         pageMessageIdsByChat[threadGuid] = [...?pageMessageIdsByChat[threadGuid], ...ids];
       }

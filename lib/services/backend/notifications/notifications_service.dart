@@ -307,6 +307,7 @@ class NotificationsService {
   }
 
   Future<void> tryCreateNewMessageNotification(Message message, Chat chat) async {
+    if (!message.isTranscriptVisible) return;
     if ((message.isFromMe ?? false) || !message.handleRelation.hasValue) {
       if (!(message.isFromMe ?? false) && !message.handleRelation.hasValue) {
         Logger.error(

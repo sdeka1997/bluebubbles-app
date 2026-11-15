@@ -354,6 +354,14 @@ class IncomingMessageHandler {
     //    races in while we're playing a sound or sending a notification skips.
     if (saved.guid != null) _markProcessed(saved.guid!);
 
+    // Apple's 3/3 row is stored with its attachment so it can maintain the
+    // chat icon, but it is silent state rather than a transcript message.
+    if (!saved.isTranscriptVisible) {
+      _updateGroupPhotoIcon(c, saved);
+      if (saved.guid != null) _flushPendingUpdate(saved.guid!, c);
+      return;
+    }
+
     // 6. Complete any pending outgoing send-progress tracker.
     if (tempGuid != null && GetIt.I.isRegistered<OutgoingMessageHandler>()) {
       OutgoingMsgHandler.completeSendProgressIfExists(tempGuid, Origin.incomingMessageHandler);
@@ -417,27 +425,27 @@ class IncomingMessageHandler {
     }
 
     // 10.5. Group photo changes — fetch/clear icon from server now that the
-    //       message is safely in the DB.  This runs regardless of isolate mode
-    //       because Chat.getIcon persists to DB; the state update is guarded.
-    if (saved.isGroupPhotoEvent) {
-      if (saved.isGroupPhotoRemoved) {
-        // Photo explicitly removed.
-        if (!isIsolate) {
-          unawaited(ChatsSvc.setChatCustomAvatarPath(c, null));
-        } else {
-          c.customAvatarPath = null;
-          unawaited(c.saveAsync(updateCustomAvatarPath: true));
-        }
-      } else {
-        // Photo added or changed — pull from server.
-        unawaited(Chat.getIcon(c, force: true).then((_) {
-          if (!isIsolate) ChatsSvc.updateChat(c, override: true);
-        }));
-      }
-    }
+    //       message is safely in the DB. This runs regardless of isolate mode.
+    _updateGroupPhotoIcon(c, saved);
 
     // 11. Flush any out-of-order updated-message that arrived before us.
     if (saved.guid != null) _flushPendingUpdate(saved.guid!, c);
+  }
+
+  void _updateGroupPhotoIcon(Chat chat, Message message) {
+    if (!message.isGroupPhotoEvent) return;
+    if (message.isGroupPhotoRemoved) {
+      if (!isIsolate) {
+        unawaited(ChatsSvc.setChatCustomAvatarPath(chat, null));
+      } else {
+        chat.customAvatarPath = null;
+        unawaited(chat.saveAsync(updateCustomAvatarPath: true));
+      }
+      return;
+    }
+    unawaited(Chat.getIcon(chat, force: true).then((_) {
+      if (!isIsolate) ChatsSvc.updateChat(chat, override: true);
+    }));
   }
 
   // ── Updated-message pipeline ────────────────────────────────────────────
@@ -475,6 +483,12 @@ class IncomingMessageHandler {
         tag: _tag,
       );
       await _parkPendingUpdate(payload);
+      return;
+    }
+
+    // Messages may announce the same silent photo-state row again with a new
+    // date. Keep the stored row and never dispatch it into an active transcript.
+    if (m.isGroupPhotoState && existing.isGroupPhotoState && m.guid == existing.guid) {
       return;
     }
 

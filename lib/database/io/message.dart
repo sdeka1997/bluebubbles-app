@@ -158,6 +158,13 @@ class Message {
 
   bool get isGroupPhotoRemoved => itemType == 3 && groupActionType == 2;
 
+  /// Apple's silent current-photo state row. It carries the image used to
+  /// maintain the chat icon, but is not a person changing or removing it.
+  bool get isGroupPhotoState => itemType == 3 && groupActionType == 3;
+
+  /// Whether this row belongs on user-facing message surfaces.
+  bool get isTranscriptVisible => !isGroupPhotoState;
+
   bool get isReply => threadOriginatorGuid != null;
 
   Message({
@@ -741,11 +748,18 @@ class Message {
     existing.service ??= newMessage.service;
     existing.appleChatGuid ??= newMessage.appleChatGuid;
 
+    // Messages can resend the same silent group-photo state row with a fresh
+    // date. Preserve the original state date so storage stays stable too.
+    final sameGroupPhotoState = existing.guid == newMessage.guid &&
+        existing.isGroupPhotoState &&
+        newMessage.isGroupPhotoState;
+
     // Update date created
-    if ((existing.dateCreated == null && newMessage.dateCreated != null) ||
+    if (!sameGroupPhotoState &&
+        ((existing.dateCreated == null && newMessage.dateCreated != null) ||
         (existing.dateCreated != null &&
             newMessage.dateCreated != null &&
-            existing.dateCreated!.millisecondsSinceEpoch < newMessage.dateCreated!.millisecondsSinceEpoch)) {
+            existing.dateCreated!.millisecondsSinceEpoch < newMessage.dateCreated!.millisecondsSinceEpoch))) {
       existing.dateCreated = newMessage.dateCreated;
     }
 

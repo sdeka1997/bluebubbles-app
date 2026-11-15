@@ -213,7 +213,7 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
       }
 
       var isNewer = false;
-      if (messageId != null && checkForMessageText) {
+      if (messageId != null && checkForMessageText && inputMessage.isTranscriptVisible) {
         isNewer = inputMessage.dateCreated!.isAfter(inputLatest.dateCreated!) ||
             (inputMessage.guid != inputLatest.guid && inputMessage.dateCreated == inputLatest.dateCreated);
       }
@@ -340,9 +340,10 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
     return db.read((reader) async {
       final deleted = includeDeleted ? '' : 'AND date_deleted_us IS NULL ';
       final rows = await reader.select(
-        'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? '
-        'AND date_created_us IS NOT NULL $deleted'
-        'ORDER BY date_created_us DESC, id DESC LIMIT ? OFFSET ?',
+        'SELECT m.* FROM messages m INDEXED BY messages_chat_time WHERE m.chat_id = ? '
+        'AND m.date_created_us IS NOT NULL $deleted'
+        'AND ${MessageRepo.transcriptVisibleSql} '
+        'ORDER BY m.date_created_us DESC, m.id DESC LIMIT ? OFFSET ?',
         [chatId, limit == 0 ? -1 : limit, offset],
       );
       final messages = rows.map(messageFromRow).toList();
@@ -435,9 +436,9 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
   @override
   Future<List<Message>> linkMessages(int chatId) async {
     final rows = await db.select(
-        'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? AND date_deleted_us IS NULL '
-        "AND payload_data_json IS NOT NULL AND balloon_bundle_id LIKE '%URLBalloonProvider%' "
-        'ORDER BY date_created_us DESC, id DESC',
+        'SELECT m.* FROM messages m INDEXED BY messages_chat_time WHERE m.chat_id = ? AND m.date_deleted_us IS NULL '
+        "AND m.payload_data_json IS NOT NULL AND m.balloon_bundle_id LIKE '%URLBalloonProvider%' "
+        'AND ${MessageRepo.transcriptVisibleSql} ORDER BY m.date_created_us DESC, m.id DESC',
         [chatId]);
     return rows.map(messageFromRow).toList();
   }
@@ -462,7 +463,8 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
   Future<List<Attachment>> chatAttachments(int chatId) async {
     final rows = await db.select(
         'SELECT a.id FROM attachments a JOIN messages m ON m.id = a.message_id '
-        'WHERE m.chat_id = ? AND m.date_deleted_us IS NULL AND m.date_created_us IS NOT NULL AND a.mime_type IS NOT NULL',
+        'WHERE m.chat_id = ? AND m.date_deleted_us IS NULL AND m.date_created_us IS NOT NULL '
+        'AND ${MessageRepo.transcriptVisibleSql} AND a.mime_type IS NOT NULL',
         [chatId]);
     final found = await attachmentsWithMessages(db, rows.map((r) => r['id'] as int));
     final guids = <String?>{};

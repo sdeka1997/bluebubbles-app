@@ -45,12 +45,16 @@ class MessageRepo {
   /// messages. The partial index holds exactly the rows the first two terms keep.
   static const _timeline = 'FROM messages m INDEXED BY messages_timeline '
       'WHERE m.chat_id = ? AND m.associated_message_guid IS NULL AND m.date_deleted_us IS NULL '
-      'AND m.date_created_us IS NOT NULL AND $_senderKnown';
+      'AND m.date_created_us IS NOT NULL AND $transcriptVisibleSql AND $_senderKnown';
 
   /// The same rows including deleted ones (`includeDeleted`, e.g. Recently Deleted).
   static const _timelineWithDeleted = 'FROM messages m INDEXED BY messages_chat_time '
       'WHERE m.chat_id = ? AND m.associated_message_guid IS NULL '
-      'AND m.date_created_us IS NOT NULL AND $_senderKnown';
+      'AND m.date_created_us IS NOT NULL AND $transcriptVisibleSql AND $_senderKnown';
+
+  /// SQL equivalent of [Message.isTranscriptVisible] for queries with alias `m`.
+  static const transcriptVisibleSql =
+      'NOT (coalesce(m.item_type, 0) = 3 AND coalesce(m.group_action_type, 0) = 3)';
 
   static const _senderKnown = '(m.is_from_me IS NOT 0 OR m.handle_id IS NULL OR m.handle_id = 0 '
       'OR m.original_rowid IS NULL OR m.handle_relation_id IS NOT NULL '
@@ -109,8 +113,8 @@ class MessageRepo {
   /// attachments, newest first.
   Future<List<Message>> bookmarked(int chatId) async {
     final rows = await db.select(
-        'SELECT * FROM messages INDEXED BY messages_bookmarked WHERE chat_id = ? AND is_bookmarked = 1 '
-        'ORDER BY sort_at_us DESC, id DESC',
+        'SELECT m.* FROM messages m INDEXED BY messages_bookmarked WHERE m.chat_id = ? AND m.is_bookmarked = 1 '
+        'AND $transcriptVisibleSql ORDER BY m.sort_at_us DESC, m.id DESC',
         [chatId]);
     final page = rows.map(messageFromRow).toList();
     await attachmentsFor(page);
@@ -168,7 +172,8 @@ class MessageRepo {
   /// unbounded legacy MessageActions query.
   Future<List<Message>> createdAfter(int millisecondsSinceEpoch) async {
     final rows = await db.select(
-      'SELECT * FROM messages WHERE date_created_us > ? ORDER BY id',
+      'SELECT m.* FROM messages m WHERE m.date_created_us > ? '
+      'AND $transcriptVisibleSql ORDER BY m.id',
       [millisecondsSinceEpoch * 1000],
     );
     final messages = rows.map(messageFromRow).toList();
@@ -211,8 +216,9 @@ class MessageRepo {
   Future<List<Message>> thread(String originatorGuid) {
     return db.snapshot((reader) async {
       final rows = await reader.select(
-          'SELECT * FROM messages WHERE thread_originator_guid = ? '
-          'AND associated_message_guid IS NULL AND date_deleted_us IS NULL',
+          'SELECT m.* FROM messages m WHERE m.thread_originator_guid = ? '
+          'AND m.associated_message_guid IS NULL AND m.date_deleted_us IS NULL '
+          'AND $transcriptVisibleSql',
           [originatorGuid]);
       final messages = rows.map(messageFromRow).toList();
       final originator = await MessageRepo(reader).byGuid(originatorGuid);
@@ -241,6 +247,7 @@ class MessageRepo {
         'm.associated_message_guid IS NULL',
         'm.date_deleted_us IS NULL',
         'm.date_created_us IS NOT NULL',
+        transcriptVisibleSql,
         if (chatIds != null) 'm.chat_id IN (${sqlPlaceholders(chatIds.length)})',
         if (isFromMe != null) 'm.is_from_me = ?',
         if (senderHandleId != null) 'm.handle_id = ?',

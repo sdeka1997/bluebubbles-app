@@ -187,7 +187,8 @@ class RelationFill {
           c.participants = c.handles.toList();
         }
         if (latest && !c.dbLatestMessage.isFilled) {
-          c.dbLatestMessage.fill(_messages[c.dbLatestMessage.targetId]);
+          final message = _messages[c.dbLatestMessage.targetId];
+          c.dbLatestMessage.fill(message?.isTranscriptVisible == true ? message : null);
           c.latestMessage = c.dbLatestMessage.target;
         }
       case final Handle h:

@@ -52,6 +52,7 @@ class Seed {
     String? threadOriginator,
     String? text,
     int? itemType,
+    int? groupActionType,
   }) {
     final m = Message(
       id: id,
@@ -67,6 +68,7 @@ class Seed {
       threadOriginatorGuid: threadOriginator,
       text: text ?? 'text $id',
       itemType: itemType,
+      groupActionType: groupActionType,
     );
     m.chat.targetId = chatId;
     m.handleRelation.targetId = handleRelationId;

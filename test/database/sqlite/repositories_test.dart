@@ -95,9 +95,35 @@ void main() {
       final between = MessageKey(MessageKey.of(m5).sortAtUs + 1, 0);
       expect(guids(await messages.around([1], between, before: 1, after: 1)), ['m6', 'm5']);
     });
+
+    test('existing group-photo state is hidden without disturbing adjacent messages or photo events', () async {
+      await (Seed()
+            ..chat(1)
+            ..message(1, 1, baseMs + 1000, guid: 'photo-changed', itemType: 3, groupActionType: 1)
+            ..message(2, 1, baseMs + 2000, guid: 'before-link')
+            ..message(3, 1, baseMs + 3000, guid: 'photo-state', itemType: 3, groupActionType: 3)
+            ..message(4, 1, baseMs + 4000, guid: 'adjacent-link')
+            ..message(5, 1, baseMs + 5000, guid: 'photo-removed', itemType: 3, groupActionType: 2))
+          .into(db);
+
+      expect(
+        guids(await messages.newest([1])),
+        ['photo-removed', 'adjacent-link', 'before-link', 'photo-changed'],
+      );
+    });
   });
 
   group('MessageRepo lookups', () {
+    test('createdAfter excludes silent photo state from the legacy message feed', () async {
+      await (Seed()
+            ..chat(1)
+            ..message(1, 1, baseMs + 1000, guid: 'visible')
+            ..message(2, 1, baseMs + 2000, guid: 'photo-state', itemType: 3, groupActionType: 3))
+          .into(db);
+
+      expect(guids(await messages.createdAfter(baseMs)), ['visible']);
+    });
+
     test('reactionsFor: every associated message of the guids, by server ROWID', () async {
       final seed = Seed()..chat(1);
       seed
@@ -175,6 +201,17 @@ void main() {
       expect(dangling.latestMessage, isNull);
       expect(dangling.handles, isEmpty);
       expect(await chats.byId(42), isNull);
+    });
+
+    test('an existing latest pointer to photo state never becomes a preview', () async {
+      await (Seed()
+            ..chat(1, latestMessageId: 2, latestMs: baseMs + 2000)
+            ..message(1, 1, baseMs + 1000, guid: 'visible')
+            ..message(2, 1, baseMs + 2000, guid: 'photo-state', itemType: 3, groupActionType: 3))
+          .into(db);
+
+      final chat = (await chats.byId(1))!;
+      expect(chat.latestMessage, isNull);
     });
 
     test('listPage: not deleted, newest latest message first, undated last, pages by key', () async {

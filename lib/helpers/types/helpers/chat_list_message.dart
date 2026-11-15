@@ -8,7 +8,7 @@ import 'package:collection/collection.dart';
 // its preview or moves it in the list. Messages counts unread the same way.
 
 /// Whether [message] can be its thread's preview and set its place in the list.
-bool listsThread(Message message) => (message.itemType ?? 0) == 0;
+bool listsThread(Message message) => message.isTranscriptVisible && (message.itemType ?? 0) == 0;
 
 /// Points [thread] at the newest of [messages] that [listsThread]. A thread can
 /// be a copy holding only a rename, and copies folded into it bring newer
