@@ -153,7 +153,11 @@ dependencies:
   secure_application: ^4.1.0 # no linux support
   share_plus: ^12.0.1 # sharing files not supported on Linux, doesn't work properly on Windows
   shared_preferences: ^2.5.3
-  shared_preferences_android: ^2.4.10 # direct dep: Android backend options (keep native-readable SharedPreferences store)
+  # direct dep: Android backend options (keep native-readable SharedPreferences store).
+  # Held below 2.5: 2.5.x registers process-wide and clears that registration when any engine
+  # detaches, which breaks our extra engines (DartWorker adds SharedPreferencesPlugin to its own
+  # FlutterEngine). Upstream needed a wrapper plugin for it (3d0150fd); port that before lifting this.
+  shared_preferences_android: ">=2.4.10 <2.5.0"
   shared_preferences_platform_interface: ^2.4.2 # custom desktop store (see desktop_shared_preferences_store.dart)
   shimmer: ^3.0.0
   simple_animations: ^5.1.0
