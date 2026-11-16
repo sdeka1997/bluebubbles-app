@@ -29,6 +29,18 @@ void main() {
     expect(SendMessageInterface.chatLookup(chat), {'groupId': 'A1B2C3', 'service': 'iMessage'});
   });
 
+  test('a merged iMessage/SMS DM sends its one participant once', () {
+    final chat = Chat.fromMap({
+      'guid': 'any;-;+155****1111',
+      'participants': [
+        {'address': '+155****1111', 'service': 'iMessage'},
+        {'address': '+155****1111', 'service': 'SMS'},
+      ],
+    });
+
+    expect(SendMessageInterface.chatLookup(chat)['participants'], ['+155****1111']);
+  });
+
   test('a chat without a group id still sends its participant and service', () {
     final chat = Chat.fromMap({
       'guid': 'SMS;-;+15550001111',

@@ -34,9 +34,12 @@ class ChatBackupIdentifier {
   }
 
   static ChatBackupMatch resolve(Map<String, dynamic> entry, List<Chat> pool) {
-    final type = entry["type"] as String?;
     final displayName = entry["displayName"] as String?;
-    final participants = List<String>.from(entry["participants"] as List? ?? []);
+    final participants = List<String>.from(entry["participants"] as List? ?? []).toSet().toList();
+    // Backups from before people were counted saved a merged iMessage/SMS DM as a
+    // group naming its one address twice.
+    final savedType = entry["type"] as String?;
+    final type = savedType == "group" && participants.length == 1 ? "dm" : savedType;
 
     switch (type) {
       case "namedGroup":

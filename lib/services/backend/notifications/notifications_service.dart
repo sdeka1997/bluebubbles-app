@@ -273,7 +273,7 @@ class NotificationsService {
             : await avatarAsBytes(
                 participantsOverride: !chat.isGroup
                     ? null
-                    : chat.handles.where((e) => e.address == message.handleRelation.target?.address).toList(),
+                    : chat.people.where((e) => e.address == message.handleRelation.target?.address).toList(),
                 chat: chat,
                 quality: 256);
         if (chatIcon.isEmpty) chatIcon = personIcon;

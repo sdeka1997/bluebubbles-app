@@ -14,7 +14,7 @@ class SendMessageInterface {
   /// a new Mac or a chat.db reset): the Messages group id, the service and, for 1:1 chats
   /// only, the participant's address.
   static Map<String, dynamic> chatLookup(Chat chat) {
-    final addresses = (chat.handles.isEmpty ? chat.participants : chat.handles).map((h) => h.address).toList();
+    final addresses = Chat.peopleIn(chat.handles.isEmpty ? chat.participants : chat.handles).map((h) => h.address).toList();
     return {
       if (chat.groupId?.isNotEmpty ?? false) 'groupId': chat.groupId,
       if (chat.guid.contains(';-;') && addresses.length == 1) 'participants': addresses,

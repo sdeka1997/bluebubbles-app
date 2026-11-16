@@ -93,7 +93,7 @@ class ContactAvatarGroupWidget extends StatelessWidget {
         customAvatarPath = chatState.customAvatarPath.value;
       } else {
         // Static path: read once from the handles override or chat param — no subscription created.
-        participants = _sortedHandles(handles ?? chat?.handles.toList() ?? []);
+        participants = _sortedHandles(handles ?? chat?.people ?? []);
         customAvatarPath = handles != null ? null : chat?.customAvatarPath;
       }
 

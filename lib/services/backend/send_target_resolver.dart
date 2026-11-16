@@ -39,7 +39,8 @@ class SendTargetResolver {
       // Ask the Mac only when the answer can change the pick: the thread has
       // chats on several services, or it's a 1:1 that may need an iMessage chat.
       final ask = copies.map((c) => c.service).toSet().length > 1 || (!thread.isGroup && !hasIMessage);
-      final addresses = (thread.handles.isEmpty ? thread.participants : thread.handles).map((h) => h.address).toList();
+      final addresses =
+          Chat.peopleIn(thread.handles.isEmpty ? thread.participants : thread.handles).map((h) => h.address).toList();
       final answers = await Future.wait(addresses.map((a) async => ask ? await _isOnIMessage(a) : null));
       final members = [for (var i = 0; i < addresses.length; i++) (address: addresses[i], iMessage: answers[i])];
       final target = pickSendTarget(
