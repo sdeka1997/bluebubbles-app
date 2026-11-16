@@ -30,9 +30,10 @@ Future<bool> saveNewServerUrl(String newServerUrl,
     //
     // A stale override still has to be caught somewhere, and this is the wrong
     // place for it: blanket-clearing can't tell "wrong network" from "unchanged
-    // address". That case belongs to _runUrlDiscovery(), which re-probes via
+    // address". SocketService drops it when the LAN connection fails (a connection
+    // error or two missed heartbeats), and _runUrlDiscovery() re-probes via
     // NetworkTasks.detectLocalhost() when the address hasn't moved and an override
-    // is set — and falls back to the remote URL when the probe fails.
+    // is set — falling back to the remote URL when the probe fails.
     if (addressChanged) {
       NetworkTasks.setOriginOverride(null);
     }
