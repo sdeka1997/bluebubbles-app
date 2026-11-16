@@ -66,6 +66,31 @@ void main() {
     expect(chatKeysFor(chat('iMessage;-;a', style: 45, people: [handle('a')])).isGroup, isFalse);
   });
 
+  test('a style-45 chat with two service handles for one address is one person', () {
+    final merged = chat(
+      'any;-;jiahui@example.com',
+      style: 45,
+      people: [
+        Handle(address: 'jiahui@example.com', service: 'iMessage'),
+        Handle(address: 'jiahui@example.com', service: 'SMS'),
+      ],
+    );
+
+    expect(merged.isGroup, isFalse);
+    expect(merged.getChatCreatorSubtitle(), isNot(contains(' & ')));
+    expect(chatKeysFor(merged).isGroup, isFalse);
+    expect(chatKeysFor(merged).people, {'address:jiahui@example.com'});
+  });
+
+  test('only phone-like addresses are compared by their digits', () {
+    final formatted = chat('x', people: [handle('+1 (555) 000-0001'), handle('+15550000001')]);
+    expect(formatted.people, hasLength(1));
+    final businesses = chat('y', people: [handle('urn:biz:shop-123'), handle('urn:biz:bank-123')]);
+    expect(businesses.people, hasLength(2));
+    final emails = chat('z', people: [handle('A@Example.com'), handle('a@example.com ')]);
+    expect(emails.people, hasLength(1));
+  });
+
   test('addresses compare the way Messages formats them', () {
     final a = chatKeysFor(chat('x', style: 45, people: [handle('+15550000001')]));
     final b = chatKeysFor(chat('y', style: 45, people: [handle('+1 (555) 000-0001')]));

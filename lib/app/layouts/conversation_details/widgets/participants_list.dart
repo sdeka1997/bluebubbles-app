@@ -32,7 +32,7 @@ class _ParticipantsListState extends State<ParticipantsList> with ThemeHelpers {
   List<Handle> get _currentParticipants {
     final state = _chatState;
     if (state != null) return state.participants.map((hs) => hs.handle).toList();
-    return widget.chat.handles.toList();
+    return widget.chat.people;
   }
 
   bool get shouldShowMore => _currentParticipants.length > 5;

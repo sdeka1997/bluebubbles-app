@@ -574,7 +574,7 @@ class NotificationsService {
   /// and custom avatars get a generated composite written to a temp file, or to
   /// [persistPath] when the file must outlive this run (appTemp is wiped on startup).
   Future<(String, bool)> _chatAvatarPath(Chat chat, {String? persistPath}) async {
-    if (chat.handles.length == 1 && chat.customAvatarPath == null) {
+    if (chat.people.length == 1 && chat.customAvatarPath == null) {
       final contactV2 = chat.handles.first.contactsV2.firstOrNull;
       // A reserved character in the file name means a row written before avatar
       // names were sanitized (macOS contact IDs end in `:ABPerson`). Windows can

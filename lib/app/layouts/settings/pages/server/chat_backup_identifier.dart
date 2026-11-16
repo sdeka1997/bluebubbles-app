@@ -16,11 +16,11 @@ class ChatBackupMatch {
 /// participant address, or full participant address set.
 class ChatBackupIdentifier {
   static Map<String, dynamic> export(Chat chat) {
-    final addresses = chat.handles.map((h) => h.address).toList();
+    final addresses = chat.people.map((h) => h.address).toList();
     final String type;
     if (!isNullOrEmpty(chat.displayName)) {
       type = "namedGroup";
-    } else if (chat.handles.length == 1) {
+    } else if (addresses.length == 1) {
       type = "dm";
     } else {
       type = "group";
@@ -53,7 +53,7 @@ class ChatBackupIdentifier {
         }
         final address = participants.first;
         final candidates = pool
-            .where((c) => c.handles.length == 1 && ChatCreatorUtils.addressesMatch(address, c.handles.first.address))
+            .where((c) => c.people.length == 1 && ChatCreatorUtils.addressesMatch(address, c.handles.first.address))
             .toList();
         if (candidates.length == 1) {
           return ChatBackupMatch(match: candidates.first);

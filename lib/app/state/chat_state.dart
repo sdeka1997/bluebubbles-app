@@ -124,7 +124,7 @@ class ChatState {
             (SettingsSvc.settings.redactedMode.value && SettingsSvc.settings.hideAttachments.value).obs {
     // Populate participants from handles and wire up ever() listeners so the
     // chatCreatorSubtitle stays live when contacts sync.
-    participants.addAll(chat.handles.map((h) => HandleSvc.getOrCreateHandleState(h)));
+    participants.addAll(chat.people.map((h) => HandleSvc.getOrCreateHandleState(h)));
     for (final hs in participants) {
       _participantWorkers.add(
         ever(hs.displayName, (_) {
@@ -373,7 +373,7 @@ class ChatState {
   /// then recompute subtitle. Pass [handles] when calling from [updateFromChat] so
   /// the fresh DB handles are used instead of the potentially stale cached [ToMany].
   void _updateParticipantsInternal([List<Handle>? handles]) {
-    final newHandles = (handles ?? chat.handles).toList();
+    final newHandles = Chat.peopleIn(handles ?? chat.handles);
 
     // Skip the RxList rebuild when the participant set is unchanged — clearing
     // and re-adding notifies every watching Obx (avatars, titles) even though

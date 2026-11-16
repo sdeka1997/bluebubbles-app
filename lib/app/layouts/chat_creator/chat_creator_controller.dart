@@ -108,7 +108,7 @@ class ChatCreatorController extends StatefulController {
       filteredChats.value = result.chats;
       filteredContacts.value = result.contacts;
       if (text.isNotEmpty) {
-        filteredChats.sort((a, b) => a.handles.length.compareTo(b.handles.length));
+        filteredChats.sort((a, b) => a.people.length.compareTo(b.people.length));
       }
     });
   }
@@ -317,10 +317,11 @@ class ChatCreatorController extends StatefulController {
     final searchList = checkDeleted ? ChatsSvc.allChats : _allChats;
     final matched = <Chat>[];
     for (final c in searchList) {
-      if (c.handles.length != selectedContacts.length) continue;
+      final people = c.people;
+        if (people.length != selectedContacts.length) continue;
       int matches = 0;
       for (final contact in selectedContacts) {
-        for (final participant in c.handles) {
+        for (final participant in people) {
           if (contact.address.isEmail && !participant.address.isEmail) continue;
           if (contact.address == participant.address) {
             matches++;

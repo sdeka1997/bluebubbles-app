@@ -149,7 +149,31 @@ class Chat {
 
   RxDouble sendProgress = 0.0.obs;
 
+  /// Every handle linked to this chat. A person can appear here twice: macOS links a merged iMessage/SMS
+  /// conversation to both service handles for the same address.
+  ///
+  /// Use [people] for member-facing logic. Keep [handles] for database identity, service routing, sync and
+  /// finding the exact handle a message came from.
   final handles = RelList<Handle>();
+
+  /// Members of this chat, one handle per normalized address, in [handles] order.
+  List<Handle> get people => peopleIn(handles);
+
+  static List<Handle> peopleIn(Iterable<Handle> handles) {
+    final seen = <String>{};
+    return handles.where((handle) => seen.add(_personAddress(handle.address))).toList();
+  }
+
+  /// Phone numbers compare by digits (Messages formats one number several ways) and emails case-insensitively.
+  /// Anything else, such as a business chat id, compares as written: stripping it to digits would make
+  /// unrelated ids equal.
+  static String _personAddress(String address) {
+    if (address.contains('@')) return ContactV2.normalizeEmail(address);
+    if (_phoneLike.hasMatch(address)) return ContactV2.normalizePhoneNumber(address);
+    return address.trim().toLowerCase();
+  }
+
+  static final _phoneLike = RegExp(r'^\s*\+?[\d\s().-]*\d[\d\s().-]*$');
 
   // Do not use this field directly, use the handles ToMany relation instead.
   // This should only really be used for serialization/deserialization purposes.
@@ -333,28 +357,29 @@ class Chat {
 
   /// Get a chat's title
   String getChatCreatorSubtitle() {
-    final count = handles.length;
+    final people = this.people;
+    final count = people.length;
     if (count == 0) {
       if (chatIdentifier!.startsWith("urn:biz")) {
         return "Business Chat";
       }
       return chatIdentifier!;
     } else if (count == 1) {
-      return handles.first.displayName;
+      return people.first.displayName;
     }
 
     if (count <= 4) {
       final buffer = StringBuffer();
       for (int i = 0; i < count; i++) {
         if (i > 0) buffer.write(i == count - 1 ? ' & ' : ', ');
-        buffer.write(handles[i].shortName);
+        buffer.write(people[i].shortName);
       }
       return buffer.toString();
     } else {
       final buffer = StringBuffer();
       for (int i = 0; i < 3; i++) {
         if (i > 0) buffer.write(', ');
-        buffer.write(handles[i].shortName);
+        buffer.write(people[i].shortName);
       }
       buffer.write(' & ${count - 3} others');
       return buffer.toString();
@@ -373,7 +398,7 @@ class Chat {
     if (isRcsBusiness) return true;
 
     /// Filter unknown senders & sender doesn't have a contact, then don't notify
-    if (SettingsSvc.settings.filterUnknownSenders.value && handles.length == 1 && handles.first.contactsV2.isEmpty) {
+    if (SettingsSvc.settings.filterUnknownSenders.value && people.length == 1 && people.first.contactsV2.isEmpty) {
       return true;
 
       /// Check if global text detection is on and notify accordingly
@@ -683,8 +708,9 @@ class Chat {
   String composerLabel([Message? latestMessage]) =>
       ChatServiceType.current(service, latestMessageService: latestMessage?.service ?? latestMessage?.getHandle()?.service).composerLabel;
 
-  // Check style first so handles isn't required to be evaluated, which will incur a DB lookup.
-  bool get isGroup => style == 43 || handles.length > 1;
+  /// Apple style is authoritative when present (43 group, 45 one-to-one). Without it, count people rather than
+  /// raw service handles: a merged iMessage/SMS conversation can link two handles for one address.
+  bool get isGroup => style != null ? style == 43 : people.length > 1;
 
   Chat merge(Chat other) {
     id ??= other.id;

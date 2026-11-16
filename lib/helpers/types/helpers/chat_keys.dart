@@ -7,7 +7,7 @@ ChatKeys chatKeysFor(Chat chat) {
   return ChatKeys(
     guid: chat.guid,
     chatIdentifier: chat.chatIdentifier,
-    isGroup: chat.style == 43 || chat.handles.length > 1,
+    isGroup: chat.isGroup,
     groupIds: {
       if (chat.groupId != null) chat.groupId!,
       if (chat.originalGroupId != null) chat.originalGroupId!,
