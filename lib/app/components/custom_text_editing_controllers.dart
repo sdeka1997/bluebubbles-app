@@ -45,13 +45,28 @@ class Mentionable {
 }
 
 class SpellCheckTextEditingController extends TextEditingController {
-  SpellCheckTextEditingController({super.text, this.focusNode}) {
+  SpellCheckTextEditingController({
+    super.text,
+    this.focusNode,
+    @visibleForTesting LanguageCheckService? languageCheckService,
+  }) {
     assert(focusNode != null || !(kIsDesktop || kIsWeb));
-    _languageCheckService = DebounceLangToolService(
-        LangToolService(LanguageToolClient(language: SettingsSvc.settings.spellcheckLanguage.value)),
-        const Duration(milliseconds: 1000));
+    _languageCheckService =
+        languageCheckService ??
+        DebounceLangToolService(
+          LangToolService(LanguageToolClient(language: SettingsSvc.settings.spellcheckLanguage.value)),
+          const Duration(milliseconds: 1000),
+        );
     _processMistakes(text);
   }
+
+  /// Spellcheck sends the text to LanguageTool's servers. Only desktop and web
+  /// offer the setting, so elsewhere it never runs, whatever the stored value
+  /// (which defaults to on).
+  static bool get supported => debugSupportedOverride ?? (kIsDesktop || kIsWeb);
+
+  @visibleForTesting
+  static bool? debugSupportedOverride;
 
   /// focusNode
   /// Required for spellcheck replacement to work
@@ -149,8 +164,11 @@ class SpellCheckTextEditingController extends TextEditingController {
     super.selection = newSelection;
   }
 
+  bool _disposed = false;
+
   @override
   void dispose() {
+    _disposed = true;
     _languageCheckService.dispose();
     _mistakeTooltip?.remove();
     _mistakeTooltip = null;
@@ -195,7 +213,7 @@ class SpellCheckTextEditingController extends TextEditingController {
   }
 
   Future<void> _processMistakes(String newText) async {
-    if (!SettingsSvc.settings.spellcheck.value || newText.isEmpty) {
+    if (!supported || !SettingsSvc.settings.spellcheck.value || newText.isEmpty) {
       _mistakes.clear();
       _mistakeTooltip?.remove();
       _mistakeTooltip = null;
@@ -208,7 +226,8 @@ class SpellCheckTextEditingController extends TextEditingController {
     final mistakesWrapper = await _latestResponseService.processLatestOperation(
       () => _languageCheckService.findMistakes(newText),
     );
-    if (mistakesWrapper == null || !mistakesWrapper.hasResult) return;
+    // The field may have closed while LanguageTool answered.
+    if (_disposed || mistakesWrapper == null || !mistakesWrapper.hasResult) return;
 
     final mistakes = mistakesWrapper.result();
     _fetchError = mistakesWrapper.error;
