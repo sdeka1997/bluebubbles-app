@@ -20,7 +20,7 @@ class _Registrations extends CloudMessagingService {
 
 class _NoSync extends SyncService {
   @override
-  Future<void> startIncrementalSync({bool useGlobalIsolate = false}) async {}
+  Future<void> startIncrementalSync({bool useGlobalIsolate = false, bool catchUp = false}) async {}
 }
 
 void main() {

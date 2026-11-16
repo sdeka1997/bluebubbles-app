@@ -138,7 +138,7 @@ IncomingMessageHandler get IncomingMsgHandler => GetIt.I<IncomingMessageHandler>
 ///
 /// 2. **Out-of-order event buffering** — an `updated-message` event that
 ///    arrives before its `new-message` counterpart is held in a parking map for
-///    up to [_pendingUpdateTimeout].  Once the new-message is processed, the
+///    up to [pendingUpdateTimeout].  Once the new-message is processed, the
 ///    parked update is flushed immediately.
 ///
 /// 3. **Chat hydration** — fetches full participant data when the chat payload
@@ -160,11 +160,20 @@ class IncomingMessageHandler {
   final LinkedHashSet<String> _processedGuids = LinkedHashSet();
   static const int _processedGuidLimit = 100;
 
+  /// GUIDs whose only processed copy came from a push, which the server may have trimmed
+  /// to fit FCM's 4 KB limit (dropping formatting, mentions and link data).
+  final Set<String> _pushOnlyGuids = {};
+
+  IncomingMessageHandler({this.pendingUpdateTimeout = const Duration(seconds: 10)});
+
   // ── Out-of-order buffering ───────────────────────────────────────────────
 
   /// Keyed by the server-assigned (real) message GUID.
   final Map<String, _PendingUpdate> _pendingUpdates = {};
-  static const Duration _pendingUpdateTimeout = Duration(seconds: 10);
+  final Duration pendingUpdateTimeout;
+
+  @visibleForTesting
+  int get pendingUpdateCount => _pendingUpdates.length;
 
   /// Hard cap on buffered pending updates.  If exceeded, the oldest entry is
   /// evicted (timer cancelled + warning) to prevent unbounded memory growth
@@ -310,6 +319,7 @@ class IncomingMessageHandler {
     _pendingUpdates.clear();
     _inflightByGuid.clear();
     _processedGuids.clear();
+    _pushOnlyGuids.clear();
     // Fail any payloads still waiting in the queue so their futures don't hang.
     while (_incomingQueue.isNotEmpty) {
       _incomingQueue.removeFirst().completer.completeError(
@@ -331,8 +341,11 @@ class IncomingMessageHandler {
       tag: _tag,
     );
 
-    // 1. Deduplication — skip real GUIDs we have already fully handled.
-    if (m.guid != null && _hasProcessed(m.guid!)) {
+    // 1. Deduplication — skip real GUIDs we have already fully handled. A push copy
+    //    can be trimmed to fit FCM, so the first copy from anywhere else still goes on
+    //    to fill in what the push left out.
+    final fromPush = payload.source == MessageSource.methodChannel;
+    if (m.guid != null && _isDuplicate(m.guid!, fromPush: fromPush)) {
       Logger.debug('[new-message] skipping already-processed ${m.guid}', tag: _tag);
       return;
     }
@@ -369,7 +382,7 @@ class IncomingMessageHandler {
 
     // 5. Mark as processed before any async I/O so a duplicate delivery that
     //    races in while we're playing a sound or sending a notification skips.
-    if (saved.guid != null) _markProcessed(saved.guid!);
+    if (saved.guid != null) _markProcessed(saved.guid!, fromPush: fromPush);
 
     // Apple's 3/3 row is stored with its attachment so it can maintain the
     // chat icon, but it is silent state rather than a transcript message.
@@ -590,8 +603,9 @@ class IncomingMessageHandler {
 
     if (alreadyPresent != null) {
       // The replacement record already exists (parallel delivery).
-      // Only overwrite if the incoming payload is newer.
-      if (replacement.isNewerThan(alreadyPresent)) {
+      // Overwrite when the incoming payload is newer, or when it completes a push
+      // copy the server trimmed to fit FCM.
+      if (replacement.isNewerThan(alreadyPresent) || replacement.fillsGapsIn(alreadyPresent)) {
         await Message.replaceMessage(replacement.guid, replacement);
       }
 
@@ -780,7 +794,7 @@ class IncomingMessageHandler {
   /// always carries the most up-to-date data.  The expiry timer is reset so the
   /// fresh update gets its own full timeout window.
   ///
-  /// If no matching new-message arrives within [_pendingUpdateTimeout], the
+  /// If no matching new-message arrives within [pendingUpdateTimeout], the
   /// parked payload is discarded with a warning.
   Future<void> _parkPendingUpdate(IncomingPayload payload) async {
     final guid = payload.message.guid;
@@ -809,30 +823,22 @@ class IncomingMessageHandler {
       final oldest = _pendingUpdates.remove(oldestGuid)!;
       oldest.expiryTimer?.cancel();
       Logger.warn(
-        'Pending-update buffer full ($_maxPendingUpdates) — evicting oldest entry $oldestGuid, processing anyway',
+        'Pending-update buffer full ($_maxPendingUpdates) — dropping oldest entry $oldestGuid and catching up',
         tag: _tag,
       );
-      unawaited(
-        handle(oldest.payload, front: true).catchError((e, st) {
-          Logger.warn('Failed to process evicted buffered update for $oldestGuid', error: e, trace: st, tag: _tag);
-        }),
-      );
+      _catchUpLostMessages();
     }
 
     final pending = _PendingUpdate(payload: payload);
-    pending.expiryTimer = Timer(_pendingUpdateTimeout, () {
+    pending.expiryTimer = Timer(pendingUpdateTimeout, () {
       final expired = _pendingUpdates.remove(guid);
       if (expired != null) {
         Logger.warn(
-          'Buffered update for $guid expired after ${_pendingUpdateTimeout.inSeconds}s '
-          'without a matching new-message — processing anyway',
+          'Buffered update for $guid expired after ${pendingUpdateTimeout.inSeconds}s '
+          'without a matching new-message — catching up',
           tag: _tag,
         );
-        unawaited(
-          handle(expired.payload, front: true).catchError((e, st) {
-            Logger.warn('Failed to process expired buffered update for $guid', error: e, trace: st, tag: _tag);
-          }),
-        );
+        _catchUpLostMessages();
       }
     });
     _pendingUpdates[guid] = pending;
@@ -860,11 +866,34 @@ class IncomingMessageHandler {
     );
   }
 
+  /// An update whose message never arrived means its new-message was lost. Replaying the
+  /// update would only park it again, so drop it and let an incremental sync fetch the
+  /// message, update included. SyncService coalesces repeated requests.
+  void _catchUpLostMessages() {
+    if (GetIt.I.isRegistered<SyncService>()) unawaited(SyncSvc.startIncrementalSync(catchUp: true));
+  }
+
   // ── Deduplication helpers ────────────────────────────────────────────────
 
   bool _hasProcessed(String guid) => _processedGuids.contains(guid);
 
-  void _markProcessed(String guid) {
+  /// A GUID processed from a push stays open to one copy from anywhere else.
+  bool _isDuplicate(String guid, {required bool fromPush}) =>
+      _hasProcessed(guid) && (fromPush || !_pushOnlyGuids.remove(guid));
+
+  @visibleForTesting
+  void debugMarkProcessed(String guid, {required bool fromPush}) => _markProcessed(guid, fromPush: fromPush);
+
+  @visibleForTesting
+  bool debugIsDuplicate(String guid, {required bool fromPush}) => _isDuplicate(guid, fromPush: fromPush);
+
+  void _markProcessed(String guid, {bool fromPush = false}) {
+    if (fromPush) {
+      if (_pushOnlyGuids.length >= _processedGuidLimit) _pushOnlyGuids.retainWhere(_hasProcessed);
+      _pushOnlyGuids.add(guid);
+    } else {
+      _pushOnlyGuids.remove(guid);
+    }
     if (_processedGuids.contains(guid)) return;
     _processedGuids.add(guid);
     // Evict oldest entries when the ring-buffer limit is reached.

@@ -927,6 +927,15 @@ class Message {
     return false;
   }
 
+  /// Whether this copy carries fields [stored] lacks. The server drops attributedBody,
+  /// messageSummaryInfo, payloadData and metadata to fit a push under FCM's 4 KB limit, so
+  /// the complete copy that follows must still be written even when it is no newer.
+  bool fillsGapsIn(Message stored) =>
+      (attributedBody.isNotEmpty && stored.attributedBody.isEmpty) ||
+      (messageSummaryInfo.isNotEmpty && stored.messageSummaryInfo.isEmpty) ||
+      (payloadData != null && stored.payloadData == null) ||
+      (metadata != null && stored.metadata == null);
+
   Map<String, dynamic> toMap() {
     return {
       "ROWID": id,

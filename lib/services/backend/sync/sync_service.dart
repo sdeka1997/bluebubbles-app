@@ -140,24 +140,32 @@ class SyncService {
     }
   }
 
-  Future<void> startIncrementalSync({bool useGlobalIsolate = false}) async {
-    if (isIncrementalSyncing.value) return;
-
+  /// A catch-up request is never lost to a running sync or its cooldown. Multiple
+  /// requests share one delayed run.
+  Future<void> startIncrementalSync({bool useGlobalIsolate = false, bool catchUp = false}) async {
     final now = DateTime.now();
-    if (_lastIncrementalSyncTimestamp != null &&
-        now.difference(_lastIncrementalSyncTimestamp!) < _incrementalSyncCooldown) {
+    final sinceLast = _lastIncrementalSyncTimestamp == null ? null : now.difference(_lastIncrementalSyncTimestamp!);
+    if (isIncrementalSyncing.value) {
+      if (catchUp) _scheduleCatchUp(_incrementalSyncCooldown - (sinceLast ?? Duration.zero), useGlobalIsolate);
+      return;
+    }
+
+    if (sinceLast != null && sinceLast < _incrementalSyncCooldown) {
       Logger.debug(
-        'Skipping incremental sync... Last ran ${now.difference(_lastIncrementalSyncTimestamp!).inSeconds}s ago '
-        '(cooldown: ${_incrementalSyncCooldown.inSeconds}s)',
+        'Skipping incremental sync... Last ran ${sinceLast.inSeconds}s ago '
+        '(cooldown: ${_incrementalSyncCooldown.inSeconds}s)${catchUp ? ', scheduling catch-up' : ''}',
         tag: 'Incremental Chat Sync',
       );
       // The cooldown protects the expensive message/contact sync, not the
       // catch-up with Apple: a read or delete event can be missed while
       // Android is backgrounded, and resume must still pick it up.
       await AppleStateCatchUp.run();
+      if (catchUp) _scheduleCatchUp(_incrementalSyncCooldown - sinceLast, useGlobalIsolate);
       return;
     }
 
+    _catchUpTimer?.cancel();
+    _catchUpTimer = null;
     _lastIncrementalSyncTimestamp = now;
     isIncrementalSyncing.value = true;
     StartupTimeline.mark('sync started');
@@ -337,6 +345,17 @@ class SyncService {
     incrementalSyncTotal.value = 0;
     isIncrementalSyncing.value = false;
     StartupTimeline.mark('sync finished');
+  }
+
+  Timer? _catchUpTimer;
+
+  void _scheduleCatchUp(Duration wait, bool useGlobalIsolate) {
+    if (_catchUpTimer?.isActive ?? false) return;
+    final delay = wait > Duration.zero ? wait : const Duration(seconds: 5);
+    _catchUpTimer = Timer(delay, () {
+      _catchUpTimer = null;
+      unawaited(startIncrementalSync(useGlobalIsolate: useGlobalIsolate, catchUp: true));
+    });
   }
 
   Future<bool> performContactSyncToHandles() async {

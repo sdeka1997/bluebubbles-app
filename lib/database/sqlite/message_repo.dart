@@ -336,15 +336,25 @@ class MessageRepo {
     final existing = await MessageRepo(tx).byGuid(oldGuid);
     if (existing == null) return null;
     existing.guid = incoming.guid ?? existing.guid;
+    final sameContent = (incoming.text ?? existing.text) == existing.text &&
+        (incoming.dateEdited ?? existing.dateEdited)?.microsecondsSinceEpoch == existing.dateEdited?.microsecondsSinceEpoch;
+    if (incoming.attributedBody.isNotEmpty || !sameContent) existing.attributedBody = incoming.attributedBody;
+    if (incoming.messageSummaryInfo.isNotEmpty || !sameContent) {
+      existing.messageSummaryInfo = incoming.messageSummaryInfo;
+    }
     if (incoming.text != null) existing.text = incoming.text;
     existing.service ??= incoming.service;
     existing.dateDelivered = incoming.dateDelivered ?? existing.dateDelivered;
     existing.isDelivered = incoming.isDelivered;
     existing.dateRead = incoming.dateRead ?? existing.dateRead;
+    existing.datePlayed = incoming.datePlayed ?? existing.datePlayed;
     existing.dateEdited = incoming.dateEdited ?? existing.dateEdited;
-    if (incoming.attributedBody.isNotEmpty) existing.attributedBody = incoming.attributedBody;
-    if (incoming.messageSummaryInfo.isNotEmpty) existing.messageSummaryInfo = incoming.messageSummaryInfo;
+    existing.country = incoming.country ?? existing.country;
+    existing.threadOriginatorPart = incoming.threadOriginatorPart ?? existing.threadOriginatorPart;
     existing.payloadData = incoming.payloadData ?? existing.payloadData;
+    if (incoming.metadata != null) {
+      existing.metadata = {...?existing.metadata, ...incoming.metadata!};
+    }
     existing.wasDeliveredQuietly = incoming.wasDeliveredQuietly || existing.wasDeliveredQuietly;
     existing.didNotifyRecipient = incoming.didNotifyRecipient || existing.didNotifyRecipient;
     existing.error = incoming.error;

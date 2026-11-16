@@ -85,15 +85,21 @@ mixin SqliteAttachmentStore implements AttachmentStore, SqliteStorePart {
         await tx.execute('DELETE FROM attachments WHERE id = ?', [existing.id]);
       }
       target.guid = newAttachment.guid;
-      target.originalROWID = newAttachment.originalROWID;
-      target.uti = newAttachment.uti;
+      target.originalROWID = newAttachment.originalROWID ?? target.originalROWID;
+      target.uti = newAttachment.uti ?? target.uti;
       target.mimeType = newAttachment.mimeType ?? target.mimeType;
-      target.isOutgoing = newAttachment.isOutgoing;
-      target.transferName = newAttachment.transferName;
-      target.totalBytes = newAttachment.totalBytes;
-      target.bytes = newAttachment.bytes;
-      target.webUrl = newAttachment.webUrl;
-      target.hasLivePhoto = newAttachment.hasLivePhoto;
+      target.isOutgoing = target.isOutgoing == true || newAttachment.isOutgoing == true;
+      target.transferName = newAttachment.transferName ?? target.transferName;
+      if ((newAttachment.totalBytes ?? 0) > 0) target.totalBytes = newAttachment.totalBytes;
+      if ((newAttachment.width ?? 0) > 0) target.width = newAttachment.width;
+      if ((newAttachment.height ?? 0) > 0) target.height = newAttachment.height;
+      target.bytes = newAttachment.bytes ?? target.bytes;
+      target.webUrl = newAttachment.webUrl ?? target.webUrl;
+      if (newAttachment.metadata != null) {
+        target.metadata = {...?target.metadata, ...newAttachment.metadata!};
+      }
+      if (newAttachment.exif != null) target.exif = {...?target.exif, ...newAttachment.exif!};
+      target.hasLivePhoto = target.hasLivePhoto || newAttachment.hasLivePhoto;
       await tx.update('attachments', attachmentToRow(target));
 
       newAttachment.id = target.id;
