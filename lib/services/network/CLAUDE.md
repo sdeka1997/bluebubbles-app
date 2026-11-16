@@ -25,7 +25,7 @@ sub-service instances. Each sub-service lives in `api/` and handles one domain a
 - `returnSuccessOrError(response)` — validates status code
 - `dio`, `origin`, `apiRoot`, `headers`, `originOverride` — request infrastructure
 - `downloadFromUrl()`, `downloadAppleEmojiFont()` — utility downloads
-- Timeouts configured globally from settings (`apiTimeout`); don't override per-request
+- Timeouts configured globally from settings (`apiTimeout`); don't override per-request, except on routes that answer only once iMessage has acted (`message/text`, `attachment`, `multipart`, `react`, `unsend`, `edit`, `notify`, `chat/new`), which wait `MessageApi.awaitsIMessageTimeout`
 
 **Adding a new endpoint:**
 1. Find the right sub-service in `api/` (or add a new file for a new domain)

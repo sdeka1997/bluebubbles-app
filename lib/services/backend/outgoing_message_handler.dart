@@ -398,6 +398,14 @@ class OutgoingMessageHandler {
     _isProcessing = false;
   }
 
+  /// Queues [item] without [queue]'s DB prep, for tests of the queue itself.
+  @visibleForTesting
+  void debugEnqueuePrepared(OutgoingQueueItem item) {
+    _queue.add(_OutgoingEntry(item));
+    pendingChatGuids.add(item.chat.guid);
+    unawaited(_processNext());
+  }
+
   /// Returns `true` if the message with [tempGuid] is currently waiting in the
   /// queue and has not yet been handed off to the HTTP dispatch layer.
   bool hasPendingMessage(String tempGuid) => _queue.any((e) => e.item.message.guid == tempGuid);
@@ -461,9 +469,15 @@ class OutgoingMessageHandler {
   }
 
   /// Fires [httpCall] and races the response against the socket echo for
-  /// [tempGuid].  Whichever arrives first unblocks the queue; the HTTP work
-  /// (GUID replacement, error marking, etc.) still runs to completion
-  /// afterwards in the background.
+  /// [tempGuid], and against the usual request timeout (`apiTimeout`), since
+  /// send routes wait minutes for iMessage.  Whichever comes first unblocks
+  /// the queue; the HTTP work (GUID replacement, error marking, etc.) still
+  /// runs to completion afterwards in the background.
+  ///
+  /// When the timeout wins, the queue has moved on, so a later failure of
+  /// this send marks only this message failed: it no longer cancels the
+  /// chat's queued messages (`cancelQueuedMessages`), which may already have
+  /// been sent.
   ///
   /// [onSuccess] receives the decoded server response body (the full response
   /// map, i.e. `response.data`). Callers extract a [Message] via
@@ -482,7 +496,17 @@ class OutgoingMessageHandler {
     final race = Completer<void>();
     registerSendProgressTracker(tempGuid, chat, race);
 
+    // The server holds a send's response until iMessage has acted, which can take minutes. The queue is shared by
+    // every chat, so it doesn't wait that long behind one message: after the usual request timeout (what it waited
+    // before send routes got a longer one) the next send goes, and this one's result still lands when it comes.
+    final moveOn = Timer(Duration(milliseconds: SettingsSvc.settings.apiTimeout.value), () {
+      if (race.isCompleted) return;
+      Logger.info('Send $tempGuid is still waiting on the server; sending what is queued after it', tag: _tag);
+      race.complete();
+    });
+
     httpCall().then((data) async {
+      moveOn.cancel();
       completeSendProgressIfExists(tempGuid, Origin.outgoingMessageHandler);
       try {
         await onSuccess(data);
@@ -491,6 +515,7 @@ class OutgoingMessageHandler {
       }
       if (!race.isCompleted) race.complete();
     }, onError: (Object error, StackTrace stack) async {
+      moveOn.cancel();
       completeSendProgressIfExists(
         tempGuid,
         Origin.outgoingMessageHandler,
@@ -507,6 +532,16 @@ class OutgoingMessageHandler {
 
     return race.future;
   }
+
+  /// [_sendWithRace], for tests that stand in for a send method.
+  @visibleForTesting
+  Future<void> debugSendWithRace({
+    required String tempGuid,
+    required Chat chat,
+    required Future<Map<String, dynamic>> Function() httpCall,
+    required Future<void> Function(Map<String, dynamic> data) onSuccess,
+    required Future<void> Function(Object error, StackTrace stack) onError,
+  }) => _sendWithRace(tempGuid: tempGuid, chat: chat, httpCall: httpCall, onSuccess: onSuccess, onError: onError);
 
   Future<void> _dispatchItem(OutgoingQueueItem item) {
     switch (item.type) {
