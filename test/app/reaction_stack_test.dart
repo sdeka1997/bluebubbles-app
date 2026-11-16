@@ -53,4 +53,41 @@ void main() {
       expect(without.height, closeTo(28, 0.01));
     }
   });
+
+  // The holder sits on the bubble's outer top corner (20 px past the edge), the
+  // front badge over that corner. Older badges must fan away from the bubble,
+  // or three of them cover the text of a short message.
+  group('the stack fans away from the bubble', () {
+    // Left edge of a badge [offset] from the front, relative to the holder's box.
+    double badgeLeft(double offset, {required bool isFromMe}) {
+      const box = 35.0;
+      final insets = reactionInsets(offset, isFromMe: isFromMe);
+      return insets.left ?? box - insets.right! - box;
+    }
+
+    test('the front badge stays on the corner', () {
+      expect(badgeLeft(0, isFromMe: true), 0);
+      expect(badgeLeft(0, isFromMe: false), 0);
+    });
+
+    test('on a sent message older badges move left, off the bubble', () {
+      final s = reactionStack([_r('c'), _r('b'), _r('a')]);
+      final lefts = [for (final b in s) badgeLeft(b.offset, isFromMe: true)];
+      expect(lefts, [-2 * ReactionHolder.step, -ReactionHolder.step, 0]);
+    });
+
+    test('on a received message older badges move right, off the bubble', () {
+      final s = reactionStack([_r('c'), _r('b'), _r('a')]);
+      final lefts = [for (final b in s) badgeLeft(b.offset, isFromMe: false)];
+      expect(lefts, [2 * ReactionHolder.step, ReactionHolder.step, 0]);
+    });
+
+    test('a full stack fits beside the widest bubble on a narrow phone', () {
+      // Bubbles are at most 75% of the chat's width, so at least a quarter of
+      // it is free beside one. 320 dp is the narrowest common Android width.
+      const holderPastEdge = 20.0;
+      const widest = holderPastEdge + 2 * ReactionHolder.step + ReactionHolder.hiddenEdge;
+      expect(widest, lessThan(320 * 0.25));
+    });
+  });
 }

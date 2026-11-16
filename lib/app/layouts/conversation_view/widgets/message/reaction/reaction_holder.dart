@@ -49,8 +49,8 @@ class _ReactionAnimatorState extends State<_ReactionAnimator> with SingleTickerP
   }
 }
 
-/// One badge of the reaction stack. [offset] is its distance from the bubble's
-/// tail side; only the [front] badge draws a tail.
+/// One badge of the reaction stack. [offset] is its distance from the front
+/// badge, outward from the bubble; only the [front] badge draws a tail.
 typedef StackedReaction = ({Message reaction, double offset, bool front});
 
 /// Lays reactions out the way iOS does: the first [ReactionHolder.maxShown] in
@@ -69,6 +69,13 @@ List<StackedReaction> reactionStack(List<Message> unique) {
     for (var i = 0; i < shown.length; i++) (reaction: shown[i], offset: (last - i) * step, front: i == last),
   ];
 }
+
+/// Where a badge [offset] from the front sits in the holder's box. The front
+/// badge overlaps the bubble's corner and the rest fan outward, away from the
+/// bubble (left of a sent message, right of a received one), so a short
+/// message's text is never covered.
+({double? left, double? right}) reactionInsets(double offset, {required bool isFromMe}) =>
+    isFromMe ? (left: null, right: offset) : (left: offset, right: null);
 
 class ReactionHolder extends StatefulWidget {
   const ReactionHolder({super.key, required this.reactions});
@@ -145,8 +152,8 @@ class _ReactionHolderState extends State<ReactionHolder> {
             Positioned(
               key: ValueKey(_stableKey(badge.reaction)),
               top: 0,
-              left: isFromMe ? badge.offset : null,
-              right: isFromMe ? null : badge.offset,
+              left: reactionInsets(badge.offset, isFromMe: isFromMe).left,
+              right: reactionInsets(badge.offset, isFromMe: isFromMe).right,
               child: DeferPointer(
                 child: _ReactionAnimator(
                   key: ValueKey(_stableKey(badge.reaction)),
