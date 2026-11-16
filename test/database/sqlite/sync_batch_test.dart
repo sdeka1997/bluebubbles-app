@@ -163,6 +163,19 @@ void main() {
     expect(g2.chat.targetId, (await chats.byGuid('iMessage;+;chat99'))!.id);
   });
 
+  test('a bookmarked stored message stays bookmarked when the server sends it again', () async {
+    await SqliteSyncBatch.bulkSyncData(db, firstBatch());
+    await db.write((tx) => tx.execute('UPDATE messages SET is_bookmarked = 1 WHERE guid = ?', ['g2']));
+    // The server has no bookmarks, so the resent row always says false.
+    await SqliteSyncBatch.bulkSyncData(db, {
+      'messagesData': [msgMap('g2', baseMs + 2000, chat: group, deliveredMs: baseMs + 2500)],
+    });
+    final g2 = (await messages.byGuid('g2'))!;
+    expect(g2.isBookmarked, isTrue);
+    expect(g2.dateDelivered, at(baseMs + 2500), reason: 'the rest of the row still merges');
+    expect((await messages.byGuid('g1'))!.isBookmarked, isFalse);
+  });
+
   test('a resent photo-state row keeps its stored date, attachment, and visible latest message', () async {
     await SqliteSyncBatch.bulkSyncData(db, {
       'messagesData': [

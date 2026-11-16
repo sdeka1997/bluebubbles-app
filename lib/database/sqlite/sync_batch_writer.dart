@@ -158,6 +158,8 @@ class SqliteSyncBatch {
     for (final (i, input) in inputs.indexed) {
       final msgData = data[i];
       final existing = stored[input.guid];
+      // The server never sends bookmarks, so a synced row always says false.
+      if (existing != null) input.isBookmarked = existing.isBookmarked;
       final msg = existing != null ? Message.merge(existing, input) : input;
 
       var chat = singleChat;
