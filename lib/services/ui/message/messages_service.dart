@@ -830,6 +830,8 @@ class MessagesService extends GetxController {
     // buildMessageParts guard would never fire. See the guard below.
     final previousDateEdited = toUpdate.dateEdited;
     final previousDateDeleted = toUpdate.dateDeleted;
+    final lackedBody = toUpdate.attributedBody.isEmpty;
+    final hadSummary = Message.hasSummaryContent(toUpdate.messageSummaryInfo);
 
     // Preserve authoritative fields before merging — Message.merge is written for
     // existing(older).merge(newMessage(newer)), but here we call it inverted:
@@ -869,7 +871,11 @@ class MessagesService extends GetxController {
       // This mirrors the `hasEdited` check in MessageState.updateMessage (web path).
       // Compare against previousDateEdited (snapshotted above) rather than
       // toUpdate.dateEdited — updateFromMessage() just mutated toUpdate in place.
-      if (updated.dateEdited != previousDateEdited || updated.dateDeleted != previousDateDeleted) {
+      // A full copy completing a trimmed push brings formatting or edit history the
+      // parts were built without.
+      final gainedDetail = (lackedBody && incomingAttributedBody.isNotEmpty) ||
+          (!hadSummary && Message.hasSummaryContent(incomingSummaryInfo));
+      if (updated.dateEdited != previousDateEdited || updated.dateDeleted != previousDateDeleted || gainedDetail) {
         messageState.buildMessageParts(force: true);
       }
 

@@ -2,6 +2,7 @@
 // the next full copy of the message, an edit never keeps formatting written
 // for the old text, and a trimmed copy never overwrites a full one.
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart' show plainTextBody;
 import 'package:bluebubbles/helpers/types/constants.dart' as constants show PayloadType;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -23,6 +24,10 @@ MessageSummaryInfo _summary() => MessageSummaryInfo(
   originalTextRange: const {},
   editedParts: const [0],
 );
+
+/// The summary entry the server sends for a message never edited or unsent.
+MessageSummaryInfo _emptySummary() =>
+    MessageSummaryInfo(retractedParts: [], editedContent: {}, originalTextRange: {}, editedParts: []);
 
 void main() {
   storeTests((fixture) {
@@ -121,6 +126,71 @@ void main() {
       expect(edited.text, 'after');
       expect(edited.attributedBody, isEmpty, reason: 'mention ranges for "before" would mislabel "after"');
       expect(edited.dateCreated, original.dateCreated);
+    });
+
+    test('a receipt whose text the server trimmed is not an edit', () async {
+      final chat = await fixture().chat('receipt-chat');
+      // Apple's text keeps the trailing space autocomplete adds; the server trims the push copy's.
+      final sent = await fixture().message(
+        'receipt-guid',
+        chat,
+        t0 + 4000,
+        text: 'Yay ',
+        edit: (m) {
+          m.attributedBody = [_richBody('Yay ')];
+          m.messageSummaryInfo = [_summary()];
+        },
+      );
+
+      await fixture().store.replaceMessage(
+        sent.guid,
+        Message(guid: sent.guid, text: 'Yay', dateCreated: sent.dateCreated, dateRead: ms(t0 + 4500)),
+      );
+
+      final stored = (await fixture().store.messageByGuid(sent.guid!))!;
+      expect(stored.attributedBody.single.toMap(), _richBody('Yay ').toMap());
+      expect(stored.messageSummaryInfo.single.toJson(), _summary().toJson());
+    });
+
+    test('read back from the store, only a trimmed row has gaps a full copy fills', () async {
+      final chat = await fixture().chat('gaps-chat');
+      await fixture().message(
+        'trimmed',
+        chat,
+        t0 + 5000,
+        text: 'hello',
+        edit: (m) {
+          m.attributedBody = [];
+          m.messageSummaryInfo = [];
+          m.metadata = null;
+        },
+      );
+      await fixture().message(
+        'plain',
+        chat,
+        t0 + 5100,
+        text: 'hello',
+        edit: (m) {
+          m.attributedBody = plainTextBody('hello');
+          m.messageSummaryInfo = [_emptySummary()];
+          m.metadata = {};
+        },
+      );
+
+      // What the socket sends for an ordinary message.
+      Message fullCopy(String guid) => Message(
+        guid: guid,
+        text: 'hello',
+        dateCreated: ms(t0),
+        attributedBody: plainTextBody('hello'),
+        messageSummaryInfo: [_emptySummary()],
+        metadata: {},
+      );
+
+      final trimmed = (await fixture().store.messageByGuid('trimmed'))!;
+      final plain = (await fixture().store.messageByGuid('plain'))!;
+      expect(fullCopy('trimmed').fillsGapsIn(trimmed), isTrue);
+      expect(fullCopy('plain').fillsGapsIn(plain), isFalse, reason: 'an ordinary update has nothing to fill');
     });
   });
 }

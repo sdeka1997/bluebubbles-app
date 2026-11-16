@@ -68,10 +68,8 @@ const emptySummaryInfoJson = '[{"retractedParts":[],"editedContent":{},"original
 
 /// NULL when no entry says anything (no retracted or edited part, no edit
 /// history), which is almost every message.
-String? summaryInfoColumn(Message m) => m.messageSummaryInfo.every((s) =>
-        s.retractedParts.isEmpty && s.editedContent.isEmpty && s.originalTextRange.isEmpty && s.editedParts.isEmpty)
-    ? null
-    : m.dbMessageSummaryInfo;
+String? summaryInfoColumn(Message m) =>
+    Message.hasSummaryContent(m.messageSummaryInfo) ? m.dbMessageSummaryInfo : null;
 
 Map<String, Object?> messageToRow(Message m) => {
   'id': m.id,

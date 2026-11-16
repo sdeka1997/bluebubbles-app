@@ -602,10 +602,10 @@ class IncomingMessageHandler {
         : await MessagingStore.current.messageByGuid(replacement.guid!);
 
     if (alreadyPresent != null) {
-      // The replacement record already exists (parallel delivery).
-      // Overwrite when the incoming payload is newer, or when it completes a push
-      // copy the server trimmed to fit FCM.
-      if (replacement.isNewerThan(alreadyPresent) || replacement.fillsGapsIn(alreadyPresent)) {
+      // The replacement record already exists (parallel delivery). Overwrite it
+      // when the incoming payload supersedes it: newer, or completing a push copy
+      // the server trimmed to fit FCM.
+      if (replacement.supersedes(alreadyPresent)) {
         await Message.replaceMessage(replacement.guid, replacement);
       }
 
@@ -868,9 +868,12 @@ class IncomingMessageHandler {
 
   /// An update whose message never arrived means its new-message was lost. Replaying the
   /// update would only park it again, so drop it and let an incremental sync fetch the
-  /// message, update included. SyncService coalesces repeated requests.
+  /// message, update included. SyncService coalesces repeated requests. During setup, or
+  /// while a full sync runs, that sync is already fetching every message.
   void _catchUpLostMessages() {
-    if (GetIt.I.isRegistered<SyncService>()) unawaited(SyncSvc.startIncrementalSync(catchUp: true));
+    if (!GetIt.I.isRegistered<SyncService>() || !SettingsSvc.settings.finishedSetup.value) return;
+    if (SyncSvc.fullSyncManager?.status.value == SyncStatus.IN_PROGRESS) return;
+    unawaited(SyncSvc.startIncrementalSync(catchUp: true));
   }
 
   // ── Deduplication helpers ────────────────────────────────────────────────

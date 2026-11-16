@@ -336,10 +336,12 @@ class MessageRepo {
     final existing = await MessageRepo(tx).byGuid(oldGuid);
     if (existing == null) return null;
     existing.guid = incoming.guid ?? existing.guid;
-    final sameContent = (incoming.text ?? existing.text) == existing.text &&
-        (incoming.dateEdited ?? existing.dateEdited)?.microsecondsSinceEpoch == existing.dateEdited?.microsecondsSinceEpoch;
-    if (incoming.attributedBody.isNotEmpty || !sameContent) existing.attributedBody = incoming.attributedBody;
-    if (incoming.messageSummaryInfo.isNotEmpty || !sameContent) {
+    // An edit or unsend always moves dateEdited. Text alone can't tell: a push carries the
+    // server's trimmed text, a full copy Apple's untrimmed text.
+    final edited = incoming.dateEdited != null &&
+        incoming.dateEdited!.microsecondsSinceEpoch != existing.dateEdited?.microsecondsSinceEpoch;
+    if (incoming.attributedBody.isNotEmpty || edited) existing.attributedBody = incoming.attributedBody;
+    if (incoming.messageSummaryInfo.isNotEmpty || edited) {
       existing.messageSummaryInfo = incoming.messageSummaryInfo;
     }
     if (incoming.text != null) existing.text = incoming.text;

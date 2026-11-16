@@ -1,7 +1,10 @@
 // Which copies of a message the incoming handler lets through after a push,
 // and what it does with an update whose message never arrives.
+import 'dart:async';
+
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get_it/get_it.dart';
 
@@ -16,14 +19,46 @@ class _CountingSync extends SyncService {
   }
 }
 
+AttributedBody _richBody(String text) => AttributedBody(
+  string: text,
+  runs: [
+    Run(
+      range: [0, text.length],
+      attributes: Attributes(messagePart: 0, mention: 'mailto:person@example.com'),
+    ),
+  ],
+);
+
 void main() {
-  test('a full copy is worth writing over a trimmed push even when it is no newer', () {
+  test('a full copy is written over a trimmed push even when it is no newer', () {
     final pushed = Message(guid: 'g', text: 'hello', dateCreated: ms(t0));
     final full = Message(guid: 'g', text: 'hello', dateCreated: ms(t0), metadata: {'message': 'full'});
 
     expect(full.isNewerThan(pushed), isFalse, reason: 'the newer-than rule alone would skip it');
-    expect(full.fillsGapsIn(pushed), isTrue);
-    expect(pushed.fillsGapsIn(full), isFalse, reason: 'a trimmed copy has nothing to add');
+    expect(full.supersedes(pushed), isTrue);
+    expect(pushed.supersedes(full), isFalse, reason: 'a trimmed copy has nothing to add');
+  });
+
+  test('an older copy never overwrites a newer stored one, even with fields to fill', () {
+    final stored = Message(guid: 'g', text: 'edit 2', dateCreated: ms(t0), dateEdited: ms(t0 + 2000));
+    final stale = Message(
+      guid: 'g',
+      text: 'edit 1',
+      dateCreated: ms(t0),
+      dateEdited: ms(t0 + 1000),
+      attributedBody: [_richBody('edit 1')],
+    );
+
+    expect(stale.fillsGapsIn(stored), isTrue);
+    expect(stale.supersedes(stored), isFalse);
+  });
+
+  test('filling gaps never clears a stored error', () {
+    final failed = Message(guid: 'g', text: 'hello', dateCreated: ms(t0), error: 22);
+    final full = Message(guid: 'g', text: 'hello', dateCreated: ms(t0), attributedBody: [_richBody('hello')]);
+
+    expect(full.fillsGapsIn(failed), isTrue);
+    expect(full.supersedes(failed), isFalse);
   });
 
   test('after a push, the next copy from elsewhere goes through once; repeats are dropped', () {
@@ -41,13 +76,37 @@ void main() {
   });
 
   storeTests((fixture) {
-    test('an update whose message never arrives is dropped once and asks for one sync', () async {
-      final sync = _CountingSync();
+    test('a catch-up asked for during the cooldown waits for it, once', () {
+      fakeAsync((async) {
+        final sync = SyncService()..debugLastIncrementalSync = DateTime.now();
+        for (var i = 0; i < 3; i++) {
+          unawaited(sync.startIncrementalSync(catchUp: true));
+        }
+        async.flushMicrotasks();
+        expect(async.pendingTimers, hasLength(1));
+        expect(sync.isIncrementalSyncing.value, isFalse);
+      });
+    });
+  });
+
+  storeTests((fixture) {
+    late _CountingSync sync;
+    late Settings settings;
+
+    setUp(() {
+      sync = _CountingSync();
+      settings = Settings()..finishedSetup.value = true;
       GetIt.I.registerSingleton<SyncService>(sync);
-      addTearDown(() => GetIt.I.unregister<SyncService>());
+      GetIt.I.registerSingleton<SettingsService>(SettingsService()..settings = settings);
+    });
+    tearDown(() {
+      GetIt.I.unregister<SyncService>();
+      GetIt.I.unregister<SettingsService>();
+    });
+
+    Future<IncomingMessageHandler> orphanUpdate() async {
       final handler = IncomingMessageHandler(pendingUpdateTimeout: const Duration(milliseconds: 10));
       addTearDown(handler.dispose);
-
       await handler.handle(
         IncomingPayload(
           type: MessageEventType.updatedMessage,
@@ -57,10 +116,23 @@ void main() {
         ),
       );
       await Future<void>.delayed(const Duration(milliseconds: 80));
+      return handler;
+    }
+
+    test('an update whose message never arrives is dropped once and asks for one sync', () async {
+      final handler = await orphanUpdate();
 
       expect(handler.pendingUpdateCount, 0, reason: 'not parked again');
       expect(sync.catchUps, 1);
       expect(await fixture().store.messageByGuid('orphan-guid'), isNull);
+    });
+
+    test('during setup a lost update asks for nothing: the full sync is fetching everything', () async {
+      settings.finishedSetup.value = false;
+      final handler = await orphanUpdate();
+
+      expect(handler.pendingUpdateCount, 0);
+      expect(sync.catchUps, 0);
     });
   });
 }

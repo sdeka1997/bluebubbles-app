@@ -929,12 +929,27 @@ class Message {
 
   /// Whether this copy carries fields [stored] lacks. The server drops attributedBody,
   /// messageSummaryInfo, payloadData and metadata to fit a push under FCM's 4 KB limit, so
-  /// the complete copy that follows must still be written even when it is no newer.
+  /// the complete copy that follows must still be written even when it is no newer. Summary
+  /// info and metadata count only with content: the socket sends an all-empty summary entry
+  /// and `{}` for an ordinary message, and the store keeps neither.
   bool fillsGapsIn(Message stored) =>
       (attributedBody.isNotEmpty && stored.attributedBody.isEmpty) ||
-      (messageSummaryInfo.isNotEmpty && stored.messageSummaryInfo.isEmpty) ||
+      (hasSummaryContent(messageSummaryInfo) && !hasSummaryContent(stored.messageSummaryInfo)) ||
       (payloadData != null && stored.payloadData == null) ||
-      (metadata != null && stored.metadata == null);
+      ((metadata?.isNotEmpty ?? false) && (stored.metadata?.isEmpty ?? true));
+
+  /// Whether this copy should be written over [stored]: it is newer, or it is no older, in
+  /// the same error state, and fills a field [stored] lacks. A stale copy carrying formatting
+  /// never reverts a later edit or clears a send error.
+  bool supersedes(Message stored) =>
+      isNewerThan(stored) || (!stored.isNewerThan(this) && error == stored.error && fillsGapsIn(stored));
+
+  /// Whether [info] says anything: a retracted or edited part, or edit history.
+  static bool hasSummaryContent(List<MessageSummaryInfo> info) => info.any((s) =>
+      s.retractedParts.isNotEmpty ||
+      s.editedContent.isNotEmpty ||
+      s.originalTextRange.isNotEmpty ||
+      s.editedParts.isNotEmpty);
 
   Map<String, dynamic> toMap() {
     return {

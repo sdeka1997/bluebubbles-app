@@ -54,6 +54,9 @@ class SyncService {
   static const int _dispatchChunkSize = 50;
   DateTime? _lastIncrementalSyncTimestamp;
 
+  @visibleForTesting
+  set debugLastIncrementalSync(DateTime? at) => _lastIncrementalSyncTimestamp = at;
+
   FullSyncManager? _manager;
   FullSyncManager? get fullSyncManager => _manager;
 
@@ -156,11 +159,16 @@ class SyncService {
         '(cooldown: ${_incrementalSyncCooldown.inSeconds}s)${catchUp ? ', scheduling catch-up' : ''}',
         tag: 'Incremental Chat Sync',
       );
+      // A catch-up is for lost messages: it waits for the cooldown's end rather than
+      // repeating the Apple check below once per request.
+      if (catchUp) {
+        _scheduleCatchUp(_incrementalSyncCooldown - sinceLast, useGlobalIsolate);
+        return;
+      }
       // The cooldown protects the expensive message/contact sync, not the
       // catch-up with Apple: a read or delete event can be missed while
       // Android is backgrounded, and resume must still pick it up.
       await AppleStateCatchUp.run();
-      if (catchUp) _scheduleCatchUp(_incrementalSyncCooldown - sinceLast, useGlobalIsolate);
       return;
     }
 
