@@ -21,7 +21,9 @@ mixin SqliteMessageStore implements MessageStore, SqliteStorePart {
         await MessageRepo(tx).replace(tx, oldGuid!, incoming);
       } catch (ex) {
         if (!isUniqueViolation(ex)) rethrow;
-        Logger.warn('Failed to replace message! This is likely due to a unique constraint being violated: ${ex.toString()}');
+        Logger.warn(
+          'Failed to replace message! This is likely due to a unique constraint being violated: ${ex.toString()}',
+        );
       }
       return existing.id!;
     });
@@ -52,8 +54,9 @@ mixin SqliteMessageStore implements MessageStore, SqliteStorePart {
 
       // Only do handleId lookup if we don't already have a handleRelation
       if (inputMessage.handle == null && !inputMessage.handleRelation.hasValue && inputMessage.handleId != null) {
-        final rows = await tx.select(
-            'SELECT * FROM handles WHERE original_rowid = ? ORDER BY id LIMIT 1', [inputMessage.handleId]);
+        final rows = await tx.select('SELECT * FROM handles WHERE original_rowid = ? ORDER BY id LIMIT 1', [
+          inputMessage.handleId,
+        ]);
         final found = rows.isEmpty ? null : handleFromRow(rows.single);
         inputMessage.handle = found;
         if (found != null) inputMessage.handleRelation.targetId = found.id;
@@ -62,8 +65,9 @@ mixin SqliteMessageStore implements MessageStore, SqliteStorePart {
       if (inputMessage.associatedMessageType != null && inputMessage.associatedMessageGuid != null) {
         await tx.execute('UPDATE messages SET has_reactions = 1 WHERE guid = ?', [inputMessage.associatedMessageGuid]);
       } else if (!inputMessage.hasReactions) {
-        final reaction = await tx.select(
-            'SELECT 1 FROM messages WHERE associated_message_guid = ? LIMIT 1', [inputMessage.guid ?? '']);
+        final reaction = await tx.select('SELECT 1 FROM messages WHERE associated_message_guid = ? LIMIT 1', [
+          inputMessage.guid ?? '',
+        ]);
         if (reaction.isNotEmpty) inputMessage.hasReactions = true;
       }
 
@@ -82,6 +86,7 @@ mixin SqliteMessageStore implements MessageStore, SqliteStorePart {
           // A new guid gets a new id: an id it arrived with is not this row's.
           inputMessage.id = await tx.insert('messages', row..['id'] = null);
         }
+        await MessageRepo(tx).readFiling(tx, [inputMessage]);
       } catch (e) {
         if (!isUniqueViolation(e)) rethrow;
       }
@@ -106,8 +111,9 @@ mixin SqliteMessageStore implements MessageStore, SqliteStorePart {
   }
 
   @override
-  Future<List<int>> allMessageIds() async =>
-      [for (final row in await db.select('SELECT id FROM messages ORDER BY id')) row['id'] as int];
+  Future<List<int>> allMessageIds() async => [
+    for (final row in await db.select('SELECT id FROM messages ORDER BY id')) row['id'] as int,
+  ];
 
   @override
   Future<List<Message>> messagesAssociatedWith(String guid) async {
@@ -124,9 +130,10 @@ mixin SqliteMessageStore implements MessageStore, SqliteStorePart {
   Future<int> relinkMessagesToHandle(int serverHandleId, int localHandleId) {
     return db.write((tx) async {
       final rows = await tx.select(
-          'UPDATE messages SET handle_relation_id = ? WHERE handle_id = ? AND is_from_me IS NOT 1 '
-          'AND handle_relation_id IS NOT ? RETURNING id',
-          [localHandleId, serverHandleId, localHandleId]);
+        'UPDATE messages SET handle_relation_id = ? WHERE handle_id = ? AND is_from_me IS NOT 1 '
+        'AND handle_relation_id IS NOT ? RETURNING id',
+        [localHandleId, serverHandleId, localHandleId],
+      );
       return rows.length;
     });
   }
@@ -150,7 +157,10 @@ Future<Map<int, Attachment>> attachmentsWithMessages(DbReader db, Iterable<int> 
   final list = ids.toSet().toList();
   for (var i = 0; i < list.length; i += 500) {
     final chunk = list.sublist(i, i + 500 > list.length ? list.length : i + 500);
-    for (final row in await db.select('SELECT * FROM attachments WHERE id IN (${sqlPlaceholders(chunk.length)})', chunk)) {
+    for (final row in await db.select(
+      'SELECT * FROM attachments WHERE id IN (${sqlPlaceholders(chunk.length)})',
+      chunk,
+    )) {
       result[row['id'] as int] = attachmentFromRow(row);
     }
   }

@@ -126,8 +126,10 @@ class SqliteFixture extends StoreFixture {
   }) async {
     final c = Chat(guid: guid, threadKey: threadKey, dateDeleted: deleted, hasUnreadMessage: unread)
       ..latestGroupTitle = groupTitle
-      ..chatIdentifier = identifier;
+      ..chatIdentifier = identifier ?? threadKey;
     c.id = await _insert('chats', chatToRow(c));
+    // thread_key is the regroup's: the chat joins its thread by the grouping rule.
+    c.threadKey = (await db.select('SELECT thread_key FROM chats WHERE id = ?', [c.id])).single['thread_key'] as String?;
     await db.write((tx) async {
       for (final h in handles) {
         await tx.execute('INSERT INTO chat_handles (chat_id, handle_id) VALUES (?, ?)', [c.id, h.id]);

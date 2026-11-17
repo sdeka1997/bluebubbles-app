@@ -1,5 +1,6 @@
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
+import 'package:bluebubbles/database/sqlite/chat_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:bluebubbles/database/sqlite/relation_fill.dart';
 import 'package:bluebubbles/database/sqlite/row_writes.dart';
@@ -386,7 +387,36 @@ class MessageRepo {
       setId: (m, id) => m.id = id,
       toRow: messageToRow,
     );
+    await readFiling(tx, messages);
     return messages;
+  }
+
+  /// Where the database filed each of [messages] (threadFilingTriggers in
+  /// app_database.dart): the shown chat of its thread, and the Apple chat it
+  /// came through. Sets both on the objects the caller holds.
+  Future<void> readFiling(WriteTx tx, Iterable<Message> messages) async {
+    final byId = {
+      for (final m in messages)
+        if (m.id != null) m.id!: m,
+    };
+    final moved = <(Message, int)>[];
+    for (final chunk in byId.keys.toList().slices(500)) {
+      final rows = await tx.select(
+        'SELECT id, chat_id, apple_chat_guid FROM messages WHERE id IN (${sqlPlaceholders(chunk.length)})',
+        chunk,
+      );
+      for (final row in rows) {
+        final m = byId[row['id'] as int]!;
+        m.appleChatGuid = row['apple_chat_guid'] as String?;
+        final chatId = row['chat_id'] as int? ?? 0;
+        if (m.chat.targetId != chatId) moved.add((m, chatId));
+      }
+    }
+    if (moved.isEmpty) return;
+    final chats = await ChatRepo(tx).byIds(moved.map((e) => e.$2));
+    for (final (m, chatId) in moved) {
+      m.chat.target = chats[chatId];
+    }
   }
 
   /// Updates the stored message [oldGuid] from [incoming] as a send receipt,

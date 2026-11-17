@@ -233,8 +233,9 @@ void main() {
 
     final shown = await scrollToOldest(repo, [1, 2], limit: 25, between: (page, _) async {
       if (page != 5) return;
-      // Folding moves the twin's messages into the canonical chat (service twins).
-      await db.write((tx) => tx.execute('UPDATE messages SET chat_id = 1 WHERE chat_id = 2'));
+      // The two chats become one thread by the grouping rule (same chat
+      // identifier); the database files chat 2's messages under chat 1.
+      await db.write((tx) => tx.execute("UPDATE chats SET chat_identifier = 'same' WHERE id IN (1, 2)"));
     });
     expect(guidsOf(shown), expected);
     expect(guidsOf(shown).toSet(), hasLength(400));

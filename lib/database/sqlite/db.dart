@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:bluebubbles/database/sqlite/app_database.dart';
+import 'package:bluebubbles/database/sqlite/chat_repo.dart';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
@@ -30,8 +31,8 @@ class DbChanges {
 
   /// Sendable between isolates: `{'tables': {table: [ids]}}`.
   Map<String, dynamic> toMap() => {
-        'tables': {for (final MapEntry(:key, :value) in tables.entries) key: value.toList()},
-      };
+    'tables': {for (final MapEntry(:key, :value) in tables.entries) key: value.toList()},
+  };
 
   bool get isEmpty => tables.isEmpty;
 
@@ -136,7 +137,11 @@ class Db implements DbReader {
       final tx = WriteTx._(this);
       _collector.begin();
       try {
-        final result = await runZoned(() => fn(tx), zoneValues: {_zoneKey: tx});
+        final result = await runZoned(() async {
+          final result = await fn(tx);
+          await ChatRepo(tx).regroupIfPending(tx);
+          return result;
+        }, zoneValues: {_zoneKey: tx});
         await database.customStatement('COMMIT');
         final changes = _collector.commit(tx._marked);
         if (!changes.isEmpty) _changes.add(changes);
@@ -209,18 +214,24 @@ class WriteTx extends _Tx {
 
   /// Inserts [row] and returns its id. A null `id` is left to SQLite.
   Future<int> insert(String table, Map<String, Object?> row) async {
-    final columns = [for (final e in row.entries) if (e.key != 'id' || e.value != null) e.key];
+    final columns = [
+      for (final e in row.entries)
+        if (e.key != 'id' || e.value != null) e.key,
+    ];
     final rows = await select(
-        'INSERT INTO $table (${columns.join(', ')}) VALUES (${List.filled(columns.length, '?').join(', ')}) RETURNING id',
-        [for (final c in columns) row[c]]);
+      'INSERT INTO $table (${columns.join(', ')}) VALUES (${List.filled(columns.length, '?').join(', ')}) RETURNING id',
+      [for (final c in columns) row[c]],
+    );
     return rows.single['id'] as int;
   }
 
   /// Writes every column of [row] over the stored row with the same `id`.
   Future<void> update(String table, Map<String, Object?> row) {
     final columns = row.keys.where((c) => c != 'id').toList();
-    return execute('UPDATE $table SET ${columns.map((c) => '$c = ?').join(', ')} WHERE id = ?',
-        [for (final c in columns) row[c], row['id']]);
+    return execute('UPDATE $table SET ${columns.map((c) => '$c = ?').join(', ')} WHERE id = ?', [
+      for (final c in columns) row[c],
+      row['id'],
+    ]);
   }
 
   /// Reports rows the update hook cannot see: tables WITHOUT ROWID (the join
@@ -241,7 +252,12 @@ class _ChangeCollector {
     raw.updatesSync.listen(_add);
   }
 
-  void _add(SqliteUpdate update) => _pending?.putIfAbsent(update.tableName, () => {}).add(update.rowId);
+  // storage_meta is the store's own bookkeeping (search state, pending
+  // regroup), never a row a screen shows.
+  void _add(SqliteUpdate update) {
+    if (update.tableName == 'storage_meta') return;
+    _pending?.putIfAbsent(update.tableName, () => {}).add(update.rowId);
+  }
 
   void begin() => _pending = {};
 

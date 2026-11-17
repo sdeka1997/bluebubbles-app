@@ -10,8 +10,9 @@ mixin SqliteSendTargetStore implements SendTargetStore, SqliteStorePart {
   Future<SendTargetContext> sendTargetContext(Chat thread, {String? anchorGuid, int recentLimit = 50}) {
     return db.snapshot((reader) async {
       final anchorChatGuid = anchorGuid == null ? null : (await MessageRepo(reader).byGuid(anchorGuid))?.appleChatGuid;
-      final copies = thread.threadKey?.isNotEmpty ?? false
-          ? await ChatRepo(reader).threadCopies(thread.threadKey!)
+      final key = await ChatRepo(reader).storedThreadKey(thread);
+      final copies = key?.isNotEmpty ?? false
+          ? await ChatRepo(reader).threadCopies(key!)
           : <Chat>[];
       if (!copies.any((c) => c.guid == thread.guid)) copies.insert(0, thread);
       final recent = thread.id == null

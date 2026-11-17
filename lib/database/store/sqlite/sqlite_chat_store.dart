@@ -13,7 +13,8 @@ import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:bluebubbles/database/store/sqlite/sqlite_message_store.dart' show attachmentsWithMessages;
 import 'package:bluebubbles/database/store/sqlite/sqlite_messaging_store.dart';
-import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart' show canonicalTwinFor, guidsToMarkRead, threadName;
+import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart'
+    show canonicalTwinFor, guidsToMarkRead, threadName;
 import 'package:bluebubbles/services/ui/chat/chat_stats/chat_stats_models.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:collection/collection.dart';
@@ -34,11 +35,7 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
   }
 
   @override
-  Future<int?> saveChat(
-    String guid,
-    Chat inputChat,
-    Map<String, bool> updateFlags,
-  ) {
+  Future<int?> saveChat(String guid, Chat inputChat, Map<String, bool> updateFlags) {
     return db.write((tx) async {
       final repo = ChatRepo(tx);
       final existing = await repo.byGuid(guid);
@@ -197,7 +194,8 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
 
       var isNewer = false;
       if (messageId != null && checkForMessageText && inputMessage.isTranscriptVisible) {
-        isNewer = inputMessage.dateCreated!.isAfter(inputLatest.dateCreated!) ||
+        isNewer =
+            inputMessage.dateCreated!.isAfter(inputLatest.dateCreated!) ||
             (inputMessage.guid != inputLatest.guid && inputMessage.dateCreated == inputLatest.dateCreated);
       }
       return <String, dynamic>{'messageId': messageId, 'isNewer': isNewer};
@@ -214,9 +212,10 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
   Future<Map<String, Handle>> handlesByAddresses(List<String> addresses, String service) async {
     if (addresses.isEmpty) return {};
     final rows = await db.select(
-        'SELECT id FROM handles WHERE service = ? AND address IN (${List.filled(addresses.length, '?').join(',')}) '
-        'ORDER BY id',
-        [service, ...addresses]);
+      'SELECT id FROM handles WHERE service = ? AND address IN (${List.filled(addresses.length, '?').join(',')}) '
+      'ORDER BY id',
+      [service, ...addresses],
+    );
     final ids = [for (final r in rows) r['id'] as int];
     final found = await HandleRepo(db).byIds(ids);
     // The first stored handle per address, as handleByAddress picks.
@@ -271,10 +270,12 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
         final ids = participantIds[chat.guid] ?? const <int>[];
         if (ids.isNotEmpty) await chats.setParticipants(tx, chat.id!, ids);
       }
-      await chats.foldServiceTwins(tx, chatsToSave);
       return (
         chatIds: chatsToSave.map((e) => e.id!).toList(),
-        brandNewHandleIds: [for (final h in handlesToSave) if (brandNewKeys.contains(h.uniqueAddressAndService)) h.id!],
+        brandNewHandleIds: [
+          for (final h in handlesToSave)
+            if (brandNewKeys.contains(h.uniqueAddressAndService)) h.id!,
+        ],
       );
     });
   }
@@ -300,35 +301,38 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
     required int limit,
     required bool includeDeleted,
   }) {
-    return db.read((reader) async {
-      final deleted = includeDeleted ? '' : 'AND date_deleted_us IS NULL ';
-      final rows = await reader.select(
-        'SELECT m.* FROM messages m INDEXED BY messages_chat_time WHERE m.chat_id = ? '
-        'AND m.date_created_us IS NOT NULL $deleted'
-        'AND ${MessageRepo.transcriptVisibleSql} '
-        'ORDER BY m.date_created_us DESC, m.id DESC LIMIT ? OFFSET ?',
-        [chatId, limit == 0 ? -1 : limit, offset],
-      );
-      final messages = rows.map(messageFromRow).toList();
-      await MessageRepo(reader).attachmentsFor(messages);
-      final unresolved = <int>{
-        for (final message in messages)
-          if (message.isFromMe != true &&
-              (message.handleId ?? 0) != 0 &&
-              participants.every((h) => h.originalROWID != message.handleId) &&
-              message.handleRelation.target == null)
-            message.handleId!,
-      };
-      final storedByRowId = await HandleRepo(reader).byRowIds(unresolved);
-      messages.removeWhere((message) {
-        if (participants.isEmpty || message.isFromMe == true || (message.handleId ?? 0) == 0) return false;
-        final handle = participants.firstWhereOrNull((h) => h.originalROWID == message.handleId) ??
-            message.handleRelation.target ??
-            storedByRowId[message.handleId];
-        return handle == null && message.originalROWID != null;
-      });
-      return messages;
-    }).then(_withReactions);
+    return db
+        .read((reader) async {
+          final deleted = includeDeleted ? '' : 'AND date_deleted_us IS NULL ';
+          final rows = await reader.select(
+            'SELECT m.* FROM messages m INDEXED BY messages_chat_time WHERE m.chat_id = ? '
+            'AND m.date_created_us IS NOT NULL $deleted'
+            'AND ${MessageRepo.transcriptVisibleSql} '
+            'ORDER BY m.date_created_us DESC, m.id DESC LIMIT ? OFFSET ?',
+            [chatId, limit == 0 ? -1 : limit, offset],
+          );
+          final messages = rows.map(messageFromRow).toList();
+          await MessageRepo(reader).attachmentsFor(messages);
+          final unresolved = <int>{
+            for (final message in messages)
+              if (message.isFromMe != true &&
+                  (message.handleId ?? 0) != 0 &&
+                  participants.every((h) => h.originalROWID != message.handleId) &&
+                  message.handleRelation.target == null)
+                message.handleId!,
+          };
+          final storedByRowId = await HandleRepo(reader).byRowIds(unresolved);
+          messages.removeWhere((message) {
+            if (participants.isEmpty || message.isFromMe == true || (message.handleId ?? 0) == 0) return false;
+            final handle =
+                participants.firstWhereOrNull((h) => h.originalROWID == message.handleId) ??
+                message.handleRelation.target ??
+                storedByRowId[message.handleId];
+            return handle == null && message.originalROWID != null;
+          });
+          return messages;
+        })
+        .then(_withReactions);
   }
 
   /// Keyset paging on (sort_at, id) through [MessageRepo]: its timeline
@@ -337,7 +341,9 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
   Future<MessagePage> olderMessagePage(int chatId, {MessagePageCursor? after, required int limit}) async {
     final repo = MessageRepo(db);
     final key = after?.key;
-    final page = key == null ? await repo.newest([chatId], limit: limit) : await repo.olderThan([chatId], key, limit: limit);
+    final page = key == null
+        ? await repo.newest([chatId], limit: limit)
+        : await repo.olderThan([chatId], key, limit: limit);
     return (
       messages: await _withReactions(page),
       next: page.isEmpty ? after : MessagePageCursor(MessageKey.of(page.last)),
@@ -362,7 +368,10 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
   /// reaction row has always shown), each pointing at the message it is set on.
   Future<List<Message>> _withReactions(List<Message> messages) async {
     if (messages.isEmpty) return messages;
-    final byGuid = {for (final m in messages) if (m.guid != null) m.guid!: m};
+    final byGuid = {
+      for (final m in messages)
+        if (m.guid != null) m.guid!: m,
+    };
     final on = <String, List<Message>>{};
     for (final reaction in (await MessageRepo(db).reactionsFor(byGuid.keys, on: byGuid)).reversed) {
       (on[reaction.associatedMessageGuid!] ??= []).add(reaction);
@@ -374,14 +383,21 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
   }
 
   @override
-  Future<List<Message>> searchMessages(String term,
-          {int? chatId, bool? isFromMe, int? senderRowId, DateTime? since, int limit = 50}) =>
-      MessageRepo(db).search(term,
-          chatIds: chatId == null ? null : [chatId],
-          isFromMe: isFromMe,
-          senderHandleId: senderRowId,
-          since: since,
-          limit: limit);
+  Future<List<Message>> searchMessages(
+    String term, {
+    int? chatId,
+    bool? isFromMe,
+    int? senderRowId,
+    DateTime? since,
+    int limit = 50,
+  }) => MessageRepo(db).search(
+    term,
+    chatIds: chatId == null ? null : [chatId],
+    isFromMe: isFromMe,
+    senderHandleId: senderRowId,
+    since: since,
+    limit: limit,
+  );
 
   @override
   Future<List<Chat>> chatsByGuids(List<String> guids) async {
@@ -396,10 +412,11 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
   @override
   Future<List<Message>> linkMessages(int chatId) async {
     final rows = await db.select(
-        'SELECT m.* FROM messages m INDEXED BY messages_chat_time WHERE m.chat_id = ? AND m.date_deleted_us IS NULL '
-        "AND m.payload_data_json IS NOT NULL AND m.balloon_bundle_id LIKE '%URLBalloonProvider%' "
-        'AND ${MessageRepo.transcriptVisibleSql} ORDER BY m.date_created_us DESC, m.id DESC',
-        [chatId]);
+      'SELECT m.* FROM messages m INDEXED BY messages_chat_time WHERE m.chat_id = ? AND m.date_deleted_us IS NULL '
+      "AND m.payload_data_json IS NOT NULL AND m.balloon_bundle_id LIKE '%URLBalloonProvider%' "
+      'AND ${MessageRepo.transcriptVisibleSql} ORDER BY m.date_created_us DESC, m.id DESC',
+      [chatId],
+    );
     return rows.map(messageFromRow).toList();
   }
 
@@ -422,10 +439,11 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
   @override
   Future<List<Attachment>> chatAttachments(int chatId) async {
     final rows = await db.select(
-        'SELECT a.id FROM attachments a JOIN messages m ON m.id = a.message_id '
-        'WHERE m.chat_id = ? AND m.date_deleted_us IS NULL AND m.date_created_us IS NOT NULL '
-        'AND ${MessageRepo.transcriptVisibleSql} AND a.mime_type IS NOT NULL',
-        [chatId]);
+      'SELECT a.id FROM attachments a JOIN messages m ON m.id = a.message_id '
+      'WHERE m.chat_id = ? AND m.date_deleted_us IS NULL AND m.date_created_us IS NOT NULL '
+      'AND ${MessageRepo.transcriptVisibleSql} AND a.mime_type IS NOT NULL',
+      [chatId],
+    );
     final found = await attachmentsWithMessages(db, rows.map((r) => r['id'] as int));
     final guids = <String?>{};
     return found.values.where((a) => guids.add(a.guid)).toList();
@@ -452,6 +470,7 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
     final chats = await ChatRepo(db).listPage(limit: offset + limit);
     return chats.skip(offset).map((chat) => chat.id!).toList();
   }
+
   /// Chat ids only grow (AUTOINCREMENT), so a chat is new when its id is above
   /// every id stored when the stream started or emitted since.
   @override
@@ -461,14 +480,18 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
     controller.onListen = () {
       final start = db.select('SELECT max(id) AS id FROM chats').then((rows) => rows.first['id'] as int? ?? 0);
       var newest = -1;
-      sub = DbChangeEvents.main.on('chats').asyncMap((ids) async {
-        if (newest < 0) newest = await start;
-        final added = ids.where((id) => id > newest).toList();
-        if (added.isEmpty) return const <Chat>[];
-        newest = added.max;
-        final chats = await ChatRepo(db).byIds(added);
-        return chats.values.where((c) => c.dateDeleted == null).sortedBy<num>((c) => c.id!);
-      }).where((chats) => chats.isNotEmpty).listen(controller.add, onError: controller.addError);
+      sub = DbChangeEvents.main
+          .on('chats')
+          .asyncMap((ids) async {
+            if (newest < 0) newest = await start;
+            final added = ids.where((id) => id > newest).toList();
+            if (added.isEmpty) return const <Chat>[];
+            newest = added.max;
+            final chats = await ChatRepo(db).byIds(added);
+            return chats.values.where((c) => c.dateDeleted == null).sortedBy<num>((c) => c.id!);
+          })
+          .where((chats) => chats.isNotEmpty)
+          .listen(controller.add, onError: controller.addError);
     };
     controller.onCancel = () => sub?.cancel();
     return controller.stream;
@@ -482,7 +505,9 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
 
   @override
   Future<List<Chat>> threadedChats() async {
-    final rows = await db.select('SELECT id FROM chats WHERE thread_key IS NOT NULL ORDER BY id');
+    // Every chat has a thread key once regrouped; only shared ones are threads of copies.
+    final rows = await db.select('SELECT id FROM chats WHERE thread_key IN '
+        '(SELECT thread_key FROM chats WHERE thread_key IS NOT NULL GROUP BY thread_key HAVING count(*) > 1) ORDER BY id');
     final ids = [for (final row in rows) row['id'] as int];
     return inIdOrder(ids, await ChatRepo(db).byIds(ids));
   }
@@ -492,11 +517,12 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
   @override
   Future<Message?> newestMessageIn(int chatId, {bool listing = true}) async {
     final rows = await db.select(
-        'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? '
-        'AND date_deleted_us IS NULL AND date_created_us IS NOT NULL '
-        '${listing ? 'AND (item_type IS NULL OR item_type = 0) ' : ''}'
-        'ORDER BY date_created_us DESC, id DESC LIMIT 1',
-        [chatId]);
+      'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? '
+      'AND date_deleted_us IS NULL AND date_created_us IS NOT NULL '
+      '${listing ? 'AND (item_type IS NULL OR item_type = 0) ' : ''}'
+      'ORDER BY date_created_us DESC, id DESC LIMIT 1',
+      [chatId],
+    );
     if (rows.isEmpty) return null;
     final message = messageFromRow(rows.single);
     await MessageRepo(db).attachmentsFor([message]);
@@ -505,7 +531,7 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
 
   @override
   Future<List<Chat>> threadChatsOf(Chat chat) async {
-    final key = chat.threadKey;
+    final key = await ChatRepo(db).storedThreadKey(chat);
     final chats = key == null || key.isEmpty ? <Chat>[] : await ChatRepo(db).threadCopies(key);
     return chats.any((c) => c.guid == chat.guid) ? chats : [chat, ...chats];
   }
@@ -521,7 +547,7 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
 
   @override
   Future<String?> threadNameOf(Chat chat) async {
-    final key = chat.threadKey;
+    final key = await ChatRepo(db).storedThreadKey(chat);
     if (key == null || key.isEmpty || chat.id == null) return chat.currentName;
     final copies = await ChatRepo(db).threadCopies(key);
     if (copies.length < 2) return chat.currentName;
@@ -532,7 +558,7 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
 
   @override
   Future<Chat?> canonicalTwinOf(Chat chat) async {
-    final key = chat.threadKey;
+    final key = await ChatRepo(db).storedThreadKey(chat);
     if (key == null || key.isEmpty) return null;
     return canonicalTwinFor(chat, await ChatRepo(db).threadCopies(key));
   }
@@ -583,12 +609,10 @@ class _SqliteChatStats implements ChatStatsReader {
   final Chat chat;
 
   @override
-  Future<int> messageCountForTier() =>
-      repo.messageCountForTier(chat.id!);
+  Future<int> messageCountForTier() => repo.messageCountForTier(chat.id!);
 
   @override
-  Future<({int count, int latestMillis})> cacheKey() =>
-      repo.cacheKey(chat.id!);
+  Future<({int count, int latestMillis})> cacheKey() => repo.cacheKey(chat.id!);
 
   @override
   Future<Map<int, List<int>>> timestampsByParticipant({int? sinceMillis}) =>
@@ -599,20 +623,16 @@ class _SqliteChatStats implements ChatStatsReader {
       repo.attachmentMessageCount(chat.id!, sinceMillis: sinceMillis);
 
   @override
-  Future<int> unattributedCount({int? sinceMillis}) =>
-      repo.unattributedCount(chat.id!, sinceMillis: sinceMillis);
+  Future<int> unattributedCount({int? sinceMillis}) => repo.unattributedCount(chat.id!, sinceMillis: sinceMillis);
 
   @override
-  Future<int?> firstMessageMillis() =>
-      repo.firstMessageMillis(chat.id!);
+  Future<int?> firstMessageMillis() => repo.firstMessageMillis(chat.id!);
 
   @override
-  Future<List<int>> readTimestamps({int? sinceMillis}) =>
-      repo.readTimestamps(chat.id!, sinceMillis: sinceMillis);
+  Future<List<int>> readTimestamps({int? sinceMillis}) => repo.readTimestamps(chat.id!, sinceMillis: sinceMillis);
 
   @override
-  Future<double> textCoverage() =>
-      repo.textCoverage(chat.id!);
+  Future<double> textCoverage() => repo.textCoverage(chat.id!);
 
   @override
   Future<List<String>> recentTexts({required bool fromMe, int? limit, int? participantId}) =>
@@ -623,16 +643,13 @@ class _SqliteChatStats implements ChatStatsReader {
       repo.textLengthsByParticipant(chat.id!, sinceMillis: sinceMillis, limitPerParticipant: limitPerParticipant);
 
   @override
-  Future<List<({String type, int participantId})>> reactions() =>
-      repo.reactions(chat.id!);
+  Future<List<({String type, int participantId})>> reactions() => repo.reactions(chat.id!);
 
   @override
-  Future<List<String>> attachmentMimeTypes() =>
-      repo.attachmentMimeTypes(chat.id!);
+  Future<List<String>> attachmentMimeTypes() => repo.attachmentMimeTypes(chat.id!);
 
   @override
-  Future<List<String>> expressiveSendStyleIds() =>
-      repo.expressiveSendStyleIds(chat.id!);
+  Future<List<String>> expressiveSendStyleIds() => repo.expressiveSendStyleIds(chat.id!);
 
   @override
   Future<int> editedCount({bool? fromMe, int? participantId}) =>
@@ -643,24 +660,21 @@ class _SqliteChatStats implements ChatStatsReader {
       repo.unsentCount(chat.id!, fromMe: fromMe, participantId: participantId);
 
   @override
-  Future<int> sentCount() =>
-      repo.sentCount(chat.id!);
+  Future<int> sentCount() => repo.sentCount(chat.id!);
 
   @override
-  Future<int> receivedCount({int? participantId}) =>
-      repo.receivedCount(chat.id!, participantId: participantId);
+  Future<int> receivedCount({int? participantId}) => repo.receivedCount(chat.id!, participantId: participantId);
 
   @override
-  Future<({int sent, int received, double? playedOfReceived})> audioStats() =>
-      repo.audioStats(chat.id!);
+  Future<({int sent, int received, double? playedOfReceived})> audioStats() => repo.audioStats(chat.id!);
 
   @override
-  Future<List<GroupEventRecord>> groupEvents() =>
-      repo.groupEvents(chat.id!);
+  Future<List<GroupEventRecord>> groupEvents() => repo.groupEvents(chat.id!);
 
   @override
-  Future<({List<ReactionMatrixRow> reactionRows, Map<String, int> guidToSender})> reactionMatrixData({required int sinceMillis}) =>
-      repo.reactionMatrixData(chat.id!, sinceMillis: sinceMillis);
+  Future<({List<ReactionMatrixRow> reactionRows, Map<String, int> guidToSender})> reactionMatrixData({
+    required int sinceMillis,
+  }) => repo.reactionMatrixData(chat.id!, sinceMillis: sinceMillis);
 
   @override
   Future<List<int>> participantHandleIds({int? sinceMillis}) =>

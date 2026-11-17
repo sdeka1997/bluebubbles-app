@@ -74,7 +74,7 @@ void main() {
       expect(await fixture().store.chatCount(), 2);
     });
 
-    test('threadedChats returns only the chats with a thread key', () async {
+    test('threadedChats returns only the chats whose thread has another copy', () async {
       await fixture().chat('plain');
       await fixture().chat('sms', threadKey: 'k');
       await fixture().chat('imessage', threadKey: 'k');

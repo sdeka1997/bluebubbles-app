@@ -48,6 +48,14 @@ class ChatRepo {
     });
   }
 
+  /// [chat]'s thread key as stored: a Chat held in memory can predate the
+  /// regroup that changed it.
+  Future<String?> storedThreadKey(Chat chat) async {
+    if (chat.id == null) return chat.threadKey;
+    final rows = await db.select('SELECT thread_key FROM chats WHERE id = ?', [chat.id]);
+    return rows.isEmpty ? chat.threadKey : rows.single['thread_key'] as String?;
+  }
+
   /// The live copies of [threadKey], with relations filled.
   Future<List<Chat>> threadCopies(String threadKey) async {
     final rows = await db.select('SELECT id FROM chats WHERE thread_key = ? AND date_deleted_us IS NULL ORDER BY id', [
@@ -136,12 +144,14 @@ class ChatRepo {
   /// Inserts or updates [chats] by guid, keeping a stored chat's id. Every
   /// column is written from the object (as ObjectBox's `put`), so callers
   /// merge into the stored chat first. Participants: [setParticipants].
-  /// Saves [chats] by guid. The latest pointer is the database's and never
-  /// written from memory; only a new chat keeps the date it arrived with, to
+  /// Saves [chats] by guid. The thread key is [regroupThreads]'s and the latest
+  /// pointer the database's; neither is written from memory; only a new chat keeps the date it arrived with, to
   /// order it until its first message is stored.
   Future<List<Chat>> upsert(WriteTx tx, List<Chat> chats) async {
     Map<String, Object?> toRow(Chat c) {
-      final row = chatToRow(c)..remove('latest_message_id');
+      final row = chatToRow(c)
+        ..remove('latest_message_id')
+        ..remove('thread_key');
       if (c.id != null) row.remove('latest_message_date_us');
       return row;
     }
@@ -183,8 +193,9 @@ class ChatRepo {
     final result = <int, (int?, int?)>{};
     for (final chunk in chatIds.toSet().toList().slices(500)) {
       final rows = await db.select(
-          'SELECT id, latest_message_id, latest_message_date_us FROM chats WHERE id IN (${sqlPlaceholders(chunk.length)})',
-          chunk);
+        'SELECT id, latest_message_id, latest_message_date_us FROM chats WHERE id IN (${sqlPlaceholders(chunk.length)})',
+        chunk,
+      );
       for (final row in rows) {
         result[row['id'] as int] = (row['latest_message_id'] as int?, row['latest_message_date_us'] as int?);
       }
@@ -202,31 +213,35 @@ class ChatRepo {
     return (rows.single['latest_message_id'] as int?, us == null ? null : DateTime.fromMicrosecondsSinceEpoch(us));
   }
 
-  /// `foldServiceTwins` (service_twin_helpers.dart) on SQLite: regroups every
-  /// chat (stores changed thread keys), then for each chat of [chats], or whose
-  /// thread changed, that is folded into another: carries its pin, mute,
-  /// archive and custom name over to the thread, moves all its messages there
-  /// with one UPDATE (each keeps `apple_chat_guid`, the chat it came from),
-  /// which re-points both chats.
-  /// Runs in the caller's write. Returns each folded chat's guid mapped to its
-  /// thread, one instance per thread, with its pointer as stored.
-  Future<Map<String, Chat>> foldServiceTwins(WriteTx tx, Iterable<Chat> chats) async {
+  /// Runs [regroupThreads] when the write changed what thread grouping reads
+  /// (regroupPendingTriggers in app_database.dart). Db.write calls it before
+  /// every commit; a write that needs the result sooner calls it itself.
+  Future<Map<String, Chat>> regroupIfPending(WriteTx tx) async {
+    if ((await tx.select("SELECT 1 FROM storage_meta WHERE key = 'regroup_pending'")).isEmpty) return {};
+    final folded = await regroupThreads(tx);
+    await tx.execute("DELETE FROM storage_meta WHERE key = 'regroup_pending'");
+    return folded;
+  }
+
+  /// Regroups every chat (the only writer of `thread_key`); the database then
+  /// files their messages (threadFilingTriggers). Each chat of a thread that
+  /// changed which is folded into another carries its pin, mute, archive and
+  /// custom name over to the thread. Returns each such chat's guid mapped to
+  /// its thread, one instance per thread, with its pointer as stored.
+  Future<Map<String, Chat>> regroupThreads(WriteTx tx) async {
     final all = (await tx.select('SELECT * FROM chats')).map(chatFromRow).toList();
     await ChatRepo(tx)._fill(all, latest: false);
     final regrouped = assignThreadKeys(all);
     for (final chat in regrouped) {
       await tx.execute('UPDATE chats SET thread_key = ? WHERE id = ?', [chat.threadKey, chat.id]);
     }
-    final byGuid = {for (final c in all) c.guid: c};
     final inThread = all.where((c) => c.threadKey?.isNotEmpty ?? false).groupListsBy((c) => c.threadKey!);
     // A thread's first chat can change when a chat joins it, so every chat in
-    // a touched thread is checked, not only the ones whose key changed.
+    // a changed thread is checked, not only the ones whose key changed.
     final touched = <String, Chat>{};
-    for (final chat in [...chats, ...regrouped]) {
-      final stored = byGuid[chat.guid];
-      if (stored == null) continue;
-      touched[stored.guid] = stored;
-      for (final c in inThread[stored.threadKey] ?? const <Chat>[]) {
+    for (final chat in regrouped) {
+      touched[chat.guid] = chat;
+      for (final c in inThread[chat.threadKey] ?? const <Chat>[]) {
         touched.putIfAbsent(c.guid, () => c);
       }
     }
@@ -251,16 +266,27 @@ class ChatRepo {
           ],
         );
       }
-      final moved = await tx.select(
-        'UPDATE messages SET apple_chat_guid = coalesce(apple_chat_guid, ?), chat_id = ? WHERE chat_id = ? RETURNING id',
-        [twin.guid, canonical.id, twin.id],
-      );
-      if (moved.isEmpty) continue;
+    }
+    for (final canonical in folded.values.toSet()) {
       final (id, date) = (await _pointer(tx, canonical.id!))!;
       canonical.dbLatestMessage.targetId = id;
       canonical.dbOnlyLatestMessageDate = date;
     }
     return folded;
+  }
+
+  /// [chatIds] and every chat sharing a thread with one of them.
+  Future<Set<int>> withThreadMates(Iterable<int> chatIds) async {
+    final result = chatIds.toSet();
+    for (final chunk in result.toList().slices(500)) {
+      final rows = await db.select(
+        'SELECT t.id FROM chats c JOIN chats t ON t.thread_key = c.thread_key '
+        'WHERE c.id IN (${sqlPlaceholders(chunk.length)})',
+        chunk,
+      );
+      result.addAll(rows.map((r) => r['id'] as int));
+    }
+    return result;
   }
 
   Future<List<Chat>> all() async {

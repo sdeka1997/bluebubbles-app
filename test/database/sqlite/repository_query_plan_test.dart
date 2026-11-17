@@ -294,11 +294,20 @@ void main() {
 
         test('ContactRepo writes -> unique native id; setHandles / deleteByNativeIds -> keys', () async {
           expectIndexed(
-              await plansOf(db, () => db.write((tx) => contacts.upsert(tx, [ContactV2(displayName: 'x', nativeContactId: 'native-5')]))),
+              await plansOf(db, () => db.write((tx) async {
+                    await contacts.upsert(tx, [ContactV2(displayName: 'x', nativeContactId: 'native-5')]);
+                    await _skipRegroup(tx);
+                  })),
               {'sqlite_autoindex_contacts_1 (native_contact_id=?)'});
-          expectIndexed(await plansOf(db, () => db.write((tx) => contacts.setHandles(tx, 5, [5, 6]))),
+          expectIndexed(await plansOf(db, () => db.write((tx) async {
+                    await contacts.setHandles(tx, 5, [5, 6]);
+                    await _skipRegroup(tx);
+                  })),
               {'contact_handles USING PRIMARY KEY (contact_id=?)', 'handles USING INTEGER PRIMARY KEY (rowid=?)'});
-          expectIndexed(await plansOf(db, () => db.write((tx) => contacts.deleteByNativeIds(tx, ['native-7']))),
+          expectIndexed(await plansOf(db, () => db.write((tx) async {
+                    await contacts.deleteByNativeIds(tx, ['native-7']);
+                    await _skipRegroup(tx);
+                  })),
               {'sqlite_autoindex_contacts_1 (native_contact_id=?)', 'contact_handles USING PRIMARY KEY (contact_id=?)'});
         });
 
@@ -348,25 +357,34 @@ void main() {
         });
 
         test('ChatRepo.upsert -> unique guid index; setParticipants / setUnread -> primary keys', () async {
-          expectIndexed(await plansOf(db, () => db.write((tx) => chats.upsert(tx, [Chat(guid: 'chat-5'), Chat(guid: 'new')]))),
+          expectIndexed(await plansOf(db, () => db.write((tx) async {
+                    await chats.upsert(tx, [Chat(guid: 'chat-5'), Chat(guid: 'new')]);
+                    await _skipRegroup(tx);
+                  })),
               {'sqlite_autoindex_chats_1 (guid=?)'});
-          expectIndexed(await plansOf(db, () => db.write((tx) => chats.setParticipants(tx, 5, [1, 2]))),
+          expectIndexed(await plansOf(db, () => db.write((tx) async {
+                    await chats.setParticipants(tx, 5, [1, 2]);
+                    await _skipRegroup(tx);
+                  })),
               {'chat_handles USING PRIMARY KEY (chat_id=?)', 'handles USING INTEGER PRIMARY KEY (rowid=?)'});
           expectIndexed(await plansOf(db, () => db.write((tx) => chats.setUnread(tx, [1, 2], true))),
               {'chats USING INTEGER PRIMARY KEY (rowid=?)'});
         });
 
-        test('ChatRepo.foldServiceTwins: messages move on messages_chat_time; chats (with participants) read whole, as getAll today', () async {
-          await db.write((tx) => tx.execute("UPDATE chats SET chat_identifier = 'same' WHERE id IN (7, 8)"));
-          final plans = await plansOf(db, () => db.write((tx) => chats.foldServiceTwins(tx, const [])));
-          expect(plans.where((p) => p.$1.startsWith('UPDATE messages')), isNotEmpty, reason: 'chat 8 folds into 7');
+        test('ChatRepo.regroupThreads: chats (with participants) read whole, as getAll today; the refile is keyed', () async {
+          await db.database.customStatement("UPDATE chats SET chat_identifier = 'same' WHERE id IN (7, 8)");
+          final plans = await plansOf(db, () => db.write((tx) => chats.regroupThreads(tx)));
+          expect(plans.where((p) => p.$1.startsWith('UPDATE chats SET thread_key')), isNotEmpty, reason: 'chat 8 joins 7');
+          // The trigger's refile (threadFilingTriggers) finds a thread's messages by Apple chat.
+          final refile = await db.select("EXPLAIN QUERY PLAN SELECT id FROM messages WHERE apple_chat_guid IN "
+              "(SELECT guid FROM chats WHERE id = 7 OR thread_key IN ('a', 'b'))");
+          expect(refile.map((r) => r['detail'] as String).join('\n'), contains('messages_apple_chat'));
           for (final (sql, lines) in plans) {
             for (final line in lines) {
               expect(line, isNot(contains('TEMP B-TREE')), reason: '$sql\n$lines');
               final scanned = RegExp(r'^SCAN (\w+)$').firstMatch(line)?.group(1);
               if (scanned != null) expect(['chats', 'chat_handles', 'handles', 'contact_handles'], contains(scanned), reason: '$sql\n$lines');
             }
-            if (sql.startsWith('UPDATE messages')) expect(lines.join(), contains('messages_chat_time (chat_id=?)'));
           }
         });
         test('SqliteSyncBatch.write: messages and attachments always keyed; only the fold reads chats (and their participants) whole', () async {
@@ -425,3 +443,6 @@ void main() {
     });
   }
 }
+
+/// Leaves the regroup this write's grouping change triggers to its own test.
+Future<void> _skipRegroup(WriteTx tx) => tx.execute("DELETE FROM storage_meta WHERE key = 'regroup_pending'");

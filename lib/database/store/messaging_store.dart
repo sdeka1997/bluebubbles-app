@@ -431,7 +431,7 @@ abstract interface class ChatStore {
   /// Every stored chat, deleted ones included.
   Future<int> chatCount();
 
-  /// The stored chats that belong to a thread (threadKey set).
+  /// The stored chats whose thread has more than one copy.
   Future<List<Chat>> threadedChats();
 
   /// The live chat [chat] is folded into, or null when [chat] is its own thread.

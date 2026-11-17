@@ -45,6 +45,7 @@ mixin SqliteSyncHelperStore implements SyncHelperStore, SqliteStorePart {
       final synced = <Message>[];
       for (final message in messages) {
         final stored = existing[message.guid];
+        message.appleChatGuid ??= chat.guid;
         final merged = stored == null ? message : Message.merge(message, stored);
         merged.chat
           ..loadedFromSqlite(chat.id, label: 'Message.chat')

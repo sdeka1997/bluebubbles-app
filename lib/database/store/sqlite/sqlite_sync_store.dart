@@ -31,7 +31,9 @@ mixin SqliteSyncStore implements SyncStore, SqliteStorePart {
 
   @override
   Future<List<Chat>> deletedChats() async {
-    final rows = await db.select('SELECT id FROM chats WHERE date_deleted_us IS NOT NULL ORDER BY date_deleted_us DESC, id DESC');
+    final rows = await db.select(
+      'SELECT id FROM chats WHERE date_deleted_us IS NOT NULL ORDER BY date_deleted_us DESC, id DESC',
+    );
     final ids = [for (final row in rows) row['id'] as int];
     return inIdOrder(ids, await ChatRepo(db).byIds(ids));
   }
@@ -40,10 +42,11 @@ mixin SqliteSyncStore implements SyncStore, SqliteStorePart {
   Future<List<Chat>> liveChatsWithParticipants(List<int> handleIds) async {
     if (handleIds.isEmpty) return const [];
     final rows = await db.select(
-        'SELECT DISTINCT c.id FROM chat_handles ch JOIN chats c ON c.id = ch.chat_id '
-        'WHERE c.date_deleted_us IS NULL AND ch.handle_id IN (${List.filled(handleIds.length, '?').join(', ')}) '
-        'ORDER BY c.id',
-        handleIds);
+      'SELECT DISTINCT c.id FROM chat_handles ch JOIN chats c ON c.id = ch.chat_id '
+      'WHERE c.date_deleted_us IS NULL AND ch.handle_id IN (${List.filled(handleIds.length, '?').join(', ')}) '
+      'ORDER BY c.id',
+      handleIds,
+    );
     final ids = [for (final row in rows) row['id'] as int];
     return inIdOrder(ids, await ChatRepo(db).byIds(ids));
   }
@@ -62,7 +65,7 @@ mixin SqliteSyncStore implements SyncStore, SqliteStorePart {
         ...updateSpamFlagsFromRemote(localChats, remoteChats),
       }.toList();
       if (changed.isNotEmpty) await repo.upsert(tx, changed);
-      final folded = await repo.foldServiceTwins(tx, localChats);
+      final folded = await repo.regroupIfPending(tx);
       return ChatMetadataRefreshResult(changedChats: changed, foldedChats: folded);
     });
   }

@@ -77,27 +77,35 @@ class SqliteSyncBatch {
   /// Writes [batch] in one transaction. Returns `messageIds` (every saved
   /// message) and `chatIds` (chats whose latest pointer moved).
   static Future<Map<String, dynamic>> write(Db db, PreparedSyncBatch batch) => db.write((tx) async {
-        final handleRepo = HandleRepo(tx);
-        final handlesMap = await handleRepo.insertMissing(tx, batch.handles);
-        await handleRepo.adoptServerRowIds(tx, [
-          for (final e in batch.reportedRowIds.entries)
-            if (handlesMap[e.key]?.id != null) (handlesMap[e.key]!, e.value),
-        ]);
+    final handleRepo = HandleRepo(tx);
+    final handlesMap = await handleRepo.insertMissing(tx, batch.handles);
+    await handleRepo.adoptServerRowIds(tx, [
+      for (final e in batch.reportedRowIds.entries)
+        if (handlesMap[e.key]?.id != null) (handlesMap[e.key]!, e.value),
+    ]);
 
-        final chatsMap = await _chats(tx, batch, handlesMap);
-        final touched = [for (final c in chatsMap.values) if (c.id != null) c.id!];
-        final before = await ChatRepo(tx).pointers(touched);
-        final (saved, byGuid) = await _messages(tx, batch, chatsMap, handlesMap);
-        await _attachments(tx, batch, byGuid);
+    final chatsMap = await _chats(tx, batch, handlesMap);
+    // Regrouped now, so the pointers below see every chat the batch moves.
+    await ChatRepo(tx).regroupIfPending(tx);
+    final touched = await ChatRepo(tx).withThreadMates([
+      for (final c in chatsMap.values)
+        if (c.id != null) c.id!,
+    ]);
+    final before = await ChatRepo(tx).pointers(touched);
+    final (saved, byGuid) = await _messages(tx, batch, chatsMap, handlesMap);
+    await _attachments(tx, batch, byGuid);
 
-        final after = await ChatRepo(tx).pointers(touched);
-        final chatIds = [for (final id in touched.toSet()) if (after[id] != before[id]) id];
-        return {'messageIds': saved.map((m) => m.id!).toList(), 'chatIds': chatIds};
-      });
+    final after = await ChatRepo(tx).pointers(touched);
+    final chatIds = [
+      for (final id in touched)
+        if (after[id] != before[id]) id,
+    ];
+    return {'messageIds': saved.map((m) => m.id!).toList(), 'chatIds': chatIds};
+  });
 
   static String _handleKey(Map<String, dynamic> h) => '${h['address'] ?? ''}/${h['service'] ?? 'iMessage'}';
 
-  /// `_syncChatsInTx`: merges into stored chats, links participants, folds twins.
+  /// `_syncChatsInTx`: merges into stored chats, links participants.
   static Future<Map<String, Chat>> _chats(WriteTx tx, PreparedSyncBatch batch, Map<String, Handle> handlesMap) async {
     if (batch.chatDataByGuid.isEmpty) return {};
     final inputs = batch.chatDataByGuid.values.map(Chat.fromMap).toList();
@@ -132,13 +140,17 @@ class SqliteSyncBatch {
       final ids = participants[chat.guid]!;
       if (ids.isNotEmpty) await chats.setParticipants(tx, chat.id!, ids);
     }
-    return {for (final c in toSave) c.guid: c, ...await chats.foldServiceTwins(tx, toSave)};
+    return {for (final c in toSave) c.guid: c};
   }
 
   /// `_syncMessagesInTx`: merges into stored messages, wires chat and sender,
   /// sets `has_reactions` on the messages reacted to.
   static Future<(List<Message>, Map<String, Message>)> _messages(
-      WriteTx tx, PreparedSyncBatch batch, Map<String, Chat> chatsMap, Map<String, Handle> handlesMap) async {
+    WriteTx tx,
+    PreparedSyncBatch batch,
+    Map<String, Chat> chatsMap,
+    Map<String, Handle> handlesMap,
+  ) async {
     final data = batch.messagesData;
     if (data.isEmpty) return (<Message>[], <String, Message>{});
     final inputs = data.map((m) {
@@ -149,8 +161,14 @@ class SqliteSyncBatch {
     final stored = await _byKey(tx, 'messages', 'guid', inputs.map((m) => m.guid!), messageFromRow, (m) => m.guid!);
     await RelationFill.attachmentsOnly(tx, stored.values);
     final handles = HandleRepo(tx);
-    final linked = await handles.byIds({for (final m in stored.values) if (m.handleRelation.targetId != 0) m.handleRelation.targetId});
-    final byRowId = await handles.byRowIds({for (final m in inputs) if ((m.handleId ?? 0) > 0) m.handleId!});
+    final linked = await handles.byIds({
+      for (final m in stored.values)
+        if (m.handleRelation.targetId != 0) m.handleRelation.targetId,
+    });
+    final byRowId = await handles.byRowIds({
+      for (final m in inputs)
+        if ((m.handleId ?? 0) > 0) m.handleId!,
+    });
     final singleChat = batch.chatData == null ? null : chatsMap[batch.chatData!['guid'] as String?];
 
     final toSave = <Message>[];
@@ -187,7 +205,10 @@ class SqliteSyncBatch {
       toSave.add(msg);
     }
     await MessageRepo(tx).upsert(tx, toSave);
-    final byGuid = {for (final m in toSave) if (m.guid != null) m.guid!: m};
+    final byGuid = {
+      for (final m in toSave)
+        if (m.guid != null) m.guid!: m,
+    };
 
     final reactedGuids = {
       for (final m in toSave)
@@ -227,7 +248,14 @@ class SqliteSyncBatch {
     }
     if (maps.isEmpty) return;
     final inputs = maps.map(Attachment.fromMap).toList();
-    final stored = await _byKey(tx, 'attachments', 'guid', inputs.map((a) => a.guid!), attachmentFromRow, (a) => a.guid!);
+    final stored = await _byKey(
+      tx,
+      'attachments',
+      'guid',
+      inputs.map((a) => a.guid!),
+      attachmentFromRow,
+      (a) => a.guid!,
+    );
     final toSave = <Attachment>[];
     final flagged = <int>{};
     for (final input in inputs) {
@@ -252,7 +280,12 @@ class SqliteSyncBatch {
     }
   }
 
-  static Future<List<Map<String, Object?>>> _rowsByKey(WriteTx tx, String table, String column, Iterable<String> keys) async {
+  static Future<List<Map<String, Object?>>> _rowsByKey(
+    WriteTx tx,
+    String table,
+    String column,
+    Iterable<String> keys,
+  ) async {
     final rows = <Map<String, Object?>>[];
     for (final chunk in keys.toSet().toList().slices(500)) {
       rows.addAll(await tx.select('SELECT * FROM $table WHERE $column IN (${sqlPlaceholders(chunk.length)})', chunk));
@@ -260,8 +293,14 @@ class SqliteSyncBatch {
     return rows;
   }
 
-  static Future<Map<String, T>> _byKey<T>(WriteTx tx, String table, String column, Iterable<String> keys,
-      T Function(Map<String, Object?> row) fromRow, String Function(T item) key) async {
+  static Future<Map<String, T>> _byKey<T>(
+    WriteTx tx,
+    String table,
+    String column,
+    Iterable<String> keys,
+    T Function(Map<String, Object?> row) fromRow,
+    String Function(T item) key,
+  ) async {
     final items = (await _rowsByKey(tx, table, column, keys)).map(fromRow);
     return {for (final item in items) key(item): item};
   }

@@ -88,7 +88,7 @@ void main() {
           ..message(2, 1, baseMs + 3000, guid: 'moves')
           ..message(3, 2, baseMs + 2000, guid: 'twin'))
         .into(db);
-    await run('UPDATE messages SET chat_id = 2 WHERE id = 2');
+    await run("UPDATE messages SET apple_chat_guid = 'chat-2' WHERE id = 2");
     expect(await latest(1), 'stays');
     expect(await latest(2), 'moves');
   });
@@ -135,6 +135,7 @@ void main() {
           ..chat(1)
           ..message(1, 1, baseMs + 1000, guid: 'a'))
         .into(db);
+    await db.write((tx) async {}); // the seed's chats regroup on the first write
     final statements = await db.recordStatements(() => run("UPDATE messages SET text = 'edited' WHERE id = 1"));
     expect(statements.where((s) => s.$1.contains('UPDATE chats')), isEmpty);
     expect(await latest(1), 'a');
@@ -176,7 +177,7 @@ void main() {
 
       final store = await openStorage(dir, onMain: false);
       final repo = ChatRepo(store.db);
-      expect((await store.db.select('PRAGMA user_version')).single.values.single, 5);
+      expect((await store.db.select('PRAGMA user_version')).single.values.single, 6);
       final page = await repo.listPage();
       expect(page.map((c) => c.latestMessage?.guid), ['two-unread', 'three-text', 'one-read']);
       expect(page.map((c) => c.hasUnreadMessage), [true, false, false]);

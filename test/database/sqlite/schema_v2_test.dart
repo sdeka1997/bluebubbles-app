@@ -74,7 +74,7 @@ void main() {
     tearDown(() => db.close());
 
     test('opens at schema v2 with foreign keys on', () async {
-      expect(db.database.schemaVersion, 5);
+      expect(db.database.schemaVersion, 6);
       expect((await rows(db, 'PRAGMA foreign_keys')).single.values.single, 1);
     });
 
@@ -190,6 +190,15 @@ void main() {
             r['name'],
         ],
         [
+          'chat_handles_regroup_delete',
+          'chat_handles_regroup_insert',
+          'chats_file_thread',
+          'chats_regroup_insert',
+          'chats_regroup_update',
+          'contact_handles_regroup_delete',
+          'contact_handles_regroup_insert',
+          'messages_file_insert',
+          'messages_file_update',
           'messages_fts_ad',
           'messages_fts_ai',
           'messages_fts_au',
@@ -245,7 +254,7 @@ void main() {
 
         final db = Db.file(file);
         addTearDown(db.close);
-        expect((await rows(db, 'PRAGMA user_version')).single.values.single, 5);
+        expect((await rows(db, 'PRAGMA user_version')).single.values.single, 6);
         expect(await schema(db), await schema(fresh), reason: 'a migrated file has exactly the schema of a new one');
         for (final table in ['messages', 'attachments', 'chat_handles', 'contact_handles', 'custom_group_chats']) {
           expect(await foreignKeys(db, table), await foreignKeys(fresh, table), reason: table);

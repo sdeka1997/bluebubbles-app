@@ -150,7 +150,8 @@ class Attachments extends Table {
   IntColumn get height => integer().nullable()();
   IntColumn get width => integer().nullable()();
   TextColumn get webUrl => text().nullable()();
-  IntColumn get messageId => integer().nullable().customConstraint('NULL REFERENCES messages (id) ON DELETE SET NULL')();
+  IntColumn get messageId =>
+      integer().nullable().customConstraint('NULL REFERENCES messages (id) ON DELETE SET NULL')();
   BoolColumn get hasLivePhoto => boolean()();
   BoolColumn get isDownloaded => boolean()();
   TextColumn get metadataJson => text().nullable()();
@@ -219,7 +220,8 @@ class StorageMeta extends Table {
 
 /// The app's themes (stage S4), kept outside drift's generated tables: only
 /// ThemeStore reads or writes them.
-const themesTable = 'CREATE TABLE IF NOT EXISTS themes (name TEXT NOT NULL PRIMARY KEY, '
+const themesTable =
+    'CREATE TABLE IF NOT EXISTS themes (name TEXT NOT NULL PRIMARY KEY, '
     'gradient_bg INTEGER NOT NULL, google_font TEXT NOT NULL, data_json TEXT NOT NULL)';
 
 // Each chat's latest pointer (chats.latest_message_id / latest_message_date_us)
@@ -231,7 +233,8 @@ const themesTable = 'CREATE TABLE IF NOT EXISTS themes (name TEXT NOT NULL PRIMA
 // (chat_list_message.dart) is the same rule in Dart.
 const _listing = 'date_deleted_us IS NULL AND date_created_us IS NOT NULL AND coalesce(item_type, 0) = 0';
 
-String _newestListing(String chat) => '(SELECT id, date_created_us FROM messages INDEXED BY messages_listing '
+String _newestListing(String chat) =>
+    '(SELECT id, date_created_us FROM messages INDEXED BY messages_listing '
     'WHERE chat_id = $chat AND $_listing ORDER BY sort_at_us DESC, id DESC LIMIT 1)';
 
 String _pointLatest(String chat) =>
@@ -252,6 +255,60 @@ final latestPointerTriggers = [
       'OR OLD.date_created_us IS NOT NEW.date_created_us OR OLD.sort_at_us IS NOT NEW.sort_at_us '
       'OR OLD.item_type IS NOT NEW.item_type '
       'BEGIN ${_pointLatest('NEW.chat_id')}; ${_pointLatest('OLD.chat_id')}; END',
+];
+
+// A message's real Apple chat is stored once, in apple_chat_guid. The chat it
+// is filed under (chat_id) belongs to the database: the shown chat of the real
+// chat's thread -- the lowest-id live chat sharing its thread_key -- else the
+// real chat itself. canonicalTwinFor (service_twin_helpers.dart) is the same
+// rule in Dart. No app code files a message under a thread.
+String _shownChat(String chat) =>
+    'coalesce((SELECT min(t.id) FROM chats c JOIN chats t ON t.thread_key = c.thread_key '
+    'AND t.date_deleted_us IS NULL WHERE c.id = $chat AND c.thread_key IS NOT NULL), $chat)';
+
+final _filedChat = _shownChat(
+  'coalesce((SELECT id FROM chats WHERE guid = messages.apple_chat_guid), messages.chat_id)',
+);
+
+String _file(String where) => 'UPDATE messages SET chat_id = $_filedChat WHERE $where AND chat_id IS NOT $_filedChat';
+
+/// Files every message under its thread again (the v6 upgrade).
+final threadFilingRefile = _file('apple_chat_guid IS NOT NULL');
+
+final threadFilingTriggers = [
+  'CREATE TRIGGER IF NOT EXISTS messages_file_insert AFTER INSERT ON messages WHEN NEW.chat_id IS NOT NULL BEGIN '
+      'UPDATE messages SET apple_chat_guid = (SELECT guid FROM chats WHERE id = NEW.chat_id) '
+      "WHERE id = NEW.id AND apple_chat_guid IS NULL; ${_file('id = NEW.id')}; END",
+  // A write from memory that sends no Apple chat keeps the stored one.
+  'CREATE TRIGGER IF NOT EXISTS messages_file_update AFTER UPDATE OF chat_id, apple_chat_guid ON messages '
+      'WHEN NEW.chat_id IS NOT NULL BEGIN '
+      'UPDATE messages SET apple_chat_guid = coalesce(OLD.apple_chat_guid, (SELECT guid FROM chats WHERE id = NEW.chat_id)) '
+      "WHERE id = NEW.id AND apple_chat_guid IS NULL; ${_file('id = NEW.id')}; END",
+  'CREATE TRIGGER IF NOT EXISTS chats_file_thread AFTER UPDATE OF thread_key, date_deleted_us ON chats '
+      'WHEN OLD.thread_key IS NOT NEW.thread_key OR OLD.date_deleted_us IS NOT NEW.date_deleted_us BEGIN '
+      "${_file('apple_chat_guid IN (SELECT guid FROM chats WHERE id = NEW.id OR thread_key IN (OLD.thread_key, NEW.thread_key))')}; END",
+];
+
+// What thread grouping reads (chatKeysFor): a change marks the chats for a
+// regroup, which ChatRepo.regroupIfPending runs before the write commits.
+const _markRegroup = "INSERT OR IGNORE INTO storage_meta (key, value) VALUES ('regroup_pending', '1')";
+const _groupingColumns = [
+  'chat_identifier',
+  'group_id',
+  'original_group_id',
+  'legacy_group_ids_json',
+  'latest_group_title',
+  'display_name',
+  'style',
+];
+
+final regroupPendingTriggers = [
+  'CREATE TRIGGER IF NOT EXISTS chats_regroup_insert AFTER INSERT ON chats BEGIN $_markRegroup; END',
+  'CREATE TRIGGER IF NOT EXISTS chats_regroup_update AFTER UPDATE OF ${_groupingColumns.join(', ')} ON chats '
+      'WHEN ${_groupingColumns.map((c) => 'OLD.$c IS NOT NEW.$c').join(' OR ')} BEGIN $_markRegroup; END',
+  for (final table in ['chat_handles', 'contact_handles'])
+    for (final event in ['INSERT', 'DELETE'])
+      'CREATE TRIGGER IF NOT EXISTS ${table}_regroup_${event.toLowerCase()} AFTER $event ON $table BEGIN $_markRegroup; END',
 ];
 
 /// Secondary indexes, by the query shape each serves (SQLITE-PLAN-2 section 3).
@@ -279,6 +336,8 @@ const schemaIndexes = <String>[
       'WHERE date_deleted_us IS NULL',
   'CREATE INDEX IF NOT EXISTS chats_identifier ON chats (chat_identifier)',
   'CREATE INDEX IF NOT EXISTS chats_thread_key ON chats (thread_key) WHERE thread_key IS NOT NULL',
+  // The messages of one Apple chat: the filing triggers' lookup when a thread changes.
+  'CREATE INDEX IF NOT EXISTS messages_apple_chat ON messages (apple_chat_guid) WHERE apple_chat_guid IS NOT NULL',
   'CREATE INDEX IF NOT EXISTS handles_rowid ON handles (original_rowid)',
   'CREATE INDEX IF NOT EXISTS handles_address ON handles (address, service)',
   'CREATE INDEX IF NOT EXISTS chat_handles_handle ON chat_handles (handle_id)',
@@ -293,7 +352,8 @@ const schemaIndexes = <String>[
 /// is folded for ASCII letters only, exactly as ObjectBox's
 /// `contains(caseSensitive: false)`. `detail='none'`: LIKE needs no positions,
 /// and the index is half the size of the default.
-const ftsTable = "CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(text, subject, content='messages', "
+const ftsTable =
+    "CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(text, subject, content='messages', "
     "content_rowid='id', tokenize='trigram', detail='none')";
 
 /// Keep messages_fts in step with messages. The bulk copy drops these, fills
@@ -368,8 +428,9 @@ class AppDatabase extends _$AppDatabase {
   /// again: a kill midway finishes on the next open.
   Future<void> _shrinkMessages() async {
     await customStatement(
-        "UPDATE messages SET message_summary_info_json = NULL WHERE message_summary_info_json IN ('[]', ?)",
-        [emptySummaryInfoJson]);
+      "UPDATE messages SET message_summary_info_json = NULL WHERE message_summary_info_json IN ('[]', ?)",
+      [emptySummaryInfoJson],
+    );
     var after = 0;
     while (true) {
       final rows = await customSelect(
@@ -381,13 +442,14 @@ class AppDatabase extends _$AppDatabase {
       after = rows.last.read<int>('id');
       final plain = [
         for (final r in rows)
-          if (r.read<String>('b') == plainTextBodyJson(r.read<String>('text'))) r.read<int>('id')
+          if (r.read<String>('b') == plainTextBodyJson(r.read<String>('text'))) r.read<int>('id'),
       ];
       for (var i = 0; i < plain.length; i += 500) {
         final chunk = plain.sublist(i, i + 500 > plain.length ? plain.length : i + 500);
         await customStatement(
-            'UPDATE messages SET attributed_body_json = NULL WHERE id IN (${List.filled(chunk.length, '?').join(', ')})',
-            chunk);
+          'UPDATE messages SET attributed_body_json = NULL WHERE id IN (${List.filled(chunk.length, '?').join(', ')})',
+          chunk,
+        );
       }
     }
     await customStatement('DROP TABLE IF EXISTS copy_checkpoints');
@@ -414,16 +476,41 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  /// v5 -> v6: the database files messages under their thread
+  /// ([threadFilingTriggers]) and marks regroups ([regroupPendingTriggers]).
+  /// A message an older build moved before it recorded the Apple chat keeps
+  /// the chat it is on, as send routing already assumed. The first write
+  /// regroups every chat.
+  Future<void> _fileInThreads() async {
+    await customStatement(schemaIndexes.firstWhere((s) => s.contains(' messages_apple_chat ')));
+    await customStatement(
+      'UPDATE messages SET apple_chat_guid = (SELECT guid FROM chats WHERE id = messages.chat_id) '
+      'WHERE apple_chat_guid IS NULL AND chat_id IS NOT NULL',
+    );
+    for (final trigger in [...threadFilingTriggers, ...regroupPendingTriggers]) {
+      await customStatement(trigger);
+    }
+    await customStatement(threadFilingRefile);
+    await customStatement(_markRegroup);
+  }
+
   AppDatabase.file(File file) : this(NativeDatabase.createInBackground(file));
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
       await m.createAll();
-      for (final statement in [...schemaIndexes, ftsTable, themesTable, ...latestPointerTriggers]) {
+      for (final statement in [
+        ...schemaIndexes,
+        ftsTable,
+        themesTable,
+        ...latestPointerTriggers,
+        ...threadFilingTriggers,
+        ...regroupPendingTriggers,
+      ]) {
         await customStatement(statement);
       }
       await rebuildFts(customStatement);
@@ -451,6 +538,7 @@ class AppDatabase extends _$AppDatabase {
       if (from < 3) await customStatement(themesTable);
       if (from < 4) await _shrinkMessages();
       if (from < 5) await _pointLatestInDatabase();
+      if (from < 6) await _fileInThreads();
     },
     beforeOpen: (_) async {
       await customStatement('PRAGMA foreign_keys = ON');
