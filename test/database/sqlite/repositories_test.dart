@@ -203,7 +203,7 @@ void main() {
       expect(await chats.byId(42), isNull);
     });
 
-    test('an existing latest pointer to photo state never becomes a preview', () async {
+    test('the database never points a chat at photo state', () async {
       await (Seed()
             ..chat(1, latestMessageId: 2, latestMs: baseMs + 2000)
             ..message(1, 1, baseMs + 1000, guid: 'visible')
@@ -211,7 +211,7 @@ void main() {
           .into(db);
 
       final chat = (await chats.byId(1))!;
-      expect(chat.latestMessage, isNull);
+      expect(chat.latestMessage?.guid, 'visible');
     });
 
     test('listPage: not deleted, newest latest message first, undated last, pages by key', () async {

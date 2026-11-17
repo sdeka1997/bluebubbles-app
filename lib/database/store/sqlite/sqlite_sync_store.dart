@@ -63,14 +63,7 @@ mixin SqliteSyncStore implements SyncStore, SqliteStorePart {
       }.toList();
       if (changed.isNotEmpty) await repo.upsert(tx, changed);
       final folded = await repo.foldServiceTwins(tx, localChats);
-      final current = await repo.all();
-      final relistedIds = await repo.relistShownByEvents(tx, current.map((chat) => chat.id!));
-      final relistedById = await repo.byIds(relistedIds);
-      return ChatMetadataRefreshResult(
-        changedChats: changed,
-        foldedChats: folded,
-        relistedChats: [for (final id in relistedIds) if (relistedById[id] != null) relistedById[id]!],
-      );
+      return ChatMetadataRefreshResult(changedChats: changed, foldedChats: folded);
     });
   }
 

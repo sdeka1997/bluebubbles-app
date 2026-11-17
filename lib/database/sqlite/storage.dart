@@ -4,7 +4,6 @@ import 'dart:isolate';
 
 import 'package:bluebubbles/database/sqlite/db.dart';
 import 'package:bluebubbles/database/sqlite/db_change_events.dart';
-import 'package:bluebubbles/database/sqlite/chat_repo.dart';
 import 'package:bluebubbles/database/store/messaging_store.dart';
 import 'package:path/path.dart';
 
@@ -36,7 +35,6 @@ Future<void> _migrate(String path) async {
   final db = Db.file(File(path));
   try {
     await db.select('PRAGMA user_version');
-    await db.write((tx) => ChatRepo(tx).repairGroupPhotoStatePointers(tx));
     await db.vacuumIfPending();
   } finally {
     await db.close();

@@ -8,15 +8,10 @@ import 'store_fixture.dart';
 
 void main() {
   storeTests((fixture) {
-    test('metadata refresh folds service copies and relists chats shown by status events', () async {
+    test('metadata refresh folds service copies', () async {
       final canonical = await fixture().chat('SMS;-;+155****1111');
       final twin = await fixture().chat('RCS;-;+155****1111');
       final moved = await fixture().message('moved', twin, t0 + 20);
-
-      final relisted = await fixture().chat('iMessage;-;relisted');
-      final ordinary = await fixture().message('ordinary', relisted, t0);
-      final status = await fixture().message('status', relisted, t0 + 10, itemType: 2);
-      await fixture().setLatest(relisted, status);
 
       final result = await fixture().store.refreshChatMetadata([
         {'guid': canonical.guid, 'groupId': 'G1'},
@@ -25,9 +20,7 @@ void main() {
 
       expect(result.changedChats.map((chat) => chat.guid), unorderedEquals([canonical.guid, twin.guid]));
       expect(result.foldedChats[twin.guid]?.id, canonical.id);
-      expect(result.relistedChats.map((chat) => chat.guid), [relisted.guid]);
       expect((await fixture().store.messageByGuid(moved.guid!))!.chat.targetId, canonical.id);
-      expect((await fixture().store.chatById(relisted.id!))!.dbLatestMessage.targetId, ordinary.id);
     });
 
     test('handle-sync reads, clears and rebuilds chat links through the facade', () async {

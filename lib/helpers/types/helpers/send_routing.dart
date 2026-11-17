@@ -55,7 +55,10 @@ SendTarget pickSendTarget({
 
   final List<ChatServiceType> wanted;
   if (useIMessage) {
-    if (!isGroup && answers.isNotEmpty && answers.every((a) => a == true) && !copies.any((c) => c.service.isIMessageService)) {
+    if (!isGroup &&
+        answers.isNotEmpty &&
+        answers.every((a) => a == true) &&
+        !copies.any((c) => c.service.isIMessageService)) {
       return const SendTarget(null, createIMessageChat: true);
     }
     wanted = [ChatServiceType.iMessage];
@@ -119,7 +122,13 @@ SendCopy? _best(Iterable<SendCopy> copies) {
           guid: c.guid,
           service: c.service,
           lastIncoming: incoming[c.guid],
-          lastActivity: activity[c.guid] ?? c.dbOnlyLatestMessageDate,
+          // A folded thread's pointer can belong to another Apple copy; its date
+          // is aggregate thread activity, not activity of this copy.
+          lastActivity:
+              activity[c.guid] ??
+              (c.latestMessage?.appleChatGuid == null || c.latestMessage?.appleChatGuid == c.guid
+                  ? c.dbOnlyLatestMessageDate
+                  : null),
         ),
     ],
     latestService: latest,

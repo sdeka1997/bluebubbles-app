@@ -20,7 +20,7 @@ import 'sqlite_seed.dart';
 /// Every relation reachable from [roots] (except the two never filled on
 /// SQLite: Chat.messages, Chat.customGroups) is filled, and reading it does
 /// not throw. Returns how many relations it visited.
-int expectFilled(Iterable<Object> roots) {
+int expectFilled(Iterable<Object> roots, {bool latest = true}) {
   final seen = Set<Object>.identity();
   var visited = 0;
   void one(String what, rel.Rel r, Object? Function() read, void Function(Object) walk) {
@@ -49,9 +49,13 @@ int expectFilled(Iterable<Object> roots) {
         one('Message ${m.id}.reactionTarget', m.reactionTarget as rel.Rel, () => m.reactionTarget.target, walk);
         one('Message ${m.id}.otherParticipant', m.otherParticipant as rel.Rel, () => m.otherParticipant.target, walk);
       case final Chat c:
-        one('Chat ${c.id}.dbLatestMessage', c.dbLatestMessage as rel.Rel, () => c.dbLatestMessage.target, walk);
+        if (latest) {
+          one('Chat ${c.id}.dbLatestMessage', c.dbLatestMessage as rel.Rel, () => c.dbLatestMessage.target, walk);
+        } else {
+          expect(c.dbLatestMessage.isFilled, isFalse, reason: 'MessageRepo must not re-read the chat latest row');
+        }
         many('Chat ${c.id}.handles', c.handles as rel.RelList, walk);
-        expect(c.latestMessage, same(c.dbLatestMessage.target));
+        if (latest) expect(c.latestMessage, same(c.dbLatestMessage.target));
       case final Handle h:
         many('Handle ${h.id}.contactsV2', h.contactsV2 as rel.RelList, walk);
       case final ContactV2 c:
@@ -75,31 +79,52 @@ void main() {
       final m = messageFromRow(row(Message(guid: 'g', dateCreated: at(baseMs))..chat.targetId = 3));
       expect(m.chat.targetId, 3, reason: 'the id is there without a fill');
       expect(m.chat.hasValue, isTrue);
-      expect(() => m.chat.target, throwsA(isA<AssertionError>().having((e) => e.message, 'message', contains('Message.chat'))));
+      expect(
+        () => m.chat.target,
+        throwsA(isA<AssertionError>().having((e) => e.message, 'message', contains('Message.chat'))),
+      );
       expect(() => m.dbAttachments.length, throwsA(isA<AssertionError>()));
       expect(() => m.dbAttachments.isEmpty, throwsA(isA<AssertionError>()));
       expect(() => m.dbAttachments.toList(), throwsA(isA<AssertionError>()));
       expect(() => [for (final a in m.dbAttachments) a], throwsA(isA<AssertionError>()));
 
       final c = chatFromRow(chatToRow(Chat(id: 1, guid: 'c')));
-      expect(() => c.handles.isNotEmpty, throwsA(isA<AssertionError>().having((e) => e.message, 'message', contains('Chat.handles'))));
-      expect(() => c.messages.length, throwsA(isA<AssertionError>().having((e) => e.message, 'message', contains('Chat.messages'))));
+      expect(
+        () => c.handles.isNotEmpty,
+        throwsA(isA<AssertionError>().having((e) => e.message, 'message', contains('Chat.handles'))),
+      );
+      expect(
+        () => c.messages.length,
+        throwsA(isA<AssertionError>().having((e) => e.message, 'message', contains('Chat.messages'))),
+      );
       expect(() => c.customGroups.length, throwsA(isA<AssertionError>()));
-      expect(() => handleFromRow(handleToRow(Handle(id: 1, address: 'a'))).contactsV2.length, throwsA(isA<AssertionError>()));
-      expect(() => contactFromRow(contactToRow(ContactV2(id: 1, displayName: 'x', nativeContactId: 'n'))).handles.length,
-          throwsA(isA<AssertionError>()));
-      expect(() => customGroupFromRow(customGroupToRow(CustomGroup(id: 1, name: 'g'))).chats.length,
-          throwsA(isA<AssertionError>()));
+      expect(
+        () => handleFromRow(handleToRow(Handle(id: 1, address: 'a'))).contactsV2.length,
+        throwsA(isA<AssertionError>()),
+      );
+      expect(
+        () => contactFromRow(contactToRow(ContactV2(id: 1, displayName: 'x', nativeContactId: 'n'))).handles.length,
+        throwsA(isA<AssertionError>()),
+      );
+      expect(
+        () => customGroupFromRow(customGroupToRow(CustomGroup(id: 1, name: 'g'))).chats.length,
+        throwsA(isA<AssertionError>()),
+      );
       final a = attachmentFromRow(attachmentToRow(Attachment(id: 1, guid: 'a')..message.targetId = 5));
       expect(() => a.message.target, throwsA(isA<AssertionError>()));
 
       final reaction = messageFromRow(row(Message(guid: 'r', associatedMessageGuid: 'm1', dateCreated: at(baseMs))));
-      expect(() => reaction.reactionTarget.target,
-          throwsA(isA<AssertionError>().having((e) => e.message, 'message', contains('Message.reactionTarget'))));
+      expect(
+        () => reaction.reactionTarget.target,
+        throwsA(isA<AssertionError>().having((e) => e.message, 'message', contains('Message.reactionTarget'))),
+      );
       final added = messageFromRow(
-          row(Message(guid: 'e', itemType: 1, groupActionType: 0, otherHandle: 7, dateCreated: at(baseMs))));
-      expect(() => added.otherParticipant.target,
-          throwsA(isA<AssertionError>().having((e) => e.message, 'message', contains('Message.otherParticipant'))));
+        row(Message(guid: 'e', itemType: 1, groupActionType: 0, otherHandle: 7, dateCreated: at(baseMs))),
+      );
+      expect(
+        () => added.otherParticipant.target,
+        throwsA(isA<AssertionError>().having((e) => e.message, 'message', contains('Message.otherParticipant'))),
+      );
       expect(m.reactionTarget.target, isNull, reason: 'not a reaction: nothing to fill');
       expect(m.otherParticipant.target, isNull, reason: 'not a participant event: nothing to fill');
     });
@@ -157,9 +182,17 @@ void main() {
         ..chat(2, latestMessageId: 6, latestMs: baseMs + 6, handles: [3])
         ..chat(3);
       for (var i = 1; i <= 6; i++) {
-        seed.message(i, i <= 4 ? 1 : 2, baseMs + i,
-            isFromMe: i.isEven, handleRelationId: i.isEven ? null : (i <= 4 ? 2 : 3), threadOriginator: i == 3 ? 'm1' : null,
-            text: 'hello $i', handleId: i.isEven ? null : 20 + i, itemType: i == 5 ? 2 : null);
+        seed.message(
+          i,
+          i <= 4 ? 1 : 2,
+          baseMs + i,
+          isFromMe: i.isEven,
+          handleRelationId: i.isEven ? null : (i <= 4 ? 2 : 3),
+          threadOriginator: i == 3 ? 'm1' : null,
+          text: 'hello $i',
+          handleId: i.isEven ? null : 20 + i,
+          itemType: i == 5 ? 2 : null,
+        );
       }
       seed.message(7, 1, baseMs + 7, reactionTo: 'm1', handleRelationId: 1);
       seed.message(8, 1, baseMs + 8, itemType: 1, groupActionType: 0, otherHandle: 31);
@@ -179,30 +212,34 @@ void main() {
       final repo = MessageRepo(db);
       final newest = await repo.newest([1]);
       expect(newest, isNotEmpty);
-      expect(expectFilled(newest), greaterThan(10));
+      expect(expectFilled(newest, latest: false), greaterThan(10));
       expect(newest.firstWhere((m) => m.id == 1).dbAttachments.map((a) => a.id), [1, 2]);
-      expect(newest.firstWhere((m) => m.id == 1).handleRelation.target!.contactsV2.map((c) => c.displayName), ['Alice', 'Bob']);
+      expect(newest.firstWhere((m) => m.id == 1).handleRelation.target!.contactsV2.map((c) => c.displayName), [
+        'Alice',
+        'Bob',
+      ]);
       expect(newest.first.chat.target!.handles.map((h) => h.id), [1, 2]);
       expect(identical(newest[0].chat.target, newest[1].chat.target), isTrue, reason: 'one object per row');
       final key = MessageKey.of(newest.last);
-      expectFilled(await repo.olderThan([1], key));
-      expectFilled(await repo.newerThan([1], key));
-      expectFilled(await repo.around([1], MessageKey.of(newest[1])));
-      expectFilled(await repo.reactionsFor(['m1']));
-      expectFilled([(await repo.byGuid('m3'))!]);
-      expectFilled((await repo.byIds([1, 5])).values);
-      expectFilled([(await repo.byId(5))!]);
-      expectFilled(await repo.thread('m1'));
-      expectFilled(await repo.search('hello'));
-      expectFilled(await repo.search('he'));
-      expectFilled(await repo.byServerHandleId(21));
-      expectFilled([(await repo.newestRename([2]))!]);
+      expectFilled(await repo.olderThan([1], key), latest: false);
+      expectFilled(await repo.newerThan([1], key), latest: false);
+      expectFilled(await repo.around([1], MessageKey.of(newest[1])), latest: false);
+      expectFilled(await repo.reactionsFor(['m1']), latest: false);
+      expectFilled([(await repo.byGuid('m3'))!], latest: false);
+      expectFilled((await repo.byIds([1, 5])).values, latest: false);
+      expectFilled([(await repo.byId(5))!], latest: false);
+      expectFilled(await repo.thread('m1'), latest: false);
+      expectFilled(await repo.search('hello'), latest: false);
+      expectFilled(await repo.search('he'), latest: false);
+      expectFilled(await repo.byServerHandleId(21), latest: false);
+      expectFilled([
+        (await repo.newestRename([2]))!,
+      ], latest: false);
     });
-
     test('ChatRepo: participants with contacts, latest message with its chat being this chat', () async {
       final repo = ChatRepo(db);
       final page = await repo.listPage();
-      expect(page.map((c) => c.id), [2, 1, 3]);
+      expect(page.map((c) => c.id), [1, 2, 3]);
       expectFilled(page);
       final one = page.firstWhere((c) => c.id == 1);
       expect(one.dbLatestMessage.target!.chat.target, same(one));

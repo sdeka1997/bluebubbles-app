@@ -44,7 +44,7 @@ void main() {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
 
-    expect(database.schemaVersion, 4);
+    expect(database.schemaVersion, 5);
     expect(await pragmaInt(database, 'foreign_keys'), 1);
     expect(await tableNames(database), containsAll(requiredStageOneTables));
   });
@@ -67,7 +67,10 @@ void main() {
     // to-many relations), plus messages.sort_at_us; `metadata` is one
     // metadata_json column.
     expect((await columnNames(database, 'messages')).length, 46);
-    expect(await columnNames(database, 'messages'), containsAll(['sort_at_us', 'chat_id', 'handle_relation_id', 'text']));
+    expect(
+      await columnNames(database, 'messages'),
+      containsAll(['sort_at_us', 'chat_id', 'handle_relation_id', 'text']),
+    );
     expect((await columnNames(database, 'chats')).length, 35);
     expect(await columnNames(database, 'chats'), contains('latest_message_id'));
     expect((await columnNames(database, 'handles')).length, 10);

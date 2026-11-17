@@ -17,11 +17,13 @@ import 'package:collection/collection.dart';
 /// per kind and 500 ids, then the rows they point at; it stops when nothing
 /// new turns up (a few rounds: chats, latest messages, senders, contacts).
 ///
+/// MessageRepo pages do not chase each message's chat back to the chat's latest
+/// message: that would re-read a row outside the page. Other relations are filled.
 /// [attachmentsOnly] is for write paths that merge into stored messages
 /// (Message.merge reads `dbAttachments`) and never read the other relations.
 class RelationFill {
-  /// Without [latest], `Chat.dbLatestMessage` stays unfilled (the twin fold
-  /// reads every chat and only needs the stored pointer id).
+  /// Without [latest], `Chat.dbLatestMessage` stays unfilled (message pages and
+  /// the twin fold need only the stored pointer id).
   RelationFill(this.db, {this.latest = true});
 
   final DbReader db;
@@ -223,8 +225,7 @@ class RelationFill {
           c.participants = c.handles.toList();
         }
         if (latest && !c.dbLatestMessage.isFilled) {
-          final message = _messages[c.dbLatestMessage.targetId];
-          c.dbLatestMessage.fill(message?.isTranscriptVisible == true ? message : null);
+          c.dbLatestMessage.fill(_messages[c.dbLatestMessage.targetId]);
           c.latestMessage = c.dbLatestMessage.target;
         }
       case final Handle h:

@@ -75,7 +75,6 @@ class IsolateActons {
     IsolateRequestType.softDeleteChat: ChatActions.softDeleteChat,
     IsolateRequestType.unDeleteChat: ChatActions.unDeleteChat,
     IsolateRequestType.addMessageToChat: ChatActions.addMessageToChat,
-    IsolateRequestType.syncLatestMessages: ChatActions.syncLatestMessages,
     IsolateRequestType.bulkSyncChats: ChatActions.bulkSyncChats,
     IsolateRequestType.getParticipantsAsync: ChatActions.getParticipantsAsync,
     IsolateRequestType.clearTranscriptAsync: ChatActions.clearTranscriptAsync,

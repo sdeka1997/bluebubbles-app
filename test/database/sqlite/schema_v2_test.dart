@@ -12,20 +12,23 @@ Future<List<Map<String, Object?>>> rows(Db db, String sql) => db.select(sql);
 
 /// `PRAGMA foreign_key_list(table)` as (from, table, to, on_delete).
 Future<Set<(String, String, String, String)>> foreignKeys(Db db, String table) async => {
-      for (final r in await db.select('PRAGMA foreign_key_list($table)'))
-        (r['from'] as String, r['table'] as String, r['to'] as String, r['on_delete'] as String),
-    };
+  for (final r in await db.select('PRAGMA foreign_key_list($table)'))
+    (r['from'] as String, r['table'] as String, r['to'] as String, r['on_delete'] as String),
+};
 
 /// Every table, index and trigger by name, with its SQL.
 Future<Map<String, String>> schema(Db db) async => {
-      for (final r in await db.select(
-          "SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'messages_fts_%' "
-          "AND name != 'sqlite_sequence'"))
-        r['name'] as String: (r['sql'] as String).replaceAll(RegExp(r'\s+'), ' '),
-    };
+  for (final r in await db.select(
+    "SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'messages_fts_%' "
+    "AND name != 'sqlite_sequence'",
+  ))
+    r['name'] as String: (r['sql'] as String).replaceAll(RegExp(r'\s+'), ' '),
+};
 
-Future<List<int>> ftsIds(Db db, String term) async =>
-    [for (final r in await db.select('SELECT rowid FROM messages_fts WHERE text LIKE ? ORDER BY rowid', ['%$term%'])) r['rowid'] as int];
+Future<List<int>> ftsIds(Db db, String term) async => [
+  for (final r in await db.select('SELECT rowid FROM messages_fts WHERE text LIKE ? ORDER BY rowid', ['%$term%']))
+    r['rowid'] as int,
+];
 
 /// A file exactly as stage S1 wrote it on the phone (drift schema v1, check v3,
 /// verified), with rows that v1 could hold and v2's foreign keys cannot.
@@ -71,13 +74,20 @@ void main() {
     tearDown(() => db.close());
 
     test('opens at schema v2 with foreign keys on', () async {
-      expect(db.database.schemaVersion, 4);
+      expect(db.database.schemaVersion, 5);
       expect((await rows(db, 'PRAGMA foreign_keys')).single.values.single, 1);
     });
 
     test('every child and join table has its foreign keys (PRAGMA foreign_key_list)', () async {
       final printed = <String>[];
-      for (final table in ['messages', 'attachments', 'chat_handles', 'contact_handles', 'custom_group_chats', 'chats']) {
+      for (final table in [
+        'messages',
+        'attachments',
+        'chat_handles',
+        'contact_handles',
+        'custom_group_chats',
+        'chats',
+      ]) {
         printed.add('$table: ${(await foreignKeys(db, table)).toList()}');
       }
       // ignore: avoid_print
@@ -87,80 +97,136 @@ void main() {
         ('handle_relation_id', 'handles', 'id', 'SET NULL'),
       });
       expect(await foreignKeys(db, 'attachments'), {('message_id', 'messages', 'id', 'SET NULL')});
-      expect(await foreignKeys(db, 'chat_handles'), {('chat_id', 'chats', 'id', 'CASCADE'), ('handle_id', 'handles', 'id', 'CASCADE')});
-      expect(await foreignKeys(db, 'contact_handles'),
-          {('contact_id', 'contacts', 'id', 'CASCADE'), ('handle_id', 'handles', 'id', 'CASCADE')});
-      expect(await foreignKeys(db, 'custom_group_chats'),
-          {('group_id', 'custom_groups', 'id', 'CASCADE'), ('chat_id', 'chats', 'id', 'CASCADE')});
+      expect(await foreignKeys(db, 'chat_handles'), {
+        ('chat_id', 'chats', 'id', 'CASCADE'),
+        ('handle_id', 'handles', 'id', 'CASCADE'),
+      });
+      expect(await foreignKeys(db, 'contact_handles'), {
+        ('contact_id', 'contacts', 'id', 'CASCADE'),
+        ('handle_id', 'handles', 'id', 'CASCADE'),
+      });
+      expect(await foreignKeys(db, 'custom_group_chats'), {
+        ('group_id', 'custom_groups', 'id', 'CASCADE'),
+        ('chat_id', 'chats', 'id', 'CASCADE'),
+      });
       // chats.latest_message_id points at a message of the chat: a cycle, no key.
       expect(await foreignKeys(db, 'chats'), isEmpty);
     });
 
     test('deletes cascade to join rows and unlink (as ObjectBox leaves them) messages and attachments', () async {
       await db.write((tx) async {
-        await tx.execute("INSERT INTO handles (id, address, unique_address_and_service, service) VALUES (1, 'a', 'a/i', 'i'), (2, 'b', 'b/i', 'i')");
-        await tx.execute("INSERT INTO contacts (id, display_name, native_contact_id, addresses_json, is_native) VALUES (1, 'A', 'n1', '[]', 1)");
+        await tx.execute(
+          "INSERT INTO handles (id, address, unique_address_and_service, service) VALUES (1, 'a', 'a/i', 'i'), (2, 'b', 'b/i', 'i')",
+        );
+        await tx.execute(
+          "INSERT INTO contacts (id, display_name, native_contact_id, addresses_json, is_native) VALUES (1, 'A', 'n1', '[]', 1)",
+        );
         await tx.execute("INSERT INTO chats (id, guid) VALUES (1, 'c1'), (2, 'c2')");
         await tx.execute('INSERT INTO chat_handles VALUES (1, 1), (1, 2), (2, 2)');
         await tx.execute('INSERT INTO contact_handles VALUES (1, 1), (1, 2)');
         await tx.execute("INSERT INTO custom_groups (id, name, sort_order, show_unread_badge) VALUES (1, 'G', 0, 0)");
         await tx.execute('INSERT INTO custom_group_chats VALUES (1, 1), (1, 2)');
-        await tx.execute('INSERT INTO messages (id, guid, sort_at_us, has_attachments, has_reactions, error, chat_id, handle_relation_id, '
-            'has_apple_payload_data, was_delivered_quietly, did_notify_recipient, is_bookmarked, is_delivered, has_effect_played) '
-            "VALUES (1, 'm1', 1, 1, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0)");
-        await tx.execute("INSERT INTO attachments (id, guid, message_id, has_live_photo, is_downloaded) VALUES (1, 'a1', 1, 0, 0)");
+        await tx.execute(
+          'INSERT INTO messages (id, guid, sort_at_us, has_attachments, has_reactions, error, chat_id, handle_relation_id, '
+          'has_apple_payload_data, was_delivered_quietly, did_notify_recipient, is_bookmarked, is_delivered, has_effect_played) '
+          "VALUES (1, 'm1', 1, 1, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0)",
+        );
+        await tx.execute(
+          "INSERT INTO attachments (id, guid, message_id, has_live_photo, is_downloaded) VALUES (1, 'a1', 1, 0, 0)",
+        );
       });
 
       await db.write((tx) => tx.execute('DELETE FROM handles WHERE id = 2'));
-      expect(await rows(db, 'SELECT chat_id, handle_id FROM chat_handles ORDER BY 1, 2'), [{'chat_id': 1, 'handle_id': 1}]);
-      expect(await rows(db, 'SELECT handle_id FROM contact_handles'), [{'handle_id': 1}]);
+      expect(await rows(db, 'SELECT chat_id, handle_id FROM chat_handles ORDER BY 1, 2'), [
+        {'chat_id': 1, 'handle_id': 1},
+      ]);
+      expect(await rows(db, 'SELECT handle_id FROM contact_handles'), [
+        {'handle_id': 1},
+      ]);
       expect((await rows(db, 'SELECT handle_relation_id FROM messages')).single['handle_relation_id'], isNull);
 
       await db.write((tx) => tx.execute('DELETE FROM chats WHERE id = 1'));
-      expect(await rows(db, 'SELECT chat_id FROM custom_group_chats'), [{'chat_id': 2}]);
-      expect(await rows(db, 'SELECT count(*) AS n FROM chat_handles'), [{'n': 0}]);
-      expect(await rows(db, 'SELECT id, chat_id FROM messages'), [{'id': 1, 'chat_id': null}], reason: 'the message stays');
+      expect(await rows(db, 'SELECT chat_id FROM custom_group_chats'), [
+        {'chat_id': 2},
+      ]);
+      expect(await rows(db, 'SELECT count(*) AS n FROM chat_handles'), [
+        {'n': 0},
+      ]);
+      expect(await rows(db, 'SELECT id, chat_id FROM messages'), [
+        {'id': 1, 'chat_id': null},
+      ], reason: 'the message stays');
 
       await db.write((tx) => tx.execute('DELETE FROM messages WHERE id = 1'));
-      expect(await rows(db, 'SELECT id, message_id FROM attachments'), [{'id': 1, 'message_id': null}], reason: 'the attachment stays');
+      expect(await rows(db, 'SELECT id, message_id FROM attachments'), [
+        {'id': 1, 'message_id': null},
+      ], reason: 'the attachment stays');
 
       await db.write((tx) => tx.execute('DELETE FROM custom_groups WHERE id = 1'));
-      expect(await rows(db, 'SELECT count(*) AS n FROM custom_group_chats'), [{'n': 0}]);
+      expect(await rows(db, 'SELECT count(*) AS n FROM custom_group_chats'), [
+        {'n': 0},
+      ]);
     });
 
     test('a row pointing at a missing parent is refused', () async {
       expect(
-          () => db.write((tx) => tx.execute('INSERT INTO messages (id, guid, sort_at_us, has_attachments, has_reactions, error, chat_id, '
-              'has_apple_payload_data, was_delivered_quietly, did_notify_recipient, is_bookmarked, is_delivered, has_effect_played) '
-              "VALUES (1, 'm1', 1, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0)")),
-          throwsA(isA<Exception>().having((e) => '$e', 'message', contains('FOREIGN KEY'))));
+        () => db.write(
+          (tx) => tx.execute(
+            'INSERT INTO messages (id, guid, sort_at_us, has_attachments, has_reactions, error, chat_id, '
+            'has_apple_payload_data, was_delivered_quietly, did_notify_recipient, is_bookmarked, is_delivered, has_effect_played) '
+            "VALUES (1, 'm1', 1, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0)",
+          ),
+        ),
+        throwsA(isA<Exception>().having((e) => '$e', 'message', contains('FOREIGN KEY'))),
+      );
       expect(() => db.write((tx) => tx.execute('INSERT INTO chat_handles VALUES (5, 5)')), throwsA(isA<Exception>()));
     });
 
     test('messages_fts is a trigram index kept in step with messages by triggers', () async {
       final ddl = (await rows(db, "SELECT sql FROM sqlite_master WHERE name = 'messages_fts'")).single['sql'] as String;
       expect(ddl, allOf(contains('fts5'), contains("tokenize='trigram'"), contains("content='messages'")));
-      expect([for (final r in await rows(db, "SELECT name FROM sqlite_master WHERE type = 'trigger' ORDER BY name")) r['name']],
-          ['messages_fts_ad', 'messages_fts_ai', 'messages_fts_au']);
+      expect(
+        [
+          for (final r in await rows(db, "SELECT name FROM sqlite_master WHERE type = 'trigger' ORDER BY name"))
+            r['name'],
+        ],
+        [
+          'messages_fts_ad',
+          'messages_fts_ai',
+          'messages_fts_au',
+          'messages_latest_delete',
+          'messages_latest_insert',
+          'messages_latest_update',
+        ],
+      );
 
-      Future<void> insert(int id, String? text, {String? subject}) => db.write((tx) => tx.execute(
+      Future<void> insert(int id, String? text, {String? subject}) => db.write(
+        (tx) => tx.execute(
           'INSERT INTO messages (id, guid, text, subject, sort_at_us, has_attachments, has_reactions, error, has_apple_payload_data, '
           'was_delivered_quietly, did_notify_recipient, is_bookmarked, is_delivered, has_effect_played) '
           'VALUES (?, ?, ?, ?, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0)',
-          [id, 'm$id', text, subject]));
+          [id, 'm$id', text, subject],
+        ),
+      );
       await insert(1, 'Dinner at eight?');
       await insert(2, 'see you at DINNER');
       await insert(3, null, subject: 'dinner plans');
       expect(await ftsIds(db, 'dinner'), [1, 2]);
-      expect([for (final r in await rows(db, "SELECT rowid FROM messages_fts WHERE subject LIKE '%dinner%'")) r['rowid']], [3]);
+      expect(
+        [for (final r in await rows(db, "SELECT rowid FROM messages_fts WHERE subject LIKE '%dinner%'")) r['rowid']],
+        [3],
+      );
 
       await db.write((tx) => tx.execute("UPDATE messages SET text = 'lunch instead' WHERE id = 1"));
       expect(await ftsIds(db, 'dinner'), [2]);
       expect(await ftsIds(db, 'lunch'), [1]);
       // An upsert rewrites every column; the index follows.
-      await db.write((tx) => tx.execute("INSERT INTO messages (id, guid, sort_at_us, has_attachments, has_reactions, error, "
+      await db.write(
+        (tx) => tx.execute(
+          "INSERT INTO messages (id, guid, sort_at_us, has_attachments, has_reactions, error, "
           "has_apple_payload_data, was_delivered_quietly, did_notify_recipient, is_bookmarked, is_delivered, has_effect_played, text) "
-          "VALUES (2, 'm2', 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'brunch') ON CONFLICT(id) DO UPDATE SET text = excluded.text"));
+          "VALUES (2, 'm2', 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'brunch') ON CONFLICT(id) DO UPDATE SET text = excluded.text",
+        ),
+      );
       expect(await ftsIds(db, 'dinner'), isEmpty);
       await db.write((tx) => tx.execute('DELETE FROM messages WHERE id = 2'));
       expect(await ftsIds(db, 'brunch'), isEmpty);
@@ -170,50 +236,68 @@ void main() {
   });
 
   group('v1 -> v2 migration of an S1 file', () {
-    test('rebuilds the tables with foreign keys, keeps every row, clears dangling pointers, fills messages_fts', () async {
-      final file = writeS1File(dir);
-      final fresh = Db.memory();
-      addTearDown(fresh.close);
+    test(
+      'rebuilds the tables with foreign keys, keeps every row, clears dangling pointers, fills messages_fts',
+      () async {
+        final file = writeS1File(dir);
+        final fresh = Db.memory();
+        addTearDown(fresh.close);
 
-      final db = Db.file(file);
-      addTearDown(db.close);
-      expect((await rows(db, 'PRAGMA user_version')).single.values.single, 4);
-      expect(await schema(db), await schema(fresh), reason: 'a migrated file has exactly the schema of a new one');
-      for (final table in ['messages', 'attachments', 'chat_handles', 'contact_handles', 'custom_group_chats']) {
-        expect(await foreignKeys(db, table), await foreignKeys(fresh, table), reason: table);
-      }
+        final db = Db.file(file);
+        addTearDown(db.close);
+        expect((await rows(db, 'PRAGMA user_version')).single.values.single, 5);
+        expect(await schema(db), await schema(fresh), reason: 'a migrated file has exactly the schema of a new one');
+        for (final table in ['messages', 'attachments', 'chat_handles', 'contact_handles', 'custom_group_chats']) {
+          expect(await foreignKeys(db, table), await foreignKeys(fresh, table), reason: table);
+        }
 
-      // Rows kept; pointers at rows that don't exist cleared or dropped, as the keys would have.
-      expect(await rows(db, 'SELECT id, chat_id, handle_relation_id FROM messages ORDER BY id'), [
-        {'id': 1, 'chat_id': 1, 'handle_relation_id': 1},
-        {'id': 2, 'chat_id': null, 'handle_relation_id': null},
-        {'id': 3, 'chat_id': 1, 'handle_relation_id': null},
-      ]);
-      expect(await rows(db, 'SELECT id, message_id FROM attachments ORDER BY id'), [{'id': 1, 'message_id': 1}, {'id': 2, 'message_id': null}]);
-      expect(await rows(db, 'SELECT * FROM chat_handles'), [{'chat_id': 1, 'handle_id': 1}]);
-      expect(await rows(db, 'SELECT * FROM contact_handles'), [{'contact_id': 1, 'handle_id': 1}]);
-      expect(await rows(db, 'SELECT * FROM custom_group_chats'), [{'group_id': 1, 'chat_id': 1}]);
-      expect((await rows(db, 'SELECT latest_message_id FROM chats')).single['latest_message_id'], 3);
-      expect(await rows(db, 'PRAGMA foreign_key_check'), isEmpty);
-      expect((await rows(db, 'PRAGMA integrity_check')).single.values.single, 'ok');
+        // Rows kept; pointers at rows that don't exist cleared or dropped, as the keys would have.
+        expect(await rows(db, 'SELECT id, chat_id, handle_relation_id FROM messages ORDER BY id'), [
+          {'id': 1, 'chat_id': 1, 'handle_relation_id': 1},
+          {'id': 2, 'chat_id': null, 'handle_relation_id': null},
+          {'id': 3, 'chat_id': 1, 'handle_relation_id': null},
+        ]);
+        expect(await rows(db, 'SELECT id, message_id FROM attachments ORDER BY id'), [
+          {'id': 1, 'message_id': 1},
+          {'id': 2, 'message_id': null},
+        ]);
+        expect(await rows(db, 'SELECT * FROM chat_handles'), [
+          {'chat_id': 1, 'handle_id': 1},
+        ]);
+        expect(await rows(db, 'SELECT * FROM contact_handles'), [
+          {'contact_id': 1, 'handle_id': 1},
+        ]);
+        expect(await rows(db, 'SELECT * FROM custom_group_chats'), [
+          {'group_id': 1, 'chat_id': 1},
+        ]);
+        expect((await rows(db, 'SELECT latest_message_id FROM chats')).single['latest_message_id'], isNull);
+        expect(await rows(db, 'PRAGMA foreign_key_check'), isEmpty);
+        expect((await rows(db, 'PRAGMA integrity_check')).single.values.single, 'ok');
 
-      // The S1 bookkeeping is untouched; the index holds the existing text.
-      final meta = {for (final r in await rows(db, 'SELECT key, value FROM storage_meta')) r['key']: r['value']};
-      expect(meta, containsPair('copy_state', 'verified'));
-      expect(meta, containsPair('check_version', '3'));
-      expect(meta, containsPair('fts_state', 'ready'));
-      // v4 drops the copy's checkpoints (schema_v4_test.dart).
-      expect(await ftsIds(db, 'world'), [1]);
-      expect(await ftsIds(db, 'ird on'), [3]);
-      await db.write((tx) => tx.execute("INSERT INTO messages_fts (messages_fts, rank) VALUES ('integrity-check', 1)"));
-    });
+        // The S1 bookkeeping is untouched; the index holds the existing text.
+        final meta = {for (final r in await rows(db, 'SELECT key, value FROM storage_meta')) r['key']: r['value']};
+        expect(meta, containsPair('copy_state', 'verified'));
+        expect(meta, containsPair('check_version', '3'));
+        expect(meta, containsPair('fts_state', 'ready'));
+        // v4 drops the copy's checkpoints (schema_v4_test.dart).
+        expect(await ftsIds(db, 'world'), [1]);
+        expect(await ftsIds(db, 'ird on'), [3]);
+        await db.write(
+          (tx) => tx.execute("INSERT INTO messages_fts (messages_fts, rank) VALUES ('integrity-check', 1)"),
+        );
+      },
+    );
 
     test('a migrated file keeps working with the keys on: cascades and the index triggers', () async {
       final db = Db.file(writeS1File(dir));
       addTearDown(db.close);
       await db.write((tx) => tx.execute('DELETE FROM chats WHERE id = 1'));
-      expect(await rows(db, 'SELECT count(*) AS n FROM chat_handles'), [{'n': 0}]);
-      expect(await rows(db, 'SELECT count(*) AS n FROM messages WHERE chat_id IS NULL'), [{'n': 3}]);
+      expect(await rows(db, 'SELECT count(*) AS n FROM chat_handles'), [
+        {'n': 0},
+      ]);
+      expect(await rows(db, 'SELECT count(*) AS n FROM messages WHERE chat_id IS NULL'), [
+        {'n': 3},
+      ]);
       await db.write((tx) => tx.execute("UPDATE messages SET text = 'Goodbye' WHERE id = 1"));
       expect(await ftsIds(db, 'world'), isEmpty);
       expect(await ftsIds(db, 'goodb'), [1]);

@@ -107,7 +107,6 @@ class SyncService {
       final localChats = await MessagingStore.current.allChats();
       final changed = refresh.changedChats;
       final folded = refresh.foldedChats;
-      final relisted = refresh.relistedChats;
 
       // Apply spam changes to the live list immediately. addChat also refuses
       // folded twins, so restored non-spam chats return without exposing twins.
@@ -123,17 +122,8 @@ class SyncService {
         if (twin != null) ChatsSvc.removeChat(twin);
         await ChatsSvc.addChat(entry.value, immediate: true);
       }
-      for (final chat in relisted) {
-        final latest = chat.dbLatestMessage.target;
-        if (latest == null) {
-          ChatsSvc.clearChatLatestMessage(chat.guid);
-        } else {
-          ChatsSvc.updateChatLatestMessage(chat.guid, latest, allowOlder: true);
-        }
-      }
       Logger.info(
-        'Refreshed metadata for ${changed.length} chats; folded ${folded.length} service twins; '
-        'relisted ${relisted.length} chats shown by a status item',
+        'Refreshed metadata for ${changed.length} chats; folded ${folded.length} service twins',
         tag: 'Service Twins',
       );
     } catch (e, stack) {

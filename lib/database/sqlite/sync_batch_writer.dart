@@ -85,14 +85,13 @@ class SqliteSyncBatch {
         ]);
 
         final chatsMap = await _chats(tx, batch, handlesMap);
+        final touched = [for (final c in chatsMap.values) if (c.id != null) c.id!];
+        final before = await ChatRepo(tx).pointers(touched);
         final (saved, byGuid) = await _messages(tx, batch, chatsMap, handlesMap);
         await _attachments(tx, batch, byGuid);
 
-        final savedByChat = saved.groupListsBy((m) => m.chat.targetId);
-        final chatIds = <int>[];
-        for (final chatId in {for (final c in chatsMap.values) if (c.id != null) c.id!}) {
-          if (await ChatRepo(tx).keepNewest(tx, chatId, savedByChat[chatId] ?? const [])) chatIds.add(chatId);
-        }
+        final after = await ChatRepo(tx).pointers(touched);
+        final chatIds = [for (final id in touched.toSet()) if (after[id] != before[id]) id];
         return {'messageIds': saved.map((m) => m.id!).toList(), 'chatIds': chatIds};
       });
 

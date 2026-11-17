@@ -37,30 +37,13 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
   Future<int?> saveChat(
     String guid,
     Chat inputChat,
-    Map<String, bool> updateFlags, {
-    int? latestMessageId,
-    DateTime? latestMessageDate,
-  }) {
+    Map<String, bool> updateFlags,
+  ) {
     return db.write((tx) async {
       final repo = ChatRepo(tx);
       final existing = await repo.byGuid(guid);
       final chat = existing ?? inputChat;
       _applyChatUpdates(chat, inputChat, updateFlags);
-      if (updateFlags['updateLatestMessage'] == true) {
-        if (latestMessageId != null && latestMessageId > 0) {
-          chat.dbLatestMessage.targetId = latestMessageId;
-          if (latestMessageDate != null) chat.dbOnlyLatestMessageDate = latestMessageDate;
-        } else {
-          if (chat.dbOnlyLatestMessageDate != null) {
-            Logger.info(
-              '${chat.guid}: stored latest date cleared (was ${chat.dbOnlyLatestMessageDate!.toIso8601String()})',
-              tag: 'ThreadCheck',
-            );
-          }
-          chat.dbLatestMessage.targetId = 0;
-          chat.dbOnlyLatestMessageDate = null;
-        }
-      }
       await repo.upsert(tx, [chat]);
       return chat.id;
     });
@@ -218,26 +201,6 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
             (inputMessage.guid != inputLatest.guid && inputMessage.dateCreated == inputLatest.dateCreated);
       }
       return <String, dynamic>{'messageId': messageId, 'isNewer': isNewer};
-    });
-  }
-
-  @override
-  Future<List<int>> syncLatestMessages(List<String> chatGuids, {required bool toggleUnread}) {
-    return db.write((tx) async {
-      final chats = ChatRepo(tx);
-      final ids = <int>[];
-      for (final guid in chatGuids.toSet()) {
-        final chat = await chats.byGuid(guid);
-        if (chat?.id == null) continue;
-        ids.add(chat!.id!);
-        if (!await chats.refreshLatest(tx, chat.id!)) continue;
-        if (!toggleUnread) continue;
-        final refreshed = await chats.byId(chat.id!);
-        if (!(refreshed?.dbLatestMessage.target?.isFromMe ?? true)) {
-          await chats.setUnread(tx, [chat.id!], true);
-        }
-      }
-      return ids;
     });
   }
 

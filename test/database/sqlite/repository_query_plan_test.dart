@@ -356,20 +356,6 @@ void main() {
               {'chats USING INTEGER PRIMARY KEY (rowid=?)'});
         });
 
-        test('ChatRepo.refreshLatest -> newest row of the chat on messages_chat_time, walked backwards', () async {
-          expectIndexed(await plansOf(db, () => db.write((tx) => chats.refreshLatest(tx, 1))),
-              {'messages_chat_time (chat_id=?)', 'chats USING INTEGER PRIMARY KEY (rowid=?)'});
-        });
-
-        test('ChatRepo.keepNewest / relistShownByEvents -> primary keys only (never the chat history)', () async {
-          final added = (await messages.byIds([5999])).values.toList();
-          final plans = await plansOf(db, () => db.write((tx) => chats.keepNewest(tx, 1, added)));
-          expectIndexed(plans, {'chats USING INTEGER PRIMARY KEY (rowid=?)', 'messages USING INTEGER PRIMARY KEY (rowid=?)'});
-          expect(plans.expand((p) => p.$2).where((d) => d.contains('messages_chat_time') || d.contains('messages_timeline')), isEmpty);
-          expectIndexed(await plansOf(db, () => db.write((tx) => chats.relistShownByEvents(tx, [1, 2]))),
-              {'chats USING INTEGER PRIMARY KEY (rowid=?)'});
-        });
-
         test('ChatRepo.foldServiceTwins: messages move on messages_chat_time; chats (with participants) read whole, as getAll today', () async {
           await db.write((tx) => tx.execute("UPDATE chats SET chat_identifier = 'same' WHERE id IN (7, 8)"));
           final plans = await plansOf(db, () => db.write((tx) => chats.foldServiceTwins(tx, const [])));

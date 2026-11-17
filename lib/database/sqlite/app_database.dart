@@ -222,6 +222,38 @@ class StorageMeta extends Table {
 const themesTable = 'CREATE TABLE IF NOT EXISTS themes (name TEXT NOT NULL PRIMARY KEY, '
     'gradient_bg INTEGER NOT NULL, google_font TEXT NOT NULL, data_json TEXT NOT NULL)';
 
+// Each chat's latest pointer (chats.latest_message_id / latest_message_date_us)
+// belongs to the database: after any write that adds, removes, moves or
+// retypes a message, its chat (and the chat it left) points at its newest row
+// that can list a thread -- an ordinary item (item type 0), not deleted,
+// newest by (sort_at, id) as the chat screen orders, dated by date_created --
+// or at nothing when it holds only status items. listsThread
+// (chat_list_message.dart) is the same rule in Dart.
+const _listing = 'date_deleted_us IS NULL AND date_created_us IS NOT NULL AND coalesce(item_type, 0) = 0';
+
+String _newestListing(String chat) => '(SELECT id, date_created_us FROM messages INDEXED BY messages_listing '
+    'WHERE chat_id = $chat AND $_listing ORDER BY sort_at_us DESC, id DESC LIMIT 1)';
+
+String _pointLatest(String chat) =>
+    'UPDATE chats SET (latest_message_id, latest_message_date_us) = ${_newestListing(chat)} WHERE id = $chat';
+
+/// Points every chat at its newest listing row (the v5 upgrade).
+final latestPointerRecompute =
+    'UPDATE chats SET (latest_message_id, latest_message_date_us) = ${_newestListing('chats.id')}';
+
+final latestPointerTriggers = [
+  'CREATE TRIGGER IF NOT EXISTS messages_latest_insert AFTER INSERT ON messages '
+      'WHEN NEW.chat_id IS NOT NULL BEGIN ${_pointLatest('NEW.chat_id')}; END',
+  'CREATE TRIGGER IF NOT EXISTS messages_latest_delete AFTER DELETE ON messages '
+      'WHEN OLD.chat_id IS NOT NULL BEGIN ${_pointLatest('OLD.chat_id')}; END',
+  'CREATE TRIGGER IF NOT EXISTS messages_latest_update '
+      'AFTER UPDATE OF chat_id, date_deleted_us, date_created_us, sort_at_us, item_type ON messages '
+      'WHEN OLD.chat_id IS NOT NEW.chat_id OR OLD.date_deleted_us IS NOT NEW.date_deleted_us '
+      'OR OLD.date_created_us IS NOT NEW.date_created_us OR OLD.sort_at_us IS NOT NEW.sort_at_us '
+      'OR OLD.item_type IS NOT NEW.item_type '
+      'BEGIN ${_pointLatest('NEW.chat_id')}; ${_pointLatest('OLD.chat_id')}; END',
+];
+
 /// Secondary indexes, by the query shape each serves (SQLITE-PLAN-2 section 3).
 const schemaIndexes = <String>[
   // The chat screen's timeline: one chat, no reactions, not deleted, by (sort_at, id).
@@ -229,6 +261,9 @@ const schemaIndexes = <String>[
       'WHERE associated_message_guid IS NULL AND date_deleted_us IS NULL',
   // Every row of one chat: includeDeleted, stats, renames, latest-pointer recompute.
   'CREATE INDEX IF NOT EXISTS messages_chat_time ON messages (chat_id, sort_at_us, id)',
+  // The rows that can list a thread (listsThread): the latest-pointer triggers' one-row lookup.
+  'CREATE INDEX IF NOT EXISTS messages_listing ON messages (chat_id, sort_at_us, id) '
+      'WHERE date_deleted_us IS NULL AND date_created_us IS NOT NULL AND coalesce(item_type, 0) = 0',
   'CREATE INDEX IF NOT EXISTS messages_assoc ON messages (associated_message_guid) '
       'WHERE associated_message_guid IS NOT NULL',
   'CREATE INDEX IF NOT EXISTS messages_thread ON messages (thread_originator_guid) '
@@ -359,16 +394,36 @@ class AppDatabase extends _$AppDatabase {
     await customStatement("INSERT OR REPLACE INTO storage_meta (key, value) VALUES ('vacuum_pending', '1')");
   }
 
+  /// v4 -> v5: the database keeps every chat's latest pointer
+  /// ([latestPointerTriggers]), recomputed here once. Before that, a chat an
+  /// older build pointed at Apple's silent group-photo state loses the unread
+  /// badge that state gave it, unless a visible incoming message is unread.
+  Future<void> _pointLatestInDatabase() async {
+    await customStatement(schemaIndexes.firstWhere((s) => s.contains(' messages_listing ')));
+    await customStatement(
+      'UPDATE chats SET has_unread_message = 0 WHERE has_unread_message = 1 '
+      'AND latest_message_id IN (SELECT id FROM messages WHERE item_type = 3 AND group_action_type = 3) '
+      'AND NOT EXISTS (SELECT 1 FROM messages m INDEXED BY messages_chat_time WHERE m.chat_id = chats.id '
+      'AND m.associated_message_guid IS NULL AND m.date_deleted_us IS NULL AND m.date_created_us IS NOT NULL '
+      'AND NOT (coalesce(m.item_type, 0) = 3 AND coalesce(m.group_action_type, 0) = 3) '
+      'AND m.is_from_me = 0 AND m.date_read_us IS NULL)',
+    );
+    await customStatement(latestPointerRecompute);
+    for (final trigger in latestPointerTriggers) {
+      await customStatement(trigger);
+    }
+  }
+
   AppDatabase.file(File file) : this(NativeDatabase.createInBackground(file));
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
       await m.createAll();
-      for (final statement in [...schemaIndexes, ftsTable, themesTable]) {
+      for (final statement in [...schemaIndexes, ftsTable, themesTable, ...latestPointerTriggers]) {
         await customStatement(statement);
       }
       await rebuildFts(customStatement);
@@ -395,6 +450,7 @@ class AppDatabase extends _$AppDatabase {
       // v2 -> v3: the themes table (stage S4).
       if (from < 3) await customStatement(themesTable);
       if (from < 4) await _shrinkMessages();
+      if (from < 5) await _pointLatestInDatabase();
     },
     beforeOpen: (_) async {
       await customStatement('PRAGMA foreign_keys = ON');

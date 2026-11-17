@@ -50,14 +50,10 @@ class ChatActions {
   static Future<void> stopTyping(dynamic data) async => HttpSvc.chat.stopTyping(data['chatGuid'] as String);
 
   static Future<int?> saveChat(dynamic data) async {
-    final chatData = data['chatData'] as Map<String, dynamic>;
-    final latestDateMs = chatData['dbOnlyLatestMessageDate'] as int?;
     return MessagingStore.current.saveChat(
       data['guid'] as String,
-      Chat.fromMap(chatData),
+      Chat.fromMap(data['chatData'] as Map<String, dynamic>),
       (data['updateFlags'] as Map).cast<String, bool>(),
-      latestMessageId: chatData['dbLatestMessageId'] as int?,
-      latestMessageDate: latestDateMs == null ? null : DateTime.fromMillisecondsSinceEpoch(latestDateMs),
     );
   }
 
@@ -90,11 +86,6 @@ class ChatActions {
       checkForMessageText: data['checkForMessageText'] as bool,
     );
   }
-
-  static Future<List<int>> syncLatestMessages(dynamic data) => MessagingStore.current.syncLatestMessages(
-        (data['chatGuids'] as List).cast<String>(),
-        toggleUnread: data['toggleUnread'] as bool,
-      );
 
   static Future<Map<String, dynamic>> bulkSyncChats(dynamic data) async {
     final chatsData = (data['chatsData'] as List).cast<Map<String, dynamic>>();

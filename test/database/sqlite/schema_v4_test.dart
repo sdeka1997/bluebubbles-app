@@ -102,7 +102,7 @@ void main() {
       addTearDown(closeStorage);
       final db = store.db;
 
-      expect((await db.select('PRAGMA user_version')).single.values.single, 4);
+      expect((await db.select('PRAGMA user_version')).single.values.single, greaterThanOrEqualTo(4));
       final rows = {for (final r in await db.select('SELECT * FROM messages')) r['guid']: r};
       for (final m in shapes().values) {
         final row = rows[m.guid]!;

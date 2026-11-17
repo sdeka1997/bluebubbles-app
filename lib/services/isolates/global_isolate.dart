@@ -738,7 +738,6 @@ enum IsolateRequestType {
   softDeleteChat,
   unDeleteChat,
   addMessageToChat,
-  syncLatestMessages,
   bulkSyncChats,
   getParticipantsAsync,
   clearTranscriptAsync,

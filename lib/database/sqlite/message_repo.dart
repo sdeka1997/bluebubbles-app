@@ -17,7 +17,8 @@ class MessageKey implements Comparable<MessageKey> {
   final int id;
 
   @override
-  int compareTo(MessageKey other) => sortAtUs != other.sortAtUs ? sortAtUs.compareTo(other.sortAtUs) : id.compareTo(other.id);
+  int compareTo(MessageKey other) =>
+      sortAtUs != other.sortAtUs ? sortAtUs.compareTo(other.sortAtUs) : id.compareTo(other.id);
 
   @override
   bool operator ==(Object other) => other is MessageKey && other.sortAtUs == sortAtUs && other.id == id;
@@ -43,20 +44,22 @@ class MessageRepo {
   /// sender this chat can't place (no handle on the phone matches the sender's
   /// server ROWID). Reactions are left out, so a page is always [limit] visible
   /// messages. The partial index holds exactly the rows the first two terms keep.
-  static const _timeline = 'FROM messages m INDEXED BY messages_timeline '
+  static const _timeline =
+      'FROM messages m INDEXED BY messages_timeline '
       'WHERE m.chat_id = ? AND m.associated_message_guid IS NULL AND m.date_deleted_us IS NULL '
       'AND m.date_created_us IS NOT NULL AND $transcriptVisibleSql AND $_senderKnown';
 
   /// The same rows including deleted ones (`includeDeleted`, e.g. Recently Deleted).
-  static const _timelineWithDeleted = 'FROM messages m INDEXED BY messages_chat_time '
+  static const _timelineWithDeleted =
+      'FROM messages m INDEXED BY messages_chat_time '
       'WHERE m.chat_id = ? AND m.associated_message_guid IS NULL '
       'AND m.date_created_us IS NOT NULL AND $transcriptVisibleSql AND $_senderKnown';
 
   /// SQL equivalent of [Message.isTranscriptVisible] for queries with alias `m`.
-  static const transcriptVisibleSql =
-      'NOT (coalesce(m.item_type, 0) = 3 AND coalesce(m.group_action_type, 0) = 3)';
+  static const transcriptVisibleSql = 'NOT (coalesce(m.item_type, 0) = 3 AND coalesce(m.group_action_type, 0) = 3)';
 
-  static const _senderKnown = '(m.is_from_me IS NOT 0 OR m.handle_id IS NULL OR m.handle_id = 0 '
+  static const _senderKnown =
+      '(m.is_from_me IS NOT 0 OR m.handle_id IS NULL OR m.handle_id = 0 '
       'OR m.original_rowid IS NULL OR m.handle_relation_id IS NOT NULL '
       'OR EXISTS (SELECT 1 FROM handles h WHERE h.original_rowid = m.handle_id) '
       'OR NOT EXISTS (SELECT 1 FROM chat_handles p WHERE p.chat_id = m.chat_id))';
@@ -70,28 +73,48 @@ class MessageRepo {
 
   /// The [limit] messages just older than [key]: scrolling up.
   Future<List<Message>> olderThan(List<int> chatIds, MessageKey key, {int limit = 25, bool includeDeleted = false}) =>
-      _page(chatIds, limit, includeDeleted,
-          (from) => ('SELECT m.* $from AND (m.sort_at_us, m.id) < (?, ?) $_desc', [key.sortAtUs, key.id, limit]),
-          descending: true);
+      _page(
+        chatIds,
+        limit,
+        includeDeleted,
+        (from) => ('SELECT m.* $from AND (m.sort_at_us, m.id) < (?, ?) $_desc', [key.sortAtUs, key.id, limit]),
+        descending: true,
+      );
 
   /// The [limit] messages just newer than [key]: scrolling back down. Newest first.
-  Future<List<Message>> newerThan(List<int> chatIds, MessageKey key, {int limit = 25, bool includeDeleted = false}) async =>
-      (await _page(chatIds, limit, includeDeleted,
-              (from) => ('SELECT m.* $from AND (m.sort_at_us, m.id) > (?, ?) $_asc', [key.sortAtUs, key.id, limit]),
-              descending: false))
-          .reversed
-          .toList();
+  Future<List<Message>> newerThan(
+    List<int> chatIds,
+    MessageKey key, {
+    int limit = 25,
+    bool includeDeleted = false,
+  }) async => (await _page(
+    chatIds,
+    limit,
+    includeDeleted,
+    (from) => ('SELECT m.* $from AND (m.sort_at_us, m.id) > (?, ?) $_asc', [key.sortAtUs, key.id, limit]),
+    descending: false,
+  )).reversed.toList();
 
   /// [before] older messages, the message at [key] (when it is a timeline row of
   /// [chatIds]) and [after] newer ones, newest first: jump to a message, search
   /// result, last unread.
-  Future<List<Message>> around(List<int> chatIds, MessageKey key, {int before = 25, int after = 25, bool includeDeleted = false}) {
+  Future<List<Message>> around(
+    List<int> chatIds,
+    MessageKey key, {
+    int before = 25,
+    int after = 25,
+    bool includeDeleted = false,
+  }) {
     return db.snapshot((reader) async {
       final repo = MessageRepo(reader);
       final newer = await repo.newerThan(chatIds, key, limit: after, includeDeleted: includeDeleted);
-      final target = await repo._page(chatIds, 1, includeDeleted,
-          (from) => ('SELECT m.* $from AND m.sort_at_us = ? AND m.id = ? $_desc', [key.sortAtUs, key.id, 1]),
-          descending: true);
+      final target = await repo._page(
+        chatIds,
+        1,
+        includeDeleted,
+        (from) => ('SELECT m.* $from AND m.sort_at_us = ? AND m.id = ? $_desc', [key.sortAtUs, key.id, 1]),
+        descending: true,
+      );
       final older = await repo.olderThan(chatIds, key, limit: before, includeDeleted: includeDeleted);
       return [...newer, ...target, ...older];
     });
@@ -102,8 +125,11 @@ class MessageRepo {
   Future<int> newerCount(List<int> chatIds, MessageKey key) async {
     var count = 0;
     for (final chatId in chatIds.toSet()) {
-      final rows = await db.select(
-          'SELECT count(*) AS n $_timeline AND (m.sort_at_us, m.id) > (?, ?)', [chatId, key.sortAtUs, key.id]);
+      final rows = await db.select('SELECT count(*) AS n $_timeline AND (m.sort_at_us, m.id) > (?, ?)', [
+        chatId,
+        key.sortAtUs,
+        key.id,
+      ]);
       count += rows.first['n'] as int;
     }
     return count;
@@ -113,9 +139,10 @@ class MessageRepo {
   /// attachments, newest first.
   Future<List<Message>> bookmarked(int chatId) async {
     final rows = await db.select(
-        'SELECT m.* FROM messages m INDEXED BY messages_bookmarked WHERE m.chat_id = ? AND m.is_bookmarked = 1 '
-        'AND $transcriptVisibleSql ORDER BY m.sort_at_us DESC, m.id DESC',
-        [chatId]);
+      'SELECT m.* FROM messages m INDEXED BY messages_bookmarked WHERE m.chat_id = ? AND m.is_bookmarked = 1 '
+      'AND $transcriptVisibleSql ORDER BY m.sort_at_us DESC, m.id DESC',
+      [chatId],
+    );
     final page = rows.map(messageFromRow).toList();
     await attachmentsFor(page);
     return page;
@@ -123,9 +150,13 @@ class MessageRepo {
 
   /// One keyset query per chat id (each stays on the index; `chat_id IN (...)`
   /// would sort every older row of all of them), merged by key, deduplicated.
-  Future<List<Message>> _page(List<int> chatIds, int limit, bool includeDeleted,
-      (String, List<Object?>) Function(String from) query,
-      {required bool descending}) {
+  Future<List<Message>> _page(
+    List<int> chatIds,
+    int limit,
+    bool includeDeleted,
+    (String, List<Object?>) Function(String from) query, {
+    required bool descending,
+  }) {
     return db.snapshot((reader) async {
       final rows = <Map<String, Object?>>[];
       for (final chatId in chatIds.toSet()) {
@@ -153,7 +184,9 @@ class MessageRepo {
     final result = <Message>[];
     for (final chunk in guids.toSet().toList().slices(500)) {
       final rows = await db.select(
-          'SELECT * FROM messages WHERE associated_message_guid IN (${sqlPlaceholders(chunk.length)})', chunk);
+        'SELECT * FROM messages WHERE associated_message_guid IN (${sqlPlaceholders(chunk.length)})',
+        chunk,
+      );
       result.addAll(rows.map(messageFromRow));
     }
     if (on != null) {
@@ -164,16 +197,15 @@ class MessageRepo {
     }
     await attachmentsFor(result);
     // In Dart: an ORDER BY here would sort in a temporary B-tree.
-    return result
-      ..sort((a, b) {
-        final byRowId = (a.originalROWID ?? 0).compareTo(b.originalROWID ?? 0);
-        return byRowId != 0 ? byRowId : a.id!.compareTo(b.id!);
-      });
+    return result..sort((a, b) {
+      final byRowId = (a.originalROWID ?? 0).compareTo(b.originalROWID ?? 0);
+      return byRowId != 0 ? byRowId : a.id!.compareTo(b.id!);
+    });
   }
 
   /// Fills every relation of [page] (RelationFill): attachments, chat with
   /// participants, sender with contacts.
-  Future<void> attachmentsFor(List<Message> page) => RelationFill(db).messages(page);
+  Future<void> attachmentsFor(List<Message> page) => RelationFill(db, latest: false).messages(page);
 
   /// Every message created after [millisecondsSinceEpoch], matching the
   /// unbounded legacy MessageActions query.
@@ -210,7 +242,10 @@ class MessageRepo {
   Future<Map<int, Message>> byIds(Iterable<int> ids) async {
     final result = <int, Message>{};
     for (final chunk in ids.toSet().toList().slices(500)) {
-      for (final row in await db.select('SELECT * FROM messages WHERE id IN (${sqlPlaceholders(chunk.length)})', chunk)) {
+      for (final row in await db.select(
+        'SELECT * FROM messages WHERE id IN (${sqlPlaceholders(chunk.length)})',
+        chunk,
+      )) {
         result[row['id'] as int] = messageFromRow(row);
       }
     }
@@ -223,10 +258,11 @@ class MessageRepo {
   Future<List<Message>> thread(String originatorGuid) {
     return db.snapshot((reader) async {
       final rows = await reader.select(
-          'SELECT m.* FROM messages m WHERE m.thread_originator_guid = ? '
-          'AND m.associated_message_guid IS NULL AND m.date_deleted_us IS NULL '
-          'AND $transcriptVisibleSql',
-          [originatorGuid]);
+        'SELECT m.* FROM messages m WHERE m.thread_originator_guid = ? '
+        'AND m.associated_message_guid IS NULL AND m.date_deleted_us IS NULL '
+        'AND $transcriptVisibleSql',
+        [originatorGuid],
+      );
       final messages = rows.map(messageFromRow).toList();
       final originator = await MessageRepo(reader).byGuid(originatorGuid);
       if (originator != null) messages.add(originator);
@@ -246,8 +282,14 @@ class MessageRepo {
   /// picks candidate rows that LIKE then checks; shorter terms, and terms with
   /// LIKE's own `%`, `_` or `\`, can't use it and scan messages as ObjectBox
   /// does for every search today.
-  Future<List<Message>> search(String term,
-      {List<int>? chatIds, bool? isFromMe, int? senderHandleId, DateTime? since, int limit = 50}) {
+  Future<List<Message>> search(
+    String term, {
+    List<int>? chatIds,
+    bool? isFromMe,
+    int? senderHandleId,
+    DateTime? since,
+    int limit = 50,
+  }) {
     return db.snapshot((reader) async {
       final useIndex = term.runes.length >= 3 && !term.contains(RegExp(r'[%_\\]'));
       final where = <String>[
@@ -274,7 +316,9 @@ class MessageRepo {
           : r"SELECT m.* FROM messages m WHERE m.text LIKE ? ESCAPE '\' AND ";
       final pattern = useIndex ? '%$term%' : '%${term.replaceAllMapped(RegExp(r'[%_\\]'), (c) => '\\${c[0]}')}%';
       final rows = await reader.select(
-          '$sql${where.join(' AND ')} ORDER BY m.date_created_us DESC, m.id DESC LIMIT ?', [pattern, ...args]);
+        '$sql${where.join(' AND ')} ORDER BY m.date_created_us DESC, m.id DESC LIMIT ?',
+        [pattern, ...args],
+      );
       final messages = rows.map(messageFromRow).toList();
       await MessageRepo(reader).attachmentsFor(messages);
       return messages;
@@ -284,7 +328,9 @@ class MessageRepo {
   /// Every message whose sender has the server ROWID [serverHandleId]
   /// (`Message.handleId`), e.g. to link them to a repaired handle.
   Future<List<Message>> byServerHandleId(int serverHandleId) async {
-    final messages = (await db.select('SELECT * FROM messages WHERE handle_id = ?', [serverHandleId])).map(messageFromRow).toList();
+    final messages = (await db.select('SELECT * FROM messages WHERE handle_id = ?', [
+      serverHandleId,
+    ])).map(messageFromRow).toList();
     await attachmentsFor(messages);
     return messages;
   }
@@ -296,9 +342,10 @@ class MessageRepo {
       Message? newest;
       for (final chatId in chatIds.toSet()) {
         final rows = await reader.select(
-            'SELECT * FROM messages INDEXED BY messages_renames WHERE chat_id = ? AND item_type = 2 '
-            'ORDER BY date_created_us DESC, id DESC LIMIT 1',
-            [chatId]);
+          'SELECT * FROM messages INDEXED BY messages_renames WHERE chat_id = ? AND item_type = 2 '
+          'ORDER BY date_created_us DESC, id DESC LIMIT 1',
+          [chatId],
+        );
         if (rows.isEmpty) continue;
         final m = messageFromRow(rows.single);
         final created = m.dateCreated?.microsecondsSinceEpoch ?? 0;
@@ -330,8 +377,15 @@ class MessageRepo {
   /// `sort_at_us` follows the dates. Sets each message's id. Relations are
   /// written from `chat.targetId` / `handleRelation.targetId`.
   Future<List<Message>> upsert(WriteTx tx, List<Message> messages) async {
-    await saveByKey(tx, 'messages', 'guid', messages,
-        key: (m) => m.guid, setId: (m, id) => m.id = id, toRow: messageToRow);
+    await saveByKey(
+      tx,
+      'messages',
+      'guid',
+      messages,
+      key: (m) => m.guid,
+      setId: (m, id) => m.id = id,
+      toRow: messageToRow,
+    );
     return messages;
   }
 
@@ -345,7 +399,8 @@ class MessageRepo {
     existing.guid = incoming.guid ?? existing.guid;
     // An edit or unsend always moves dateEdited. Text alone can't tell: a push carries the
     // server's trimmed text, a full copy Apple's untrimmed text.
-    final edited = incoming.dateEdited != null &&
+    final edited =
+        incoming.dateEdited != null &&
         incoming.dateEdited!.microsecondsSinceEpoch != existing.dateEdited?.microsecondsSinceEpoch;
     if (incoming.attributedBody.isNotEmpty || edited) existing.attributedBody = incoming.attributedBody;
     if (incoming.messageSummaryInfo.isNotEmpty || edited) {
@@ -374,15 +429,19 @@ class MessageRepo {
 
   /// Hides the message [guid] (sets `date_deleted`). Returns whether it exists.
   Future<bool> softDelete(WriteTx tx, String guid, {DateTime? at}) async {
-    final rows = await tx.select('UPDATE messages SET date_deleted_us = ? WHERE guid = ? RETURNING id',
-        [(at ?? DateTime.now().toUtc()).microsecondsSinceEpoch, guid]);
+    final rows = await tx.select('UPDATE messages SET date_deleted_us = ? WHERE guid = ? RETURNING id', [
+      (at ?? DateTime.now().toUtc()).microsecondsSinceEpoch,
+      guid,
+    ]);
     return rows.isNotEmpty;
   }
 
   /// Clears `date_deleted` of [guid]. Returns whether it was deleted.
   Future<bool> restore(WriteTx tx, String guid) async {
     final rows = await tx.select(
-        'UPDATE messages SET date_deleted_us = NULL WHERE guid = ? AND date_deleted_us IS NOT NULL RETURNING id', [guid]);
+      'UPDATE messages SET date_deleted_us = NULL WHERE guid = ? AND date_deleted_us IS NOT NULL RETURNING id',
+      [guid],
+    );
     return rows.isNotEmpty;
   }
 

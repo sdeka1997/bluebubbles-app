@@ -1,10 +1,8 @@
 import 'package:bluebubbles/database/models.dart';
-import 'package:bluebubbles/helpers/types/helpers/chat_list_message.dart' show listsThread;
 import 'package:bluebubbles/helpers/types/helpers/service_twin_helpers.dart'
     show assignThreadKeys, canonicalTwinFor, carryOverThreadSettings;
 import 'package:bluebubbles/database/sqlite/attachment_repo.dart';
 import 'package:bluebubbles/database/sqlite/db.dart';
-import 'package:bluebubbles/database/sqlite/message_repo.dart';
 import 'package:bluebubbles/database/sqlite/relation_fill.dart';
 import 'package:bluebubbles/database/sqlite/row_writes.dart';
 import 'package:bluebubbles/database/sqlite/sqlite_row_mappers.dart';
@@ -138,8 +136,17 @@ class ChatRepo {
   /// Inserts or updates [chats] by guid, keeping a stored chat's id. Every
   /// column is written from the object (as ObjectBox's `put`), so callers
   /// merge into the stored chat first. Participants: [setParticipants].
+  /// Saves [chats] by guid. The latest pointer is the database's and never
+  /// written from memory; only a new chat keeps the date it arrived with, to
+  /// order it until its first message is stored.
   Future<List<Chat>> upsert(WriteTx tx, List<Chat> chats) async {
-    await saveByKey(tx, 'chats', 'guid', chats, key: (c) => c.guid, setId: (c, id) => c.id = id, toRow: chatToRow);
+    Map<String, Object?> toRow(Chat c) {
+      final row = chatToRow(c)..remove('latest_message_id');
+      if (c.id != null) row.remove('latest_message_date_us');
+      return row;
+    }
+
+    await saveByKey(tx, 'chats', 'guid', chats, key: (c) => c.guid, setId: (c, id) => c.id = id, toRow: toRow);
     return chats;
   }
 
@@ -168,99 +175,21 @@ class ChatRepo {
   Future<void> setLastReadMessageGuid(WriteTx tx, int chatId, String? guid) =>
       tx.execute('UPDATE chats SET last_read_message_guid = ? WHERE id = ?', [guid, chatId]);
 
-  // The latest pointer (chats.latest_message_id / latest_message_date_us),
-  // with the rules of chat_list_message.dart: only an ordinary item
-  // ([listsThread]) that is not deleted lists a thread, a thread holding only
-  // status items lists nothing, and arrivals move the pointer only forward.
-  // "Newest" is the last row of the chat screen, (sort_at, id); the stored
-  // date stays the message's date_created, which orders the chat list.
+  // The latest pointer (chats.latest_message_id / latest_message_date_us) is
+  // the database's: latestPointerTriggers (app_database.dart) keep it.
 
-  /// [refreshThreadLatestFromDb]: points [chatId] at its newest listing
-  /// message, reading that one row from messages_chat_time. Returns whether
-  /// the pointer changed.
-  Future<bool> refreshLatest(WriteTx tx, int chatId) async {
-    final newest = await _newestIn(tx, chatId, listing: true) ?? await _newestIn(tx, chatId, listing: false);
-    if (newest == null) return false;
-    final listed = listsThread(newest) ? newest : null;
-    final current = await _pointer(tx, chatId);
-    if (current == null) return false;
-    if (current.$1 == listed?.id && (listed != null || current.$2 == null)) return false;
-    await _setLatest(tx, chatId, listed);
-    return true;
-  }
-
-  /// [relistChatsShownByEvents]: refreshes the chats of [chatIds] whose
-  /// pointer is at a status item. Returns the ids that changed. The candidates
-  /// come from one keyed join per 500 chats; startup passes every chat.
-  Future<List<int>> relistShownByEvents(WriteTx tx, Iterable<int> chatIds) async {
-    final changed = <int>[];
+  /// The stored pointer of each of [chatIds], to tell which ones a write moved.
+  Future<Map<int, (int?, int?)>> pointers(Iterable<int> chatIds) async {
+    final result = <int, (int?, int?)>{};
     for (final chunk in chatIds.toSet().toList().slices(500)) {
-      final rows = await tx.select(
-        'SELECT chats.id FROM chats JOIN messages ON messages.id = chats.latest_message_id '
-        'WHERE chats.id IN (${sqlPlaceholders(chunk.length)}) AND coalesce(messages.item_type, 0) != 0',
-        chunk,
-      );
+      final rows = await db.select(
+          'SELECT id, latest_message_id, latest_message_date_us FROM chats WHERE id IN (${sqlPlaceholders(chunk.length)})',
+          chunk);
       for (final row in rows) {
-        final chatId = row['id'] as int;
-        if (await refreshLatest(tx, chatId)) changed.add(chatId);
+        result[row['id'] as int] = (row['latest_message_id'] as int?, row['latest_message_date_us'] as int?);
       }
     }
-    return changed;
-  }
-
-  /// Repairs chats persisted by older builds with Apple's silent current-photo
-  /// state as their latest row. The candidate join is by both primary keys;
-  /// each candidate then walks only its `messages_chat_time` slice.
-  ///
-  /// Incoming messages normally have no `date_read_us`, even after the chat is
-  /// read, so unread is cleared only when there is no visible incoming unread
-  /// row at all. That is deliberately conservative: a stale badge can survive,
-  /// but a genuine message badge is never erased by this local repair.
-  Future<List<int>> repairGroupPhotoStatePointers(WriteTx tx) async {
-    final candidates = await tx.select(
-      'SELECT c.id, c.has_unread_message FROM chats c '
-      'JOIN messages m ON m.id = c.latest_message_id '
-      'WHERE NOT (${MessageRepo.transcriptVisibleSql})',
-    );
-    final changed = <int>[];
-    for (final row in candidates) {
-      final chatId = row['id'] as int;
-      if (row['has_unread_message'] == 1) {
-        final visibleUnread = await tx.select(
-          'SELECT 1 FROM messages m INDEXED BY messages_chat_time '
-          'WHERE m.chat_id = ? AND m.associated_message_guid IS NULL '
-          'AND m.date_deleted_us IS NULL AND m.date_created_us IS NOT NULL '
-          'AND ${MessageRepo.transcriptVisibleSql} AND m.is_from_me = 0 '
-          'AND m.date_read_us IS NULL LIMIT 1',
-          [chatId],
-        );
-        if (visibleUnread.isEmpty) await setUnread(tx, [chatId], false);
-      }
-      if (await refreshLatest(tx, chatId)) changed.add(chatId);
-    }
-    return changed;
-  }
-
-  /// [keepNewestOf]: points [chatId] at the newest of [added] (stored messages,
-  /// with ids) when it is newer than what the chat is listed by, or when the
-  /// chat is listed by nothing, a status item, a deleted or a missing message.
-  /// Reads only the current pointer, never the chat's history. Returns whether
-  /// the pointer changed.
-  Future<bool> keepNewest(WriteTx tx, int chatId, Iterable<Message> added) async {
-    final newest = added
-        .where((m) => m.id != null && m.dateDeleted == null && m.dateCreated != null && listsThread(m))
-        .sorted((a, b) => MessageKey.of(a).compareTo(MessageKey.of(b)))
-        .lastOrNull;
-    if (newest == null) return false;
-    final pointer = await _pointer(tx, chatId);
-    if (pointer == null) return false;
-    final (currentId, listedAt) = pointer;
-    final current = currentId == null ? null : await MessageRepo(tx).row(currentId);
-    final currentCounts = current != null && listsThread(current) && current.dateDeleted == null && listedAt != null;
-    if (currentCounts && MessageKey.of(newest).compareTo(MessageKey.of(current)) <= 0) return false;
-    if (currentId == newest.id && listedAt == newest.dateCreated) return false;
-    await _setLatest(tx, chatId, newest);
-    return true;
+    return result;
   }
 
   /// (latest_message_id, latest_message_date) of [chatId], or null when there is no such chat.
@@ -273,28 +202,12 @@ class ChatRepo {
     return (rows.single['latest_message_id'] as int?, us == null ? null : DateTime.fromMicrosecondsSinceEpoch(us));
   }
 
-  Future<Message?> _newestIn(DbReader reader, int chatId, {required bool listing}) async {
-    final rows = await reader.select(
-      'SELECT * FROM messages INDEXED BY messages_chat_time WHERE chat_id = ? '
-      'AND date_deleted_us IS NULL AND date_created_us IS NOT NULL '
-      '${listing ? 'AND (item_type IS NULL OR item_type = 0) ' : ''}'
-      'ORDER BY sort_at_us DESC, id DESC LIMIT 1',
-      [chatId],
-    );
-    return rows.isEmpty ? null : messageFromRow(rows.single);
-  }
-
-  Future<void> _setLatest(WriteTx tx, int chatId, Message? message) => tx.execute(
-    'UPDATE chats SET latest_message_id = ?, latest_message_date_us = ? WHERE id = ?',
-    [message?.id, message?.dateCreated?.microsecondsSinceEpoch, chatId],
-  );
-
   /// `foldServiceTwins` (service_twin_helpers.dart) on SQLite: regroups every
   /// chat (stores changed thread keys), then for each chat of [chats], or whose
   /// thread changed, that is folded into another: carries its pin, mute,
   /// archive and custom name over to the thread, moves all its messages there
-  /// with one UPDATE (each keeps `apple_chat_guid`, the chat it came from) and
-  /// moves the thread's latest pointer forward from the moved rows only.
+  /// with one UPDATE (each keeps `apple_chat_guid`, the chat it came from),
+  /// which re-points both chats.
   /// Runs in the caller's write. Returns each folded chat's guid mapped to its
   /// thread, one instance per thread, with its pointer as stored.
   Future<Map<String, Chat>> foldServiceTwins(WriteTx tx, Iterable<Chat> chats) async {
@@ -339,15 +252,13 @@ class ChatRepo {
         );
       }
       final moved = await tx.select(
-        'UPDATE messages SET apple_chat_guid = coalesce(apple_chat_guid, ?), chat_id = ? WHERE chat_id = ? RETURNING *',
+        'UPDATE messages SET apple_chat_guid = coalesce(apple_chat_guid, ?), chat_id = ? WHERE chat_id = ? RETURNING id',
         [twin.guid, canonical.id, twin.id],
       );
       if (moved.isEmpty) continue;
-      if (await keepNewest(tx, canonical.id!, moved.map(messageFromRow))) {
-        final (id, date) = (await _pointer(tx, canonical.id!))!;
-        canonical.dbLatestMessage.targetId = id;
-        canonical.dbOnlyLatestMessageDate = date;
-      }
+      final (id, date) = (await _pointer(tx, canonical.id!))!;
+      canonical.dbLatestMessage.targetId = id;
+      canonical.dbOnlyLatestMessageDate = date;
     }
     return folded;
   }

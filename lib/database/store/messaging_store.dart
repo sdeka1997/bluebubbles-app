@@ -230,12 +230,10 @@ class ChatMetadataRefreshResult {
   const ChatMetadataRefreshResult({
     required this.changedChats,
     required this.foldedChats,
-    required this.relistedChats,
   });
 
   final List<Chat> changedChats;
   final Map<String, Chat> foldedChats;
-  final List<Chat> relistedChats;
 }
 
 /// The sync batch (SyncActions.bulkSyncData) and the chat reads of its callers.
@@ -341,10 +339,8 @@ abstract interface class ChatStore {
   Future<int?> saveChat(
     String guid,
     Chat inputChat,
-    Map<String, bool> updateFlags, {
-    int? latestMessageId,
-    DateTime? latestMessageDate,
-  });
+    Map<String, bool> updateFlags,
+  );
 
   Future<void> deleteChat(int chatId, List<int> messageIds, List<int> handleIds);
 
@@ -359,8 +355,6 @@ abstract interface class ChatStore {
     Message inputLatest, {
     required bool checkForMessageText,
   });
-
-  Future<List<int>> syncLatestMessages(List<String> chatGuids, {required bool toggleUnread});
 
   /// Address-only lookup used by the legacy one-to-one GUID fallback before
   /// formatted-address work. The first stored handle is returned.
