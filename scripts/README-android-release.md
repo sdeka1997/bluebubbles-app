@@ -38,6 +38,10 @@ Immediately before any publish, it cleans known Flutter-generated files, recheck
 
 The command supplies the repository's local Flutter/JDK/Gradle paths and defaults `JAVA_HOME` and `ANDROID_HOME` to the checked-in Mac build environment. Override `JAVA_HOME` or `ANDROID_HOME` in the process environment if those toolchains move.
 
+After every build, passed or failed, it stops the Gradle daemon and deletes the build's
+leftovers (`~/.gradle/caches/8.14` and everything under `build/` except the APK), about
+10 GiB, so the Mac stays above the 15 GiB gate between releases instead of only at the start.
+
 Run the release-tool behavior tests without building an APK:
 
 ```bash

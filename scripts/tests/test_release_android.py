@@ -174,6 +174,43 @@ class ReleaseAndroidTest(unittest.TestCase):
             finally:
                 os.chdir(previous)
 
+    def test_build_space_is_freed_but_the_apk_is_kept(self):
+        previous = Path.cwd()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "gradle-cache"
+            (cache / "transforms").mkdir(parents=True)
+            (root / "build/app/intermediates").mkdir(parents=True)
+            (root / "build/app/intermediates/classes.jar").write_bytes(b"x")
+            (root / "build/linux").mkdir(parents=True)
+            apk = root / release_android.APK
+            apk.parent.mkdir(parents=True)
+            apk.write_bytes(b"apk")
+            os.chdir(root)
+            try:
+                runner = FakeRunner()
+                tool = release_android.ReleaseTool(self.config(), runner=runner, gradle_cache=cache)
+                tool.free_build_space()
+                self.assertEqual(runner.calls[0][0], ("gradle", "--stop"))
+                self.assertFalse(cache.exists())
+                self.assertFalse((root / "build/app/intermediates").exists())
+                self.assertFalse((root / "build/linux").exists())
+                self.assertEqual(apk.read_bytes(), b"apk")
+            finally:
+                os.chdir(previous)
+
+    def test_build_space_is_freed_when_the_build_fails(self):
+        runner = FakeRunner({("flutter", "test"): release_android.ReleaseError("tests failed")})
+        tool = release_android.ReleaseTool(self.config(), runner=runner, github=FakeGitHub())
+        with mock.patch.object(tool, "check_git_state", return_value="abc"), \
+                mock.patch.object(tool, "check_disk_space"), \
+                mock.patch.object(tool, "prepare_staged_signing"), \
+                mock.patch.object(tool, "cleanup_flutter_noise"), \
+                mock.patch.object(tool, "free_build_space") as free:
+            with self.assertRaisesRegex(release_android.ReleaseError, "tests failed"):
+                tool.run()
+        free.assert_called_once()
+
     def test_missing_staged_keystore_is_rejected_before_build(self):
         previous = Path.cwd()
         with tempfile.TemporaryDirectory() as directory:

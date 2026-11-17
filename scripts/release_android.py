@@ -24,6 +24,9 @@ SIGNER_SHA256 = "f2aa29d940eb58a4667f64d3aa4eddd9bbb158af84dd2fe2084dd4a90a660fa
 VERSION_CODE_OFFSET = 20002000
 MIN_FREE_BYTES = 15 * 1024**3
 APK = Path("build/app/outputs/flutter-apk/app-alpha-release.apk")
+# Gradle's per-version cache of transformed dependencies: ~7 GiB after a build, rebuilt
+# on demand. Same Gradle version as the toolchain in build_environment.
+GRADLE_CACHE = Path.home() / ".gradle/caches/8.14"
 
 
 class ReleaseError(RuntimeError):
@@ -186,11 +189,13 @@ class ReleaseTool:
         github=None,
         disk_usage=None,
         staged_keystore=None,
+        gradle_cache=None,
     ):
         self.config = config
         self.runner = runner or CommandRunner()
         self.github = github or GitHubClient(token=os.environ.get("GH_TOKEN"))
         self.disk_usage = disk_usage or shutil.disk_usage
+        self.gradle_cache = Path(gradle_cache or GRADLE_CACHE)
         self.staged_keystore = Path(
             staged_keystore or Path.home() / ".android/debug.keystore"
         ).resolve()
@@ -290,6 +295,25 @@ class ReleaseTool:
             elif path.exists():
                 path.unlink()
 
+    def free_build_space(self):
+        """Removes what a build leaves behind (~10 GiB), keeping only the APK.
+
+        The disk gate is checked only when a release starts, so without this the
+        Mac sits ~10 GiB under it between releases. The Gradle daemon is stopped
+        first: one still running holds the cache's metadata and fails the next
+        build ("Could not read workspace metadata") once the cache is gone.
+        """
+        self.runner.run(["gradle", "--stop"], env=self.build_environment(), capture=False)
+        shutil.rmtree(self.gradle_cache, ignore_errors=True)
+        build = Path("build")
+        if not build.is_dir():
+            return
+        kept = APK.read_bytes() if APK.is_file() else None
+        shutil.rmtree(build)
+        if kept is not None:
+            APK.parent.mkdir(parents=True)
+            APK.write_bytes(kept)
+
     def find_android_tools(self):
         android_home = Path(self.build_environment()["ANDROID_HOME"])
         candidates = []
@@ -356,6 +380,7 @@ class ReleaseTool:
             self.validate_apk(APK, aapt2, apksigner)
         finally:
             self.cleanup_flutter_noise()
+            self.free_build_space()
         head = self.check_git_state()
         self.finish(APK, head)
 
