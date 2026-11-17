@@ -397,8 +397,8 @@ extension MessageNotificationExtension on Message {
         String reactionSender = isFromMe!
             ? 'You'
             : (hideContactInfo ? "Someone" : (handleRelation.target?.reactionDisplayName ?? "Someone"));
-        // the message it reacts to, loaded with it (MessagingStore.fillLinkedMessages)
-        final associatedMessage = reactionTarget;
+        // the message it reacts to, a relation the repository fills
+        final associatedMessage = reactionTarget.target;
         if (associatedMessage != null) {
           // grab the verb we'll use from the verbForReaction helper
           String verb = ReactionTypes.verbForReaction(associatedMessageType);

@@ -28,7 +28,7 @@ void main() {
           associatedMessageType: 'love',
           text: 'Loved “hello”',
           dateCreated: DateTime(2026),
-        )..reactionTarget = Message(guid: 'target', text: 'hello there', dateCreated: DateTime(2026)),
+        )..reactionTarget.target = Message(guid: 'target', text: 'hello there', dateCreated: DateTime(2026)),
     'a reaction whose message is not loaded': () => Message(
           guid: 'r2',
           isFromMe: true,

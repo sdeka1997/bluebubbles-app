@@ -169,6 +169,8 @@ Message messageFromRow(Map<String, Object?> r) {
   m.chat.loadedFromSqlite(r['chat_id'] as int?, label: 'Message.chat');
   m.handleRelation.loadedFromSqlite(r['handle_relation_id'] as int?, label: 'Message.handleRelation');
   m.dbAttachments.loadedFromSqlite(label: 'Message.dbAttachments');
+  m.reactionTarget.loadedFromSqliteByKey(m.reactsToGuid != null, label: 'Message.reactionTarget');
+  m.otherParticipant.loadedFromSqliteByKey(m.participantRowId != null, label: 'Message.otherParticipant');
   return m;
 }
 

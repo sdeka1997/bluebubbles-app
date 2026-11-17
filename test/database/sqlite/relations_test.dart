@@ -46,6 +46,8 @@ int expectFilled(Iterable<Object> roots) {
         one('Message ${m.id}.chat', m.chat as rel.Rel, () => m.chat.target, walk);
         one('Message ${m.id}.handleRelation', m.handleRelation as rel.Rel, () => m.handleRelation.target, walk);
         many('Message ${m.id}.dbAttachments', m.dbAttachments as rel.RelList, walk);
+        one('Message ${m.id}.reactionTarget', m.reactionTarget as rel.Rel, () => m.reactionTarget.target, walk);
+        one('Message ${m.id}.otherParticipant', m.otherParticipant as rel.Rel, () => m.otherParticipant.target, walk);
       case final Chat c:
         one('Chat ${c.id}.dbLatestMessage', c.dbLatestMessage as rel.Rel, () => c.dbLatestMessage.target, walk);
         many('Chat ${c.id}.handles', c.handles as rel.RelList, walk);
@@ -90,6 +92,16 @@ void main() {
           throwsA(isA<AssertionError>()));
       final a = attachmentFromRow(attachmentToRow(Attachment(id: 1, guid: 'a')..message.targetId = 5));
       expect(() => a.message.target, throwsA(isA<AssertionError>()));
+
+      final reaction = messageFromRow(row(Message(guid: 'r', associatedMessageGuid: 'm1', dateCreated: at(baseMs))));
+      expect(() => reaction.reactionTarget.target,
+          throwsA(isA<AssertionError>().having((e) => e.message, 'message', contains('Message.reactionTarget'))));
+      final added = messageFromRow(
+          row(Message(guid: 'e', itemType: 1, groupActionType: 0, otherHandle: 7, dateCreated: at(baseMs))));
+      expect(() => added.otherParticipant.target,
+          throwsA(isA<AssertionError>().having((e) => e.message, 'message', contains('Message.otherParticipant'))));
+      expect(m.reactionTarget.target, isNull, reason: 'not a reaction: nothing to fill');
+      expect(m.otherParticipant.target, isNull, reason: 'not a participant event: nothing to fill');
     });
 
     test('a relation with no stored id needs no fill; filling or setting it makes it readable', () {
@@ -140,7 +152,7 @@ void main() {
         ..contact(2, 'Bob')
         ..handle(1, address: '+1', contacts: [1])
         ..handle(2, address: '+2', contacts: [1, 2])
-        ..handle(3, address: '+3')
+        ..handle(3, address: '+3', originalRowId: 31)
         ..chat(1, latestMessageId: 4, latestMs: baseMs + 4, handles: [1, 2])
         ..chat(2, latestMessageId: 6, latestMs: baseMs + 6, handles: [3])
         ..chat(3);
@@ -150,6 +162,7 @@ void main() {
             text: 'hello $i', handleId: i.isEven ? null : 20 + i, itemType: i == 5 ? 2 : null);
       }
       seed.message(7, 1, baseMs + 7, reactionTo: 'm1', handleRelationId: 1);
+      seed.message(8, 1, baseMs + 8, itemType: 1, groupActionType: 0, otherHandle: 31);
       seed
         ..attachment(1, 1)
         ..attachment(2, 1)

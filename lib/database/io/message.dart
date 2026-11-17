@@ -78,12 +78,13 @@ class Message {
 
   List<Message> associatedMessages = [];
 
-  /// The message a reaction points at, when the store loaded it
-  /// ([MessagingStore.fillLinkedMessages]); its preview text reads this.
-  Message? reactionTarget;
+  /// The message a reaction points at ([associatedMessageGuid]), filled by the
+  /// repository with the other relations; its preview text reads this.
+  final reactionTarget = Rel<Message>();
 
-  /// The handle [otherHandle] names (added/removed person), when loaded.
-  Handle? otherParticipant;
+  /// The handle [otherHandle] names (the person added or removed), filled by
+  /// the repository with its contacts.
+  final otherParticipant = Rel<Handle>();
   bool? bigEmoji;
   List<AttributedBody> attributedBody;
   List<MessageSummaryInfo> messageSummaryInfo;
@@ -510,7 +511,7 @@ class Message {
     String? other = "someone";
     if (otherHandle != null && isParticipantEvent) {
       // Keep the "someone" fallback if the handle isn't loaded (or stored) yet.
-      other = otherParticipant?.displayName ?? other;
+      other = otherParticipant.target?.displayName ?? other;
     }
 
     if (itemType == 1) {
@@ -546,6 +547,12 @@ class Message {
 
   bool get isParticipantEvent =>
       isGroupEvent && ((itemType == 1 && [0, 1].contains(groupActionType)) || [2, 3].contains(itemType));
+
+  /// The guid [reactionTarget] is stored by; null when this is not a reaction.
+  String? get reactsToGuid => (associatedMessageGuid?.isEmpty ?? true) ? null : associatedMessageGuid;
+
+  /// The server ROWID [otherParticipant] is stored by; null unless this event names a person.
+  int? get participantRowId => isParticipantEvent ? otherHandle : null;
 
   bool get isBigEmoji => bigEmoji ?? MessageHelper.shouldShowBigEmoji(fullText);
 

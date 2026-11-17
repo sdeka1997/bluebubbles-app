@@ -6,7 +6,8 @@ import 'package:collection/collection.dart';
 
 /// Fills the relations of entities read from SQLite (S2 switch plan, commit 3):
 /// everything reachable from them through `Message.chat`, `.handleRelation`,
-/// `.dbAttachments`, `Attachment.message`, `Chat.dbLatestMessage`, `.handles`,
+/// `.dbAttachments`, `.reactionTarget` (by guid), `.otherParticipant` (by
+/// server ROWID), `Attachment.message`, `Chat.dbLatestMessage`, `.handles`,
 /// `Handle.contactsV2`, `ContactV2.handles` and `CustomGroup.chats` is read
 /// and linked, one object per row (a chat's latest message points back at
 /// that same chat). `Chat.messages` and `Chat.customGroups` are never filled:
@@ -39,6 +40,8 @@ class RelationFill {
   final _contactsOf = <int, List<int>>{};
   final _handlesOf = <int, List<int>>{};
   final _chatsOf = <int, List<int>>{};
+  final _messageByGuid = <String, Message?>{};
+  final _handleByRowId = <int, Handle?>{};
 
   Future<void> messages(Iterable<Message> list) => _run(list, _messages, (m) => m.id!);
   Future<void> chats(Iterable<Chat> list) => _run(list, _chats, (c) => c.id!);
@@ -76,6 +79,7 @@ class RelationFill {
   /// Links the rows not linked yet and reads what they point at; false once nothing is left.
   Future<bool> _round() async {
     final needMessages = <int>{}, needChats = <int>{}, needHandles = <int>{};
+    final needGuids = <String>{}, needRowIds = <int>{};
     void need(Set<int> into, Map<int, Object> have, int id) {
       if (id != 0 && !have.containsKey(id)) into.add(id);
     }
@@ -93,8 +97,16 @@ class RelationFill {
       }
       for (final id in messageIds) {
         final m = _messages[id]!;
+        if (m.guid != null) _messageByGuid[m.guid!] = m;
+      }
+      for (final id in messageIds) {
+        final m = _messages[id]!;
         need(needChats, _chats, m.chat.targetId);
         need(needHandles, _handles, m.handleRelation.targetId);
+        final guid = m.reactsToGuid;
+        if (!m.reactionTarget.isFilled && guid != null && !_messageByGuid.containsKey(guid)) needGuids.add(guid);
+        final rowId = m.participantRowId;
+        if (!m.otherParticipant.isFilled && rowId != null && !_handleByRowId.containsKey(rowId)) needRowIds.add(rowId);
       }
     }
     for (final a in _attachments.values) {
@@ -158,10 +170,32 @@ class RelationFill {
     await _load('messages', needMessages, _messages, messageFromRow);
     await _load('chats', needChats, _chats, chatFromRow);
     await _load('handles', needHandles, _handles, handleFromRow);
-    return linked || needMessages.isNotEmpty || needChats.isNotEmpty || needHandles.isNotEmpty;
+    for (final row in await _in('SELECT * FROM messages WHERE guid IN', needGuids.toList())) {
+      final m = _messages.putIfAbsent(row['id'] as int, () => messageFromRow(row));
+      _messageByGuid[m.guid!] = m;
+    }
+    for (final guid in needGuids) {
+      _messageByGuid.putIfAbsent(guid, () => null);
+    }
+    // Several handles can share a server ROWID (one per service): the first stored wins.
+    final byRowId = (await _in('SELECT * FROM handles WHERE original_rowid IN', needRowIds.toList()))
+        .sortedBy<num>((row) => row['id'] as int);
+    for (final row in byRowId) {
+      final h = _handles.putIfAbsent(row['id'] as int, () => handleFromRow(row));
+      _handleByRowId.putIfAbsent(h.originalROWID!, () => h);
+    }
+    for (final rowId in needRowIds) {
+      _handleByRowId.putIfAbsent(rowId, () => null);
+    }
+    return linked ||
+        needMessages.isNotEmpty ||
+        needChats.isNotEmpty ||
+        needHandles.isNotEmpty ||
+        needGuids.isNotEmpty ||
+        needRowIds.isNotEmpty;
   }
 
-  Future<List<Map<String, Object?>>> _in(String sql, List<int> ids) async => [
+  Future<List<Map<String, Object?>>> _in(String sql, List<Object> ids) async => [
         for (final chunk in ids.slices(500)) ...await db.select('$sql (${sqlPlaceholders(chunk.length)})', chunk),
       ];
 
@@ -181,6 +215,8 @@ class RelationFill {
         if (!m.dbAttachments.isFilled) m.dbAttachments.fill(_byIds(_attachmentsOf[m.id], _attachments));
         if (!m.chat.isFilled) m.chat.fill(_chats[m.chat.targetId]);
         if (!m.handleRelation.isFilled) m.handleRelation.fill(_handles[m.handleRelation.targetId]);
+        if (!m.reactionTarget.isFilled) m.reactionTarget.fill(_messageByGuid[m.reactsToGuid]);
+        if (!m.otherParticipant.isFilled) m.otherParticipant.fill(_handleByRowId[m.participantRowId]);
       case final Chat c:
         if (!c.handles.isFilled) {
           c.handles.fill(_byIds(_participantsOf[c.id], _handles));

@@ -53,13 +53,12 @@ void main() {
         (await fixture().store.messageById(added.id!))!,
         (await fixture().store.messageById(plain.id!))!,
       ];
-      await fixture().store.fillLinkedMessages(loaded);
-      expect(loaded[0].reactionTarget?.guid, 'target');
-      expect(loaded[0].reactionTarget!.dbAttachments.map((a) => a.guid), ['pic']);
-      expect(loaded[1].otherParticipant?.address, 'bob@example.com');
-      expect(loaded[1].otherParticipant!.displayName, 'Bob Builder');
-      expect(loaded[2].reactionTarget, isNull);
-      expect(loaded[2].otherParticipant, isNull);
+      expect(loaded[0].reactionTarget.target?.guid, 'target');
+      expect(loaded[0].reactionTarget.target!.dbAttachments.map((a) => a.guid), ['pic']);
+      expect(loaded[1].otherParticipant.target?.address, 'bob@example.com');
+      expect(loaded[1].otherParticipant.target!.displayName, 'Bob Builder');
+      expect(loaded[2].reactionTarget.target, isNull);
+      expect(loaded[2].otherParticipant.target, isNull);
     });
 
     test('every message read by id or guid comes with its linked rows', () async {
@@ -69,11 +68,11 @@ void main() {
       final reaction = await fixture().message('r', chat, t0 + 1000, reactsTo: 'target');
       final added = await fixture().message('added', chat, t0 + 2000,
           itemType: 1, edit: (m) => m..groupActionType = 0..otherHandle = 7);
-      expect((await fixture().store.messageById(reaction.id!))!.reactionTarget?.guid, 'target');
-      expect((await fixture().store.messageByGuid('r'))!.reactionTarget?.guid, 'target');
+      expect((await fixture().store.messageById(reaction.id!))!.reactionTarget.target?.guid, 'target');
+      expect((await fixture().store.messageByGuid('r'))!.reactionTarget.target?.guid, 'target');
       final page = await fixture().store.messagesByIds([reaction.id!, added.id!]);
-      expect(page.first.reactionTarget?.guid, 'target');
-      expect(page.last.otherParticipant?.address, 'bob@example.com');
+      expect(page.first.reactionTarget.target?.guid, 'target');
+      expect(page.last.otherParticipant.target?.address, 'bob@example.com');
     });
 
     test('handles by address on one service, for Find My names', () async {

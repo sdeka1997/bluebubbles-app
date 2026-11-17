@@ -147,13 +147,20 @@ class MessageRepo {
   }
 
   /// Reactions (and other associated messages) of [guids], ordered by server
-  /// ROWID as today's supplemental query returns them.
-  Future<List<Message>> reactionsFor(Iterable<String> guids) async {
+  /// ROWID as today's supplemental query returns them. With [on] (the messages
+  /// of [guids], by guid), each reaction points at that object, read once.
+  Future<List<Message>> reactionsFor(Iterable<String> guids, {Map<String, Message>? on}) async {
     final result = <Message>[];
     for (final chunk in guids.toSet().toList().slices(500)) {
       final rows = await db.select(
           'SELECT * FROM messages WHERE associated_message_guid IN (${sqlPlaceholders(chunk.length)})', chunk);
       result.addAll(rows.map(messageFromRow));
+    }
+    if (on != null) {
+      for (final reaction in result) {
+        final target = on[reaction.associatedMessageGuid];
+        if (target != null) reaction.reactionTarget.fill(target);
+      }
     }
     await attachmentsFor(result);
     // In Dart: an ORDER BY here would sort in a temporary B-tree.

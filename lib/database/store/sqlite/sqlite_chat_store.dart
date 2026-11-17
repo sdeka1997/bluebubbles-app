@@ -395,16 +395,13 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
     );
   }
 
-  /// Fills [messages]' linked messages and sets each one's reactions on it,
-  /// newest first (the order the reaction row has always shown). A reaction's
-  /// target is the message it is set on: no second read of it.
+  /// Sets each of [messages]' reactions on it, newest first (the order the
+  /// reaction row has always shown), each pointing at the message it is set on.
   Future<List<Message>> _withReactions(List<Message> messages) async {
     if (messages.isEmpty) return messages;
-    await fillLinkedMessages(messages);
     final byGuid = {for (final m in messages) if (m.guid != null) m.guid!: m};
     final on = <String, List<Message>>{};
-    for (final reaction in (await MessageRepo(db).reactionsFor(byGuid.keys)).reversed) {
-      reaction.reactionTarget = byGuid[reaction.associatedMessageGuid];
+    for (final reaction in (await MessageRepo(db).reactionsFor(byGuid.keys, on: byGuid)).reversed) {
       (on[reaction.associatedMessageGuid!] ??= []).add(reaction);
     }
     for (final m in messages) {

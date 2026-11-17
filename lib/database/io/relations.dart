@@ -33,6 +33,15 @@ class Rel<T> {
     _label = label;
   }
 
+  /// Called by the row mapper for a link the row stores by another key (a
+  /// guid, a server ROWID): unfilled when [hasKey], else known to be empty.
+  void loadedFromSqliteByKey(bool hasKey, {required String label}) {
+    _id = 0;
+    _target = null;
+    _filled = !hasKey;
+    _label = label;
+  }
+
   /// The repository's fill: the target for the stored id (null when the row is gone).
   void fill(T? target) {
     _target = target;

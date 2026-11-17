@@ -64,6 +64,7 @@ class Seed {
     String? text,
     int? itemType,
     int? groupActionType,
+    int? otherHandle,
   }) {
     final m = Message(
       id: id,
@@ -81,6 +82,7 @@ class Seed {
       text: text ?? 'text $id',
       itemType: itemType,
       groupActionType: groupActionType,
+      otherHandle: otherHandle,
     );
     m.chat.targetId = chatId;
     m.handleRelation.targetId = handleRelationId;
