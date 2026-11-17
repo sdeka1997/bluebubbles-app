@@ -41,6 +41,19 @@ bool skipNotificationForReadMessage(DateTime? dateRead, {DateTime? dateCreated, 
 bool isBeforeChatRead(DateTime? dateCreated, DateTime? chatReadAt) =>
     dateCreated != null && chatReadAt != null && !dateCreated.isAfter(chatReadAt);
 
+/// How a new message is notified.
+enum NewMessageNotice { none, silent, alert }
+
+/// How to notify for a new message while the app is in front. The open chat
+/// shows it, so it gets nothing. On the chat list it alerts only when
+/// [notifyOnChatList] is set; otherwise it still joins the drawer, silently,
+/// so the drawer never holds an older message without the newer ones.
+NewMessageNotice foregroundNotice({required bool chatOpen, required bool onChatList, required bool notifyOnChatList}) {
+  if (chatOpen) return NewMessageNotice.none;
+  if (onChatList && !notifyOnChatList) return NewMessageNotice.silent;
+  return NewMessageNotice.alert;
+}
+
 class PendingToastItem {
   final String? sender;
   final String text;
@@ -234,7 +247,8 @@ class NotificationsService {
     return true;
   }
 
-  Future<void> createNotification(Chat chat, Message message) async {
+  /// A [silent] notification joins the drawer without a sound, vibration or pop-up.
+  Future<void> createNotification(Chat chat, Message message, {bool silent = false}) async {
     if (GetIt.I.isRegistered<LifecycleService>()) {
       await GetIt.I.isReady<LifecycleService>();
     }
@@ -248,6 +262,8 @@ class NotificationsService {
     final isReaction = !isNullOrEmpty(message.associatedMessageGuid);
 
     if (kIsWeb && Notification.permission == "granted") {
+      // A browser notification has no drawer to join silently.
+      if (silent) return;
       final chatIcon = await avatarAsBytes(chat: chat, quality: 256);
       final notif =
           Notification(title, body: text, icon: "data:image/png;base64,${base64Encode(chatIcon)}", tag: message.guid);
@@ -301,6 +317,7 @@ class NotificationsService {
           messageIsFromMe: false,
           showReactionAction: showReactionAction,
           reactionType: reactionType,
+          silent: silent,
         );
       }
     }
@@ -325,18 +342,18 @@ class NotificationsService {
       return;
     }
     if (chat.shouldMuteNotification(message)) return;
+    var notice = NewMessageNotice.alert;
     if (!headless && LifecycleSvc.isAlive) {
-      if (ChatsSvc.isChatActive(chat.guid)) return;
-      // Desktop always notifies for inactive chats; this chat-list suppression is mobile-only.
-      if (!kIsDesktop &&
-          ChatsSvc.activeChat == null &&
-          Get.rawRoute?.settings.name == "/" &&
-          !SettingsSvc.settings.notifyOnChatList.value) {
-        return;
-      }
+      notice = foregroundNotice(
+        chatOpen: ChatsSvc.isChatActive(chat.guid),
+        // Desktop always notifies for inactive chats; the chat-list rule is mobile-only.
+        onChatList: !kIsDesktop && ChatsSvc.activeChat == null && Get.rawRoute?.settings.name == "/",
+        notifyOnChatList: SettingsSvc.settings.notifyOnChatList.value,
+      );
+      if (notice == NewMessageNotice.none) return;
     }
 
-    await createNotification(chat, message);
+    await createNotification(chat, message, silent: notice == NewMessageNotice.silent);
   }
 
   Future<void> createIncomingFaceTimeNotification(

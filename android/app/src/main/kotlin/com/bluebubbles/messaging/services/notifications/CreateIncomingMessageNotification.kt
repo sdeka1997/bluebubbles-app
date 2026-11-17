@@ -52,6 +52,8 @@ class CreateIncomingMessageNotification: MethodCallHandlerImpl() {
         // reaction settings
         val showReactionAction: Boolean = call.argument("show_reaction_action") ?: false
         val reactionType: String = call.argument("reaction_type") ?: "like"
+        // joins the drawer without sound, vibration or heads-up (arrived while the chat list was on screen)
+        val silent: Boolean = call.argument("silent") ?: false
 
         // calculate a notification ID based on the chat database ID
         val notificationId: Int = call.argument("chat_id")!!
@@ -195,6 +197,7 @@ class CreateIncomingMessageNotification: MethodCallHandlerImpl() {
             .setGroup(Constants.notificationGroupKey)
             .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
             .setOnlyAlertOnce(messageIsFromMe)
+            .setSilent(silent)
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_MAX)
