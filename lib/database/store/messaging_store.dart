@@ -272,6 +272,17 @@ abstract interface class SyncStore {
   /// Applies remote grouping/spam metadata, folds service copies, and repairs
   /// latest pointers in the same write boundary as the legacy refresh.
   Future<ChatMetadataRefreshResult> refreshChatMetadata(List<Map<String, dynamic>> remoteChats);
+
+  /// The guids of every chat in a thread with more than one copy while the
+  /// one-time origin repair is pending (schema v7), else empty.
+  Future<List<String>> chatsAwaitingOriginRepair();
+
+  /// Records [chatGuid] as the Apple chat of the stored messages in
+  /// [messageGuids]; the database files them again. Returns how many changed.
+  Future<int> recordAppleChat(String chatGuid, List<String> messageGuids);
+
+  /// Ends the origin repair.
+  Future<void> finishOriginRepair();
 }
 
 /// Where the next older page of a chat's timeline starts, sendable between

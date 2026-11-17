@@ -177,7 +177,7 @@ void main() {
 
       final store = await openStorage(dir, onMain: false);
       final repo = ChatRepo(store.db);
-      expect((await store.db.select('PRAGMA user_version')).single.values.single, 6);
+      expect((await store.db.select('PRAGMA user_version')).single.values.single, 7);
       final page = await repo.listPage();
       expect(page.map((c) => c.latestMessage?.guid), ['two-unread', 'three-text', 'one-read']);
       expect(page.map((c) => c.hasUnreadMessage), [true, false, false]);

@@ -272,6 +272,11 @@ final _filedChat = _shownChat(
 
 String _file(String where) => 'UPDATE messages SET chat_id = $_filedChat WHERE $where AND chat_id IS NOT $_filedChat';
 
+/// v6 -> v7: builds before K15 moved a copy's messages into its thread
+/// without recording the Apple chat, and the v6 upgrade could only assume
+/// the chat they were on. MessageOriginRepair asks the server once.
+const originRepairPending = "INSERT OR IGNORE INTO storage_meta (key, value) VALUES ('origin_repair_pending', '1')";
+
 /// Files every message under its thread again (the v6 upgrade).
 final threadFilingRefile = _file('apple_chat_guid IS NOT NULL');
 
@@ -497,7 +502,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.file(File file) : this(NativeDatabase.createInBackground(file));
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -539,6 +544,7 @@ class AppDatabase extends _$AppDatabase {
       if (from < 4) await _shrinkMessages();
       if (from < 5) await _pointLatestInDatabase();
       if (from < 6) await _fileInThreads();
+      if (from < 7) await customStatement(originRepairPending);
     },
     beforeOpen: (_) async {
       await customStatement('PRAGMA foreign_keys = ON');

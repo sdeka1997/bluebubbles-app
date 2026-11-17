@@ -74,7 +74,7 @@ void main() {
     tearDown(() => db.close());
 
     test('opens at schema v2 with foreign keys on', () async {
-      expect(db.database.schemaVersion, 6);
+      expect(db.database.schemaVersion, 7);
       expect((await rows(db, 'PRAGMA foreign_keys')).single.values.single, 1);
     });
 
@@ -254,7 +254,7 @@ void main() {
 
         final db = Db.file(file);
         addTearDown(db.close);
-        expect((await rows(db, 'PRAGMA user_version')).single.values.single, 6);
+        expect((await rows(db, 'PRAGMA user_version')).single.values.single, 7);
         expect(await schema(db), await schema(fresh), reason: 'a migrated file has exactly the schema of a new one');
         for (final table in ['messages', 'attachments', 'chat_handles', 'contact_handles', 'custom_group_chats']) {
           expect(await foreignKeys(db, table), await foreignKeys(fresh, table), reason: table);

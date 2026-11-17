@@ -95,7 +95,7 @@ void main() {
     final store = await ThemeStore.open(again);
     store.put(row('Mine'));
     await store.flush();
-    expect((await again.select('PRAGMA user_version')).single.values.single, 6);
+    expect((await again.select('PRAGMA user_version')).single.values.single, 7);
     expect((await again.select("SELECT value FROM storage_meta WHERE key = 'storage_state'")).single['value'], 'ready');
     expect((await again.select('SELECT name FROM themes')).single['name'], 'Mine');
   });

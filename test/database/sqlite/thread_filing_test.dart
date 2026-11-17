@@ -191,7 +191,7 @@ void main() {
 
       final upgraded = Db.file(file);
       addTearDown(upgraded.close);
-      expect((await upgraded.select('PRAGMA user_version')).single.values.single, 6);
+      expect((await upgraded.select('PRAGMA user_version')).single.values.single, 7);
       final rows = await upgraded.select('SELECT guid, chat_id, apple_chat_guid FROM messages ORDER BY id');
       expect(rows, [
         {'guid': 'from-imessage', 'chat_id': 1, 'apple_chat_guid': 'iMessage;-;ana@example.com'},

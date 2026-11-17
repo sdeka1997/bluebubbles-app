@@ -80,4 +80,38 @@ mixin SqliteSyncStore implements SyncStore, SqliteStorePart {
     final newest = await MessageRepo(db).newestRename({local.id!, canonical?.id ?? local.id!}.toList());
     return newest?.dateCreated;
   }
+
+  @override
+  Future<List<String>> chatsAwaitingOriginRepair() async {
+    if ((await db.select("SELECT 1 FROM storage_meta WHERE key = 'origin_repair_pending'")).isEmpty) return const [];
+    final rows = await db.select('SELECT guid FROM chats WHERE thread_key IN '
+        '(SELECT thread_key FROM chats WHERE thread_key IS NOT NULL GROUP BY thread_key HAVING count(*) > 1) ORDER BY id');
+    return [for (final row in rows) row['guid'] as String];
+  }
+
+  @override
+  Future<int> recordAppleChat(String chatGuid, List<String> messageGuids) {
+    if (messageGuids.isEmpty) return Future.value(0);
+    return db.write((tx) async {
+      var changed = 0;
+      for (var i = 0; i < messageGuids.length; i += 500) {
+        final chunk = messageGuids.sublist(i, i + 500 > messageGuids.length ? messageGuids.length : i + 500);
+        final marks = List.filled(chunk.length, '?').join(', ');
+        final stale = await tx.select(
+          'SELECT count(*) AS n FROM messages WHERE guid IN ($marks) AND apple_chat_guid IS NOT ?',
+          [...chunk, chatGuid],
+        );
+        changed += stale.single['n'] as int;
+        await tx.execute(
+          'UPDATE messages SET apple_chat_guid = ? WHERE guid IN ($marks) AND apple_chat_guid IS NOT ?',
+          [chatGuid, ...chunk, chatGuid],
+        );
+      }
+      return changed;
+    });
+  }
+
+  @override
+  Future<void> finishOriginRepair() =>
+      db.write((tx) => tx.execute("DELETE FROM storage_meta WHERE key = 'origin_repair_pending'"));
 }

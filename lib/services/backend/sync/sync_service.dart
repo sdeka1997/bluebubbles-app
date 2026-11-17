@@ -13,6 +13,7 @@ import 'package:bluebubbles/services/isolates/global_isolate.dart';
 import 'package:bluebubbles/services/isolates/incremental_sync_isolate.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:bluebubbles/services/backend/sync/apple_state_catch_up.dart';
+import 'package:bluebubbles/services/backend/sync/message_origin_repair.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart' hide Response;
@@ -319,6 +320,7 @@ class SyncService {
     StartupTimeline.mark('sync: new messages saved');
     await AppleStateCatchUp.run();
     StartupTimeline.mark('sync: read and deleted state caught up');
+    await MessageOriginRepair.run();
 
     final contactSyncResult = await performContactSyncToHandles();
     final contactUploadResult = await performContactSyncToServer();

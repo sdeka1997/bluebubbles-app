@@ -44,7 +44,7 @@ void main() {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
 
-    expect(database.schemaVersion, 6);
+    expect(database.schemaVersion, 7);
     expect(await pragmaInt(database, 'foreign_keys'), 1);
     expect(await tableNames(database), containsAll(requiredStageOneTables));
   });
