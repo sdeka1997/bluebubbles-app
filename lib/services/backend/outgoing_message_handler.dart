@@ -807,7 +807,8 @@ class OutgoingMessageHandler {
               effectId: m.expressiveSendStyleId,
               subject: m.subject,
               partIndex: int.tryParse(m.threadOriginatorPart?.split(':').firstOrNull ?? ''),
-              ddScan: !SettingsSvc.serverDetails.isMinSonoma && m.text!.hasUrl,
+              // Messages builds the link card before sending, as for links typed on the Mac.
+              ddScan: m.text!.hasUrl,
               chatLookup: SendMessageInterface.chatLookup(t),
             )
           : SendMessageInterface.sendTapback(
@@ -893,7 +894,7 @@ class OutgoingMessageHandler {
           selectedMessageGuid: m.threadOriginatorGuid,
           effectId: m.expressiveSendStyleId,
           partIndex: int.tryParse(m.threadOriginatorPart?.split(':').firstOrNull ?? ''),
-          ddScan: !SettingsSvc.serverDetails.isMinSonoma && parts.any((e) => e['text'].toString().hasUrl),
+          ddScan: parts.any((e) => e['text'].toString().hasUrl),
           chatLookup: SendMessageInterface.chatLookup(t),
         );
       },
