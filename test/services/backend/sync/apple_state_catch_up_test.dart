@@ -198,4 +198,33 @@ void main() {
       expect(plan.clearNotificationFor, isEmpty);
     });
   });
+
+  group('threadCopyGuids', () {
+    test('reads each chat''s thread from the store, not the shown copy', () {
+      // The shown copy was loaded before a regroup joined the two chats.
+      final shown = [Chat(guid: 'sms', threadKey: null)];
+      final stored = [Chat(guid: 'sms', threadKey: 't'), Chat(guid: 'imsg', threadKey: 't')];
+      expect(threadCopyGuids(shown, stored), {
+        'sms': ['sms', 'imsg'],
+      });
+    });
+
+    test('a shown copy whose stored thread has split is no longer joined', () {
+      final shown = [Chat(guid: 'sms', threadKey: 't')];
+      final stored = [Chat(guid: 'sms', threadKey: 'own'), Chat(guid: 'imsg', threadKey: 't')];
+      expect(threadCopyGuids(shown, stored), isEmpty);
+    });
+
+    test('a deleted copy is not marked read with its thread', () {
+      final shown = [Chat(guid: 'sms')];
+      final stored = [
+        Chat(guid: 'sms', threadKey: 't'),
+        Chat(guid: 'imsg', threadKey: 't'),
+        Chat(guid: 'rcs', threadKey: 't', dateDeleted: DateTime(2026)),
+      ];
+      expect(threadCopyGuids(shown, stored), {
+        'sms': ['sms', 'imsg'],
+      });
+    });
+  });
 }

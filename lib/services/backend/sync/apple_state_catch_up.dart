@@ -149,17 +149,20 @@ bool? _conversationRead(Map<String, bool> readByChat, List<String> copies) {
 }
 
 /// Each shown chat whose thread has other live copies, mapped to the guids of
-/// every live copy in it.
+/// every live copy in it. A chat's thread is read from [threaded] (the
+/// store), never from the shown copy, which can predate a regroup.
 Map<String, List<String>> threadCopyGuids(Iterable<Chat> shown, Iterable<Chat> threaded) {
   final byKey = <String, List<String>>{};
+  final keyOf = <String, String>{};
   for (final copy in threaded) {
     final key = copy.threadKey;
-    if (key == null || key.isEmpty || copy.dateDeleted != null) continue;
-    (byKey[key] ??= []).add(copy.guid);
+    if (key == null || key.isEmpty) continue;
+    keyOf[copy.guid] = key;
+    if (copy.dateDeleted == null) (byKey[key] ??= []).add(copy.guid);
   }
   return {
     for (final chat in shown)
-      if ((byKey[chat.threadKey] ?? const []).length > 1) chat.guid: byKey[chat.threadKey]!,
+      if ((byKey[keyOf[chat.guid]] ?? const []).length > 1) chat.guid: byKey[keyOf[chat.guid]]!,
   };
 }
 
