@@ -841,11 +841,6 @@ class Message {
       existing.hasAttachments = newMessage.hasAttachments;
     }
 
-    // Update has reactions flag
-    if (!existing.hasReactions && newMessage.hasReactions) {
-      existing.hasReactions = newMessage.hasReactions;
-    }
-
     // Update chat
     if (!existing.chat.hasValue && newMessage.chat.hasValue) {
       existing.chat.target = newMessage.chat.target;

@@ -257,6 +257,59 @@ final latestPointerTriggers = [
       'BEGIN ${_pointLatest('NEW.chat_id')}; ${_pointLatest('OLD.chat_id')}; END',
 ];
 
+// A message has attachments when an attachment row points at it. The
+// database keeps has_attachments in step on every attachment write, so no
+// save path sets it by hand (the media and attachment counts read it).
+const _flagAttachments = 'UPDATE messages SET has_attachments = '
+    'EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = messages.id)';
+
+final attachmentFlagTriggers = [
+  'CREATE TRIGGER IF NOT EXISTS attachments_flag_insert AFTER INSERT ON attachments '
+      'WHEN NEW.message_id IS NOT NULL BEGIN $_flagAttachments WHERE id = NEW.message_id; END',
+  'CREATE TRIGGER IF NOT EXISTS attachments_flag_delete AFTER DELETE ON attachments '
+      'WHEN OLD.message_id IS NOT NULL BEGIN $_flagAttachments WHERE id = OLD.message_id; END',
+  'CREATE TRIGGER IF NOT EXISTS attachments_flag_update AFTER UPDATE OF message_id ON attachments '
+      'WHEN OLD.message_id IS NOT NEW.message_id BEGIN '
+      '$_flagAttachments WHERE id IN (OLD.message_id, NEW.message_id); END',
+  // A message written from memory cannot clear or invent the flag.
+  'CREATE TRIGGER IF NOT EXISTS messages_flag_attachments AFTER UPDATE OF has_attachments ON messages '
+      'WHEN NEW.has_attachments IS NOT EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = NEW.id) BEGIN '
+      '$_flagAttachments WHERE id = NEW.id; END',
+  'CREATE TRIGGER IF NOT EXISTS messages_flag_attachments_insert AFTER INSERT ON messages '
+      'WHEN NEW.has_attachments IS NOT EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = NEW.id) BEGIN '
+      '$_flagAttachments WHERE id = NEW.id; END',
+];
+
+/// Sets every message's has_attachments from its attachments (the v8 upgrade).
+const attachmentFlagRecompute = '$_flagAttachments WHERE has_attachments IS NOT '
+    'EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = messages.id)';
+
+// A message has reactions when any stored message points at its guid
+// (associated_message_guid). Kept by the database like has_attachments.
+const _reacted = 'EXISTS (SELECT 1 FROM messages r INDEXED BY messages_assoc WHERE r.associated_message_guid = messages.guid)';
+const _flagReactions = 'UPDATE messages SET has_reactions = $_reacted';
+
+final reactionFlagTriggers = [
+  'CREATE TRIGGER IF NOT EXISTS messages_reacted_insert AFTER INSERT ON messages '
+      'WHEN NEW.associated_message_guid IS NOT NULL BEGIN '
+      '$_flagReactions WHERE guid = NEW.associated_message_guid; END',
+  'CREATE TRIGGER IF NOT EXISTS messages_reacted_delete AFTER DELETE ON messages '
+      'WHEN OLD.associated_message_guid IS NOT NULL BEGIN '
+      '$_flagReactions WHERE guid = OLD.associated_message_guid; END',
+  'CREATE TRIGGER IF NOT EXISTS messages_reacted_update AFTER UPDATE OF associated_message_guid ON messages '
+      'WHEN OLD.associated_message_guid IS NOT NEW.associated_message_guid BEGIN '
+      '$_flagReactions WHERE guid IN (OLD.associated_message_guid, NEW.associated_message_guid); END',
+  // A reaction can be stored before its message; and a message written from
+  // memory cannot clear or invent the flag.
+  'CREATE TRIGGER IF NOT EXISTS messages_flag_reactions_insert AFTER INSERT ON messages BEGIN '
+      '$_flagReactions WHERE id = NEW.id AND has_reactions IS NOT $_reacted; END',
+  'CREATE TRIGGER IF NOT EXISTS messages_flag_reactions AFTER UPDATE OF has_reactions, guid ON messages BEGIN '
+      '$_flagReactions WHERE id = NEW.id AND has_reactions IS NOT $_reacted; END',
+];
+
+/// Sets every message's has_reactions from the stored reactions (the v8 upgrade).
+const reactionFlagRecompute = '$_flagReactions WHERE has_reactions IS NOT $_reacted';
+
 // A message's real Apple chat is stored once, in apple_chat_guid. The chat it
 // is filed under (chat_id) belongs to the database: the shown chat of the real
 // chat's thread -- the lowest-id live chat sharing its thread_key -- else the
@@ -481,6 +534,18 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  /// v7 -> v8: the database keeps has_attachments ([attachmentFlagTriggers])
+  /// and has_reactions ([reactionFlagTriggers]),
+  /// set here once for every message. Before, only a sync batch set it, so a
+  /// photo sent from this device stayed unflagged and out of the chat's media.
+  Future<void> _flagAttachmentsInDatabase() async {
+    await customStatement(attachmentFlagRecompute);
+    await customStatement(reactionFlagRecompute);
+    for (final trigger in [...attachmentFlagTriggers, ...reactionFlagTriggers]) {
+      await customStatement(trigger);
+    }
+  }
+
   /// v5 -> v6: the database files messages under their thread
   /// ([threadFilingTriggers]) and marks regroups ([regroupPendingTriggers]).
   /// A message an older build moved before it recorded the Apple chat keeps
@@ -502,7 +567,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.file(File file) : this(NativeDatabase.createInBackground(file));
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -513,6 +578,8 @@ class AppDatabase extends _$AppDatabase {
         ftsTable,
         themesTable,
         ...latestPointerTriggers,
+        ...attachmentFlagTriggers,
+        ...reactionFlagTriggers,
         ...threadFilingTriggers,
         ...regroupPendingTriggers,
       ]) {
@@ -545,6 +612,7 @@ class AppDatabase extends _$AppDatabase {
       if (from < 5) await _pointLatestInDatabase();
       if (from < 6) await _fileInThreads();
       if (from < 7) await customStatement(originRepairPending);
+      if (from < 8) await _flagAttachmentsInDatabase();
     },
     beforeOpen: (_) async {
       await customStatement('PRAGMA foreign_keys = ON');

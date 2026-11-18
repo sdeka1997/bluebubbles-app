@@ -134,16 +134,6 @@ mixin SqliteChatStore implements ChatStore, MessageStore, SqliteStorePart {
         if (reportedRowId != null) await handles.adoptServerRowIds(tx, [(handleToLink!, reportedRowId)]);
       }
 
-      if (inputMessage.associatedMessageType != null && inputMessage.associatedMessageGuid != null) {
-        final associated = await messages.byGuid(inputMessage.associatedMessageGuid!);
-        if (associated != null) {
-          associated.hasReactions = true;
-          await messages.upsert(tx, [associated]);
-        }
-      } else if (!inputMessage.hasReactions && (await messages.reactionsFor([inputMessage.guid ?? ''])).isNotEmpty) {
-        inputMessage.hasReactions = true;
-      }
-
       final dbChat = await chats.byGuid(inputChat.guid);
       if (dbChat != null) inputMessage.chat.targetId = dbChat.id;
 

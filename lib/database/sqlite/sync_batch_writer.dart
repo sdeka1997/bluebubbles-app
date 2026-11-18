@@ -144,7 +144,7 @@ class SqliteSyncBatch {
   }
 
   /// `_syncMessagesInTx`: merges into stored messages, wires chat and sender,
-  /// sets `has_reactions` on the messages reacted to.
+  /// the database sets `has_reactions` (reactionFlagTriggers).
   static Future<(List<Message>, Map<String, Message>)> _messages(
     WriteTx tx,
     PreparedSyncBatch batch,
@@ -210,28 +210,17 @@ class SqliteSyncBatch {
         if (m.guid != null) m.guid!: m,
     };
 
-    final reactedGuids = {
-      for (final m in toSave)
-        if ((m.associatedMessageGuid ?? '').isNotEmpty) m.associatedMessageGuid!,
-    };
-    final reacted = <int>{};
-    for (final guid in reactedGuids) {
-      final inBatch = byGuid[guid];
-      if (inBatch != null) {
-        if (!inBatch.hasReactions) reacted.add(inBatch.id!);
-        inBatch.hasReactions = true;
-      }
+    // The returned copies carry what the database just set.
+    for (final m in toSave) {
+      final reactedTo = byGuid[m.associatedMessageGuid];
+      if (reactedTo != null) reactedTo.hasReactions = true;
     }
-    final rows = await _rowsByKey(tx, 'messages', 'guid', reactedGuids.whereNot(byGuid.containsKey));
-    for (final r in rows) {
-      if ((r['has_reactions'] as int? ?? 0) == 0) reacted.add(r['id'] as int);
-    }
-    await _setFlag(tx, 'has_reactions', reacted);
     return (toSave, byGuid);
   }
 
   /// `_syncAttachmentsInTx`: links each attachment to its message (a stored
-  /// attachment is kept as stored otherwise) and sets `has_attachments`.
+  /// attachment is kept as stored otherwise); the database sets the
+  /// message's `has_attachments` (attachmentFlagTriggers).
   static Future<void> _attachments(WriteTx tx, PreparedSyncBatch batch, Map<String, Message> byGuid) async {
     final maps = <Map<String, dynamic>>[];
     final owner = <String, String>{};
@@ -257,27 +246,16 @@ class SqliteSyncBatch {
       (a) => a.guid!,
     );
     final toSave = <Attachment>[];
-    final flagged = <int>{};
     for (final input in inputs) {
       final a = stored[input.guid] ?? input;
       final msg = byGuid[owner[input.guid]];
       if (msg?.id != null) {
         a.message.targetId = msg!.id;
-        if (!msg.hasAttachments) {
-          msg.hasAttachments = true;
-          flagged.add(msg.id!);
-        }
+        msg.hasAttachments = true;
       }
       toSave.add(a);
     }
     await AttachmentRepo(tx).upsert(tx, toSave);
-    await _setFlag(tx, 'has_attachments', flagged);
-  }
-
-  static Future<void> _setFlag(WriteTx tx, String column, Set<int> ids) async {
-    for (final chunk in ids.toList().slices(500)) {
-      await tx.execute('UPDATE messages SET $column = 1 WHERE id IN (${sqlPlaceholders(chunk.length)})', chunk);
-    }
   }
 
   static Future<List<Map<String, Object?>>> _rowsByKey(

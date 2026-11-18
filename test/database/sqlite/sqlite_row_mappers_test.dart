@@ -92,7 +92,10 @@ void main() {
     expect(row['sort_at_us'], 1700000001000000);
     expect(row['is_from_me'], isNull);
     final stored = await roundTrip(database, 'messages', row);
-    expect(stored, row);
+    // has_attachments / has_reactions are the database's: nothing points at this message.
+    expect(stored, {...row, 'has_attachments': 0, 'has_reactions': 0});
+    stored['has_attachments'] = row['has_attachments'];
+    stored['has_reactions'] = row['has_reactions'];
 
     final restored = messageFromRow(stored);
     expect(messageToRow(restored), row);

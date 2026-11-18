@@ -62,15 +62,6 @@ mixin SqliteMessageStore implements MessageStore, SqliteStorePart {
         if (found != null) inputMessage.handleRelation.targetId = found.id;
       }
 
-      if (inputMessage.associatedMessageType != null && inputMessage.associatedMessageGuid != null) {
-        await tx.execute('UPDATE messages SET has_reactions = 1 WHERE guid = ?', [inputMessage.associatedMessageGuid]);
-      } else if (!inputMessage.hasReactions) {
-        final reaction = await tx.select('SELECT 1 FROM messages WHERE associated_message_guid = ? LIMIT 1', [
-          inputMessage.guid ?? '',
-        ]);
-        if (reaction.isNotEmpty) inputMessage.hasReactions = true;
-      }
-
       if (!updateIsBookmarked) {
         inputMessage.isBookmarked = existing?.isBookmarked ?? inputMessage.isBookmarked;
       }
