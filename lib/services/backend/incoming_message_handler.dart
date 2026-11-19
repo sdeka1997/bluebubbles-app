@@ -84,6 +84,21 @@ class IncomingPayload {
   }
 }
 
+/// A send the app gave up on (connection dropped or timed out) that the server
+/// then confirmed ([stored] failed, [update] did not): the chat's
+/// failed-to-send notification stays only while another of its messages is
+/// still failed. Runs after [update] is stored.
+@visibleForTesting
+Future<void> clearResolvedFailedNotice({
+  required Message stored,
+  required Message update,
+  required int chatId,
+}) async {
+  if (stored.error == 0 || update.error != 0) return;
+  if (await MessagingStore.current.chatHasFailedMessages(chatId)) return;
+  await NotificationsSvc.clearFailedToSend(chatId);
+}
+
 /// Applies an updated message's durable repairs before deciding which
 /// user-facing effects are allowed. Silent photo state still repairs its row,
 /// attachments, and icon, but never reaches an active transcript.
@@ -540,6 +555,10 @@ class IncomingMessageHandler {
         }
       },
     );
+
+    if (c.id != null && GetIt.I.isRegistered<NotificationsService>()) {
+      await clearResolvedFailedNotice(stored: existing, update: m, chatId: c.id!);
+    }
   }
 
   // ── Chat hydration ──────────────────────────────────────────────────────

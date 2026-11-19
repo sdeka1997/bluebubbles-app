@@ -180,6 +180,10 @@ abstract interface class MessageStore {
 
   /// The stored messages of [ids], in that order; missing ones are skipped.
   Future<List<Message>> messagesByIds(List<int> ids);
+
+  /// Whether a message filed under chat [chatId] is in the failed-to-send
+  /// state and not deleted.
+  Future<bool> chatHasFailedMessages(int chatId);
 }
 
 /// Attachments (AttachmentActions, AttachmentInterface).
@@ -273,16 +277,34 @@ abstract interface class SyncStore {
   /// latest pointers in the same write boundary as the legacy refresh.
   Future<ChatMetadataRefreshResult> refreshChatMetadata(List<Map<String, dynamic>> remoteChats);
 
-  /// The guids of every chat in a thread with more than one copy while the
-  /// one-time origin repair is pending (schema v7), else empty.
-  Future<List<String>> chatsAwaitingOriginRepair();
+  /// The threads with more than one copy the one-time origin repair (schema
+  /// v7) has not done yet, or null when no repair is pending.
+  Future<List<OriginRepairThread>?> threadsAwaitingOriginRepair();
 
-  /// Records [chatGuid] as the Apple chat of the stored messages in
-  /// [messageGuids]; the database files them again. Returns how many changed.
-  Future<int> recordAppleChat(String chatGuid, List<String> messageGuids);
+  /// In one write, records the Apple chat of [thread]'s messages and marks the
+  /// thread done: a message the server lists under a copy in [fetched] gets
+  /// that copy; any other message stored before [asOf] and still carrying the
+  /// assumed shown chat gets [biggest]. The database files them again.
+  /// Returns how many were recorded.
+  Future<int> recordThreadOrigin(
+    OriginRepairThread thread, {
+    required String biggest,
+    required Map<String, List<String>> fetched,
+    required DateTime asOf,
+  });
 
   /// Ends the origin repair.
   Future<void> finishOriginRepair();
+}
+
+/// A thread awaiting the origin repair: the guids of its copies, and its
+/// shown chat, which the v6 upgrade assumed for messages an older build moved.
+class OriginRepairThread {
+  const OriginRepairThread(this.threadKey, this.shownChat, this.copies);
+
+  final String threadKey;
+  final String shownChat;
+  final List<String> copies;
 }
 
 /// Where the next older page of a chat's timeline starts, sendable between

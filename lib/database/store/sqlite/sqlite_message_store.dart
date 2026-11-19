@@ -30,6 +30,13 @@ mixin SqliteMessageStore implements MessageStore, SqliteStorePart {
   }
 
   @override
+  Future<bool> chatHasFailedMessages(int chatId) async => (await db.select(
+        'SELECT 1 FROM messages WHERE chat_id = ? AND error != 0 AND date_deleted_us IS NULL LIMIT 1',
+        [chatId],
+      ))
+          .isNotEmpty;
+
+  @override
   Future<void> deleteMessage(String guid) => db.write((tx) => MessageRepo(tx).delete(tx, [guid]));
 
   @override

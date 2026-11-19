@@ -797,7 +797,7 @@ class NotificationsService {
       return;
     }
     await flnp.show(
-      id: (chat.id! + 75000) * (scheduled ? -1 : 1),
+      id: _failedToSendId(chat.id!) * (scheduled ? -1 : 1),
       title: title,
       body: subtitle,
       notificationDetails: NotificationDetails(
@@ -814,14 +814,18 @@ class NotificationsService {
     );
   }
 
-  Future<void> clearFailedToSend(int id) async {
+  /// The id of chat [chatId]'s failed-to-send notification.
+  static int _failedToSendId(int chatId) => chatId + 75000;
+
+  /// Removes chat [chatId]'s failed-to-send notification.
+  Future<void> clearFailedToSend(int chatId) async {
     if (kIsDesktop) {
       final int? toastId = failedToast;
       failedToast = null;
       if (toastId != null) await DesktopNotifications.cancel(toastId);
       return;
     }
-    await flnp.cancel(id: id);
+    await flnp.cancel(id: _failedToSendId(chatId));
   }
 
   Future<void> clearDesktopNotificationsForChat(String chatGuid) async {
